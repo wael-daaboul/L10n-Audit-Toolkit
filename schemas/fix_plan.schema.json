@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["summary", "plan"],
+  "properties": {
+    "summary": {
+      "type": "object",
+      "required": ["total_plan_items", "auto_safe", "review_required", "applied_to_candidates", "by_source"],
+      "properties": {
+        "total_plan_items": { "type": "integer" },
+        "auto_safe": { "type": "integer" },
+        "review_required": { "type": "integer" },
+        "applied_to_candidates": { "type": "integer" },
+        "by_source": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "locale",
+          "source",
+          "issue_type",
+          "severity",
+          "classification",
+          "message",
+          "current_value",
+          "candidate_value"
+        ],
+        "properties": {
+          "key": { "type": "string" },
+          "locale": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 },
+          "issue_type": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "warning", ""] },
+          "classification": { "type": "string", "enum": ["auto_safe", "review_required"] },
+          "message": { "type": "string", "minLength": 1 },
+          "current_value": { "type": "string" },
+          "candidate_value": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

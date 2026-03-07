@@ -1,0 +1,793 @@
+{
+    "meta": {
+        "name": "BeTaxi Official Terminology Glossary",
+        "version": "1.0",
+        "status": "official",
+        "source_language": "en",
+        "target_language": "ar"
+    },
+    "rules": {
+        "forbidden_terms": [
+            {
+                "forbidden_ar": "سائق",
+                "use_instead": "كابتن"
+            },
+            {
+                "forbidden_ar": "زبون",
+                "use_instead": "عميل"
+            },
+            {
+                "forbidden_ar": "مشوار",
+                "use_instead": "رحلة"
+            },
+            {
+                "forbidden_ar": "نقطة الانطلاق",
+                "use_instead": "نقطة الالتقاء"
+            }
+        ]
+    },
+    "terms": [
+        {
+            "term_en": "Driver",
+            "approved_ar": "كابتن",
+            "forbidden_ar": [
+                "سائق"
+            ],
+            "category": "users",
+            "definition": "الشخص الذي يقود المركبة وينفذ الرحلات.",
+            "notes": "المصطلح الرسمي للسائق في التطبيق."
+        },
+        {
+            "term_en": "Rider",
+            "approved_ar": "الراكب",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "المستخدم الذي يطلب رحلة ركاب.",
+            "notes": ""
+        },
+        {
+            "term_en": "Passenger",
+            "approved_ar": "الراكب",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "الشخص الذي يركب المركبة أثناء الرحلة.",
+            "notes": "يعامل كمرادف لـ Rider حسب السياق."
+        },
+        {
+            "term_en": "Customer",
+            "approved_ar": "العميل",
+            "forbidden_ar": [
+                "زبون"
+            ],
+            "category": "users",
+            "definition": "المستخدم الذي يطلب خدمة من التطبيق.",
+            "notes": "مصطلح عام يشمل الرحلات والتوصيل."
+        },
+        {
+            "term_en": "Sender",
+            "approved_ar": "المرسل",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "الشخص الذي يرسل الطرد.",
+            "notes": ""
+        },
+        {
+            "term_en": "Receiver",
+            "approved_ar": "المستلم",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "الشخص الذي يستلم الطرد.",
+            "notes": ""
+        },
+        {
+            "term_en": "User",
+            "approved_ar": "المستخدم",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "مصطلح عام لأي مستخدم في النظام.",
+            "notes": ""
+        },
+        {
+            "term_en": "Admin",
+            "approved_ar": "المدير",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "مدير النظام أو لوحة التحكم.",
+            "notes": ""
+        },
+        {
+            "term_en": "Operator",
+            "approved_ar": "المشغل",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "موظف التشغيل المسؤول عن متابعة العمليات.",
+            "notes": ""
+        },
+        {
+            "term_en": "Merchant",
+            "approved_ar": "التاجر",
+            "forbidden_ar": [],
+            "category": "users",
+            "definition": "الشريك التجاري المرتبط بخدمات التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Trip",
+            "approved_ar": "رحلة",
+            "forbidden_ar": [
+                "مشوار"
+            ],
+            "category": "trips",
+            "definition": "الكيان الأساسي لرحلة النقل في النظام.",
+            "notes": ""
+        },
+        {
+            "term_en": "Ride",
+            "approved_ar": "رحلة",
+            "forbidden_ar": [
+                "مشوار"
+            ],
+            "category": "trips",
+            "definition": "مرادف تشغيلي لـ Trip في التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Order",
+            "approved_ar": "طلب",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "طلب خدمة من التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Booking",
+            "approved_ar": "حجز",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "حجز خدمة مسبقاً.",
+            "notes": ""
+        },
+        {
+            "term_en": "Pickup",
+            "approved_ar": "نقطة الالتقاء",
+            "forbidden_ar": [
+                "نقطة الانطلاق"
+            ],
+            "category": "trips",
+            "definition": "الموقع الذي يلتقي فيه الكابتن مع الراكب أو يتم استلام الطلب منه.",
+            "notes": ""
+        },
+        {
+            "term_en": "Drop-off",
+            "approved_ar": "نقطة الوصول",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "الموقع الذي تنتهي فيه الرحلة أو يتم تسليم الطلب فيه.",
+            "notes": ""
+        },
+        {
+            "term_en": "Destination",
+            "approved_ar": "الوجهة",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "المكان المقصود في الرحلة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Route",
+            "approved_ar": "المسار",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "الطريق بين نقطة الالتقاء ونقطة الوصول.",
+            "notes": ""
+        },
+        {
+            "term_en": "Distance",
+            "approved_ar": "المسافة",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "المسافة المقطوعة أو المتوقعة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Duration",
+            "approved_ar": "المدة",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "مدة الرحلة أو مدة العملية حسب السياق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Trip Details",
+            "approved_ar": "تفاصيل الرحلة",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "المعلومات الكاملة المتعلقة بالرحلة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Trip History",
+            "approved_ar": "سجل الرحلات",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "قائمة الرحلات السابقة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Active Trip",
+            "approved_ar": "رحلة جارية",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "رحلة نشطة حالياً.",
+            "notes": ""
+        },
+        {
+            "term_en": "Completed Trip",
+            "approved_ar": "رحلة مكتملة",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "رحلة تم إنهاؤها بنجاح.",
+            "notes": ""
+        },
+        {
+            "term_en": "Cancelled Trip",
+            "approved_ar": "رحلة ملغاة",
+            "forbidden_ar": [],
+            "category": "trips",
+            "definition": "رحلة تم إلغاؤها.",
+            "notes": ""
+        },
+        {
+            "term_en": "Pending",
+            "approved_ar": "قيد الانتظار",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "الحالة قبل القبول أو المعالجة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Accepted",
+            "approved_ar": "تم القبول",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "تم قبول الطلب أو الرحلة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Arrived",
+            "approved_ar": "وصل",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "تم الوصول إلى الموقع.",
+            "notes": "يحدد الفاعل في الجملة نفسها مثل: وصل الكابتن."
+        },
+        {
+            "term_en": "Started",
+            "approved_ar": "بدأت الرحلة",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "بدأ تنفيذ الرحلة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Completed",
+            "approved_ar": "مكتمل",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "اكتملت العملية أو الرحلة.",
+            "notes": "يعدل حسب جنس الاسم في الواجهة إذا لزم."
+        },
+        {
+            "term_en": "Cancelled",
+            "approved_ar": "ملغى",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "تم الإلغاء.",
+            "notes": "يعدل حسب جنس الاسم في الواجهة إذا لزم."
+        },
+        {
+            "term_en": "Rejected",
+            "approved_ar": "مرفوض",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "تم الرفض.",
+            "notes": ""
+        },
+        {
+            "term_en": "Expired",
+            "approved_ar": "منتهي",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "انتهت الصلاحية أو المدة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Processing",
+            "approved_ar": "قيد المعالجة",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "العملية قيد التنفيذ.",
+            "notes": ""
+        },
+        {
+            "term_en": "Failed",
+            "approved_ar": "فشل",
+            "forbidden_ar": [],
+            "category": "status",
+            "definition": "فشلت العملية.",
+            "notes": ""
+        },
+        {
+            "term_en": "Rating",
+            "approved_ar": "تقييم",
+            "forbidden_ar": [],
+            "category": "ratings",
+            "definition": "التقييم الرقمي أو بالنجوم.",
+            "notes": ""
+        },
+        {
+            "term_en": "Review",
+            "approved_ar": "تقييم",
+            "forbidden_ar": [
+                "مراجعة"
+            ],
+            "category": "ratings",
+            "definition": "التقييم المرسل من المستخدم ضمن سياق التطبيق.",
+            "notes": "تم اعتماد تقييم لتوحيد الواجهة."
+        },
+        {
+            "term_en": "Rate Driver",
+            "approved_ar": "قيّم الكابتن",
+            "forbidden_ar": [],
+            "category": "ratings",
+            "definition": "طلب تقييم الكابتن.",
+            "notes": ""
+        },
+        {
+            "term_en": "Rate Rider",
+            "approved_ar": "قيّم الراكب",
+            "forbidden_ar": [],
+            "category": "ratings",
+            "definition": "طلب تقييم الراكب.",
+            "notes": ""
+        },
+        {
+            "term_en": "Feedback",
+            "approved_ar": "ملاحظات",
+            "forbidden_ar": [],
+            "category": "ratings",
+            "definition": "ملاحظات المستخدم على الخدمة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Complaint",
+            "approved_ar": "شكوى",
+            "forbidden_ar": [],
+            "category": "ratings",
+            "definition": "شكوى رسمية من المستخدم.",
+            "notes": ""
+        },
+        {
+            "term_en": "Report",
+            "approved_ar": "إبلاغ",
+            "forbidden_ar": [],
+            "category": "ratings",
+            "definition": "إبلاغ عن مشكلة أو مخالفة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Wallet",
+            "approved_ar": "المحفظة",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "محفظة المستخدم داخل التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Balance",
+            "approved_ar": "الرصيد",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "المبلغ المتوفر أو المسجل في المحفظة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Transaction",
+            "approved_ar": "عملية",
+            "forbidden_ar": [
+                "معاملة"
+            ],
+            "category": "payments",
+            "definition": "عملية مالية أو سجل مالي داخل النظام.",
+            "notes": ""
+        },
+        {
+            "term_en": "Payment",
+            "approved_ar": "الدفع",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "عملية سداد المبلغ.",
+            "notes": ""
+        },
+        {
+            "term_en": "Payment Method",
+            "approved_ar": "وسيلة الدفع",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "الطريقة المستخدمة للدفع.",
+            "notes": ""
+        },
+        {
+            "term_en": "Cash",
+            "approved_ar": "نقداً",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "الدفع النقدي.",
+            "notes": ""
+        },
+        {
+            "term_en": "Card",
+            "approved_ar": "بطاقة",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "بطاقة مصرفية أو بطاقة دفع.",
+            "notes": ""
+        },
+        {
+            "term_en": "Online Payment",
+            "approved_ar": "دفع إلكتروني",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "الدفع عبر الإنترنت أو بوابة دفع.",
+            "notes": ""
+        },
+        {
+            "term_en": "Commission",
+            "approved_ar": "عمولة",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "عمولة التطبيق أو النظام.",
+            "notes": ""
+        },
+        {
+            "term_en": "Service Fee",
+            "approved_ar": "رسوم الخدمة",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "رسوم إضافية مرتبطة بالخدمة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Platform Fee",
+            "approved_ar": "رسوم المنصة",
+            "forbidden_ar": [],
+            "category": "payments",
+            "definition": "رسوم النظام أو المنصة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Withdraw",
+            "approved_ar": "سحب",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "سحب الأموال من الرصيد أو المحفظة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Withdrawal Request",
+            "approved_ar": "طلب سحب",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "طلب رسمي لسحب الأموال.",
+            "notes": ""
+        },
+        {
+            "term_en": "Deposit",
+            "approved_ar": "إيداع",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "إضافة أموال إلى الحساب أو المحفظة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Refund",
+            "approved_ar": "استرداد",
+            "forbidden_ar": [
+                "استرجاع"
+            ],
+            "category": "financial_operations",
+            "definition": "إعادة الأموال إلى المستخدم.",
+            "notes": "تم اعتماد استرداد لتوحيد المصطلح المالي."
+        },
+        {
+            "term_en": "Charge",
+            "approved_ar": "رسوم",
+            "forbidden_ar": [
+                "خصم"
+            ],
+            "category": "financial_operations",
+            "definition": "رسوم أو تكلفة إضافية مفروضة.",
+            "notes": "إذا كان المعنى Deduction يستخدم نصاً خاصاً مثل خصم من الرصيد."
+        },
+        {
+            "term_en": "Earnings",
+            "approved_ar": "الأرباح",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "الأرباح المتحققة داخل التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Driver Earnings",
+            "approved_ar": "أرباح الكابتن",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "الأرباح الخاصة بالكابتن.",
+            "notes": ""
+        },
+        {
+            "term_en": "Pending Balance",
+            "approved_ar": "رصيد معلق",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "رصيد لم يصبح متاحاً بعد.",
+            "notes": ""
+        },
+        {
+            "term_en": "Available Balance",
+            "approved_ar": "رصيد متاح",
+            "forbidden_ar": [],
+            "category": "financial_operations",
+            "definition": "رصيد متاح للاستخدام أو السحب.",
+            "notes": ""
+        },
+        {
+            "term_en": "Delivery",
+            "approved_ar": "توصيل",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "خدمة توصيل الطلبات أو الطرود.",
+            "notes": ""
+        },
+        {
+            "term_en": "Parcel",
+            "approved_ar": "طرد",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "عنصر يتم توصيله.",
+            "notes": ""
+        },
+        {
+            "term_en": "Package",
+            "approved_ar": "شحنة",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "شحنة أو طرد ضمن سياق النقل.",
+            "notes": ""
+        },
+        {
+            "term_en": "Shipment",
+            "approved_ar": "شحنة",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "شحنة مخصصة للنقل أو التوصيل.",
+            "notes": ""
+        },
+        {
+            "term_en": "Cash Collect",
+            "approved_ar": "تحصيل نقدي",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "تحصيل مبلغ نقدي ضمن العملية.",
+            "notes": ""
+        },
+        {
+            "term_en": "Cash on Delivery",
+            "approved_ar": "الدفع عند الاستلام",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "سداد قيمة الطلب عند تسليمه.",
+            "notes": ""
+        },
+        {
+            "term_en": "Delivery Fee",
+            "approved_ar": "رسوم التوصيل",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "تكلفة خدمة التوصيل.",
+            "notes": ""
+        },
+        {
+            "term_en": "Delivery Time",
+            "approved_ar": "وقت التوصيل",
+            "forbidden_ar": [],
+            "category": "delivery",
+            "definition": "الوقت المتوقع أو الفعلي للتوصيل.",
+            "notes": ""
+        },
+        {
+            "term_en": "Notification",
+            "approved_ar": "إشعار",
+            "forbidden_ar": [],
+            "category": "notifications",
+            "definition": "إشعار من النظام أو التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Alert",
+            "approved_ar": "تنبيه",
+            "forbidden_ar": [],
+            "category": "notifications",
+            "definition": "إشعار مهم أو تحذيري.",
+            "notes": ""
+        },
+        {
+            "term_en": "Message",
+            "approved_ar": "رسالة",
+            "forbidden_ar": [],
+            "category": "notifications",
+            "definition": "رسالة نصية أو داخلية.",
+            "notes": ""
+        },
+        {
+            "term_en": "System Message",
+            "approved_ar": "رسالة نظام",
+            "forbidden_ar": [],
+            "category": "notifications",
+            "definition": "رسالة صادرة من النظام.",
+            "notes": ""
+        },
+        {
+            "term_en": "Push Notification",
+            "approved_ar": "إشعار فوري",
+            "forbidden_ar": [],
+            "category": "notifications",
+            "definition": "إشعار يُرسل مباشرة إلى الجهاز.",
+            "notes": ""
+        },
+        {
+            "term_en": "Mark as Read",
+            "approved_ar": "تحديد كمقروء",
+            "forbidden_ar": [],
+            "category": "notifications",
+            "definition": "تغيير حالة الإشعار أو الرسالة إلى مقروء.",
+            "notes": ""
+        },
+        {
+            "term_en": "Profile",
+            "approved_ar": "الملف الشخصي",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "بيانات المستخدم الشخصية داخل التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Account",
+            "approved_ar": "الحساب",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "حساب المستخدم في النظام.",
+            "notes": ""
+        },
+        {
+            "term_en": "Username",
+            "approved_ar": "اسم المستخدم",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "الاسم التعريفي للمستخدم.",
+            "notes": ""
+        },
+        {
+            "term_en": "Password",
+            "approved_ar": "كلمة المرور",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "كلمة المرور الخاصة بالحساب.",
+            "notes": ""
+        },
+        {
+            "term_en": "Phone Number",
+            "approved_ar": "رقم الهاتف",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "رقم الهاتف المسجل في الحساب.",
+            "notes": ""
+        },
+        {
+            "term_en": "Email",
+            "approved_ar": "البريد الإلكتروني",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "عنوان البريد الإلكتروني للمستخدم.",
+            "notes": ""
+        },
+        {
+            "term_en": "Verification",
+            "approved_ar": "التحقق",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "إجراء التحقق من المستخدم أو البيانات.",
+            "notes": ""
+        },
+        {
+            "term_en": "Verification Code",
+            "approved_ar": "رمز التحقق",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "رمز يستخدم للتحقق من الهوية أو الإجراء.",
+            "notes": ""
+        },
+        {
+            "term_en": "Update Profile",
+            "approved_ar": "تحديث الملف الشخصي",
+            "forbidden_ar": [],
+            "category": "account",
+            "definition": "تعديل بيانات الملف الشخصي.",
+            "notes": ""
+        },
+        {
+            "term_en": "Settings",
+            "approved_ar": "الإعدادات",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "إعدادات التطبيق أو الحساب.",
+            "notes": ""
+        },
+        {
+            "term_en": "Language",
+            "approved_ar": "اللغة",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "لغة واجهة التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Currency",
+            "approved_ar": "العملة",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "العملة المستخدمة في التطبيق.",
+            "notes": ""
+        },
+        {
+            "term_en": "Dark Mode",
+            "approved_ar": "الوضع الداكن",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "وضع الألوان الداكنة.",
+            "notes": ""
+        },
+        {
+            "term_en": "Notifications Settings",
+            "approved_ar": "إعدادات الإشعارات",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "إعدادات التحكم بالإشعارات.",
+            "notes": ""
+        },
+        {
+            "term_en": "Privacy",
+            "approved_ar": "الخصوصية",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "إعدادات وسياسات الخصوصية.",
+            "notes": ""
+        },
+        {
+            "term_en": "Security",
+            "approved_ar": "الأمان",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "أمان الحساب والبيانات.",
+            "notes": ""
+        },
+        {
+            "term_en": "Logout",
+            "approved_ar": "تسجيل الخروج",
+            "forbidden_ar": [],
+            "category": "settings",
+            "definition": "إنهاء الجلسة الحالية للمستخدم.",
+            "notes": ""
+        }
+    ]
+}

@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include HOW_TO_USE.md
+include INSTALL.md
+recursive-include config *
+recursive-include docs *
+recursive-include examples *
+recursive-include schemas *
+recursive-include tests *
+recursive-include vendor *

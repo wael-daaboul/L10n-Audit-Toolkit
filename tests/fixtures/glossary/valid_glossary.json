@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "version": "1.0"
+  },
+  "rules": {
+    "forbidden_terms": [
+      {
+        "forbidden_ar": "سائق",
+        "use_instead": "كابتن"
+      }
+    ]
+  },
+  "terms": [
+    {
+      "term_en": "Driver",
+      "approved_ar": "كابتن",
+      "forbidden_ar": ["سائق"]
+    },
+    {
+      "term_en": "Customer",
+      "approved_ar": "عميل",
+      "forbidden_ar": ["زبون"]
+    }
+  ]
+}

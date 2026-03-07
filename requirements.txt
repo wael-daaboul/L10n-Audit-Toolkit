@@ -1,0 +1,4 @@
+# Core toolkit runtime has no mandatory third-party Python dependencies.
+# This file intentionally remains minimal so `pip install -r requirements.txt`
+# succeeds while the toolkit continues to rely on the Python standard library
+# for its required execution path.

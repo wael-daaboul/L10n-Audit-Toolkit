@@ -1,0 +1,5 @@
+{
+  "trip_count": "{count, plural, one{رحلة واحدة} other{رحلات}}",
+  "gender_notice": "تم الوصول",
+  "rank": "{position, selectordinal, one{#} two{#nd} few{#rd}}"
+}

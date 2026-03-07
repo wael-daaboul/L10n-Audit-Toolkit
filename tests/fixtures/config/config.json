@@ -1,0 +1,8 @@
+{
+  "project_profile": "flutter_getx_json",
+  "project_root": "tests/fixtures/runtime_project",
+  "source_locale": "en",
+  "target_locales": ["ar"],
+  "results_dir": "Results",
+  "glossary_file": "docs/terminology/betaxi_glossary_official.json"
+}

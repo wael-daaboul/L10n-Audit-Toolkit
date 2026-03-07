@@ -1,0 +1,11 @@
+pandas
+openpyxl
+rich
+rapidfuzz
+python-Levenshtein
+textblob
+nltk
+regex
+jsonschema
+PyYAML
+language-tool-python

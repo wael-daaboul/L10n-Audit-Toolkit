@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "total_plan_items": 1,
+    "auto_safe": 1,
+    "review_required": 0,
+    "applied_to_candidates": 1,
+    "by_source": {
+      "locale_qc": 1
+    }
+  },
+  "plan": [
+    {
+      "key": "welcome.message",
+      "locale": "en",
+      "source": "locale_qc",
+      "issue_type": "spacing",
+      "severity": "low",
+      "classification": "auto_safe",
+      "message": "Normalize repeated internal spaces.",
+      "current_value": "Hello  world",
+      "candidate_value": "Hello world"
+    }
+  ]
+}

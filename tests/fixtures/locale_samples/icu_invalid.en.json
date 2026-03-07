@@ -1,0 +1,5 @@
+{
+  "trip_count": "{count, plural, =0{No trips} one{1 trip} other{{count} trips}}",
+  "gender_notice": "{gender, select, male{He arrived} female{She arrived} other{They arrived}}",
+  "rank": "{position, selectordinal, one{#st} two{#nd} few{#rd} other{#th}}"
+}

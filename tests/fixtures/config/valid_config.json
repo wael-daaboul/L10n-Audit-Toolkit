@@ -1,0 +1,27 @@
+{
+  "project_profile": "flutter_getx_json",
+  "locale_format": "json",
+  "source_locale": "en",
+  "target_locales": ["ar"],
+  "project_root": "..",
+  "locales_dir": "assets/language",
+  "en_file": "assets/language/en.json",
+  "ar_file": "assets/language/ar.json",
+  "code_dir": "lib",
+  "code_dirs": ["lib"],
+  "locale_paths": {
+    "en": "assets/language/en.json",
+    "ar": "assets/language/ar.json"
+  },
+  "glossary_file": "docs/terminology/betaxi_glossary_official.json",
+  "results_dir": "Results",
+  "languagetool_dir": "vendor/LanguageTool-6.6",
+  "ar_locale_qc": {
+    "enable_exclamation_style": true
+  },
+  "icu_message_audit": {
+    "enabled": true,
+    "strict_branch_matching": true,
+    "enable_selectordinal": true
+  }
+}

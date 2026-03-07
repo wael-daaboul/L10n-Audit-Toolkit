@@ -1,0 +1,40 @@
+{
+  "summary": {
+    "total_issues": 1,
+    "by_severity": {
+      "high": 1
+    },
+    "by_source": {
+      "localization": 1
+    },
+    "by_issue_type": {
+      "missing_translation": 1
+    }
+  },
+  "missing_reports": [],
+  "included_sources": [
+    "localization"
+  ],
+  "priority_order": [
+    "Add missing translations for keys used in code."
+  ],
+  "recommendations": [
+    "Restore missing Arabic values for used keys."
+  ],
+  "issues": [
+    {
+      "source": "localization",
+      "group": "missing_translations",
+      "key": "home.title",
+      "issue_type": "missing_translation",
+      "severity": "high",
+      "message": "Key is used in code but missing in Arabic.",
+      "locale": "ar",
+      "details": {
+        "present_in_en": true,
+        "present_in_ar": false
+      },
+      "recommendation": "Add the missing Arabic translation."
+    }
+  ]
+}

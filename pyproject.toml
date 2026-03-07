@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "l10n-audit-toolkit"
+version = "0.1.0"
+description = "Cross-framework localization audit and translation QA toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Wael Daaboul" }
+]
+keywords = [
+  "localization",
+  "i18n",
+  "l10n",
+  "translation",
+  "translation-qa",
+  "flutter",
+  "laravel",
+  "react",
+  "vue"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Software Development :: Quality Assurance",
+  "Topic :: Software Development :: Localization"
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["audits*", "bin*", "core*", "fixes*", "reports*"]
