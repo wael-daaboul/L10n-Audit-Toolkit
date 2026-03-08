@@ -1,5 +1,7 @@
 # How To Use The Localization QA Toolkit
 
+This guide documents the standard audit, review, approved-fix, and final-locale workflow. For output details, see [docs/output_reports.md](docs/output_reports.md). For fix integrity and review queue behavior, see [docs/review_workflow.md](docs/review_workflow.md).
+
 ## Workflow
 
 ### English

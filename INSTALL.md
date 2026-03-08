@@ -1,5 +1,7 @@
 # Installation Guide
 
+This guide covers environment setup, dependency installation, test setup, and first-run validation for L10n Audit Toolkit. For the shortest onboarding path, see [docs/quickstart.md](docs/quickstart.md).
+
 ## English
 
 ### Purpose

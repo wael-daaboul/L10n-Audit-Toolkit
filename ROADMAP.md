@@ -2,6 +2,8 @@
 
 This roadmap outlines practical next steps for the project. It is intended as a planning guide, not a release commitment.
 
+The project is usable today for repository-based localization QA on the supported profiles, with ongoing work focused on broader format support, stronger automation, and clearer public release workflows.
+
 ## Framework and Format Support
 
 - Add Angular i18n support

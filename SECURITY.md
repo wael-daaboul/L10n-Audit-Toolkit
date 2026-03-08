@@ -1,5 +1,7 @@
 # Security Policy
 
+L10n Audit Toolkit processes localization content, generated reports, and review artifacts. Security issues that could expose translation data, allow unsafe file handling, or weaken review integrity should be reported privately.
+
 ## Supported Versions
 
 Security fixes are applied on a best-effort basis to the latest code on the default branch.

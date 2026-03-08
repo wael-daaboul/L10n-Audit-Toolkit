@@ -1,27 +1,32 @@
 ---
 name: Feature request
-about: Suggest an improvement for L10n Audit Toolkit
+about: Suggest an improvement to supported audits, workflows, docs, or project profiles
 title: "[Feature] "
 labels: enhancement
-assignees: ""
+assignees: ''
 ---
 
 ## Summary
 
-Describe the proposed improvement.
+Describe the requested improvement.
 
-## Problem Statement
+## Problem
 
-What problem would this solve for users of the toolkit?
+What workflow gap or limitation does this solve?
 
-## Proposed Approach
+## Proposed Direction
 
-Describe the expected behavior or workflow.
+Describe the smallest useful version of the change.
 
-## Alternatives Considered
+## Affected Area
 
-List any alternatives or workarounds you considered.
+- audit module
+- project profile
+- locale format
+- documentation
+- report workflow
+- export behavior
 
 ## Additional Context
 
-Add examples, sample project layouts, or related references if helpful.
+Include example locale snippets, framework usage, or expected outputs if relevant.

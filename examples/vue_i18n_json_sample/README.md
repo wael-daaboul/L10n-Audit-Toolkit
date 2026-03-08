@@ -1,5 +1,17 @@
 # Vue / Nuxt JSON Sample
 
-Reserved for a minimal Vue / Nuxt sample that demonstrates:
-- JSON locale files under a profile-supported directory such as `locales/` or `src/locales/`
-- `$t('key')` usage detection
+This example documents the expected layout for a Vue or Nuxt project that uses `vue-i18n` JSON locale files.
+
+## What It Demonstrates
+
+- locale files under directories such as `locales/` or `src/locales/`
+- source usage patterns such as `$t('key')`
+- the `vue_i18n_json` project profile
+
+## How To Use It
+
+Configure the sample paths in `config/config.json`, then run:
+
+```bash
+./bin/run_all_audits.sh --stage fast
+```

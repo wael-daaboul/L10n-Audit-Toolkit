@@ -1,6 +1,6 @@
 # Contributing to L10n Audit Toolkit
 
-Thank you for contributing.
+Thank you for contributing. This repository aims to stay reviewable, testable, and conservative around localization data integrity.
 
 ## Reporting Issues
 
@@ -27,6 +27,14 @@ If the report is about incorrect audit output, include the generated files from 
 4. Add or update tests when behavior changes.
 5. Update documentation when commands, configuration, or outputs change.
 6. Open a pull request with a clear description of the change and its motivation.
+
+Good contribution areas include:
+
+- localization audit accuracy
+- placeholder validation improvements
+- terminology and glossary workflows
+- documentation and onboarding
+- framework-profile examples
 
 ## Development Setup
 
@@ -81,6 +89,7 @@ python -m core.schema_validation --preset core
 - Include tests for bug fixes and feature work when practical.
 - Avoid unrelated refactors in the same pull request.
 - Describe how you validated the change locally.
+- Update screenshots, example commands, or docs when workflow outputs change.
 
 ## Scope Notes
 

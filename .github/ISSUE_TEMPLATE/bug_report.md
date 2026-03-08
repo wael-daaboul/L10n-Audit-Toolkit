@@ -1,9 +1,9 @@
 ---
 name: Bug report
-about: Report a reproducible bug in L10n Audit Toolkit
+about: Report incorrect audit behavior, workflow problems, or documentation bugs
 title: "[Bug] "
 labels: bug
-assignees: ""
+assignees: ''
 ---
 
 ## Summary
@@ -12,34 +12,35 @@ Describe the problem clearly.
 
 ## Environment
 
+- toolkit version or commit:
+- OS:
 - Python version:
-- Operating system:
-- Project profile:
-- Locale format:
+- project profile:
+- locale format:
 
-## Steps To Reproduce
+## Reproduction
 
-1.
-2.
-3.
+1. 
+2. 
+3. 
 
 ## Expected Behavior
 
-Describe what should have happened.
+What should have happened?
 
 ## Actual Behavior
 
-Describe what happened instead.
+What happened instead?
 
-## Relevant Files or Output
+## Relevant Inputs
 
-Include any relevant snippets from:
+Include any relevant snippets:
 
 - `config/config.json`
 - locale files
-- source files
+- source code usage examples
 - generated files under `Results/`
 
 ## Additional Context
 
-Add any other context that would help reproduce or debug the issue.
+Anything else that helps reproduce or triage the issue.
