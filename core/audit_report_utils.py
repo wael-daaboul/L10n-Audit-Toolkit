@@ -34,15 +34,30 @@ def severity_rank(severity: str) -> int:
     return SEVERITY_ORDER.get(severity, 99)
 
 
+def normalize_severity(severity: str | None, fallback: str = "info") -> str:
+    normalized = str(severity or fallback).strip().lower()
+    if normalized == "warning":
+        return "medium"
+    if normalized not in SEVERITY_ORDER:
+        return fallback
+    return normalized
+
+
 def _severity_for_localization(issue_type: str) -> str:
-    if issue_type == "missing_in_both":
+    if issue_type in {"missing_in_both", "confirmed_missing_key"}:
         return "critical"
     if issue_type in {"missing_in_ar", "missing_in_en", "empty_ar", "empty_en"}:
         return "high"
+    if issue_type == "needs_manual_review":
+        return "medium"
+    if issue_type in {"context_sensitive_term_conflict", "role_entity_misalignment"}:
+        return "medium"
     if issue_type in {"in_ar_not_en", "in_en_not_ar"}:
         return "medium"
-    if issue_type in {"unused_ar", "unused_en"}:
+    if issue_type in {"unused_ar", "unused_en", "confirmed_unused_key"}:
         return "low"
+    if issue_type == "possibly_dynamic_usage":
+        return "info"
     return "info"
 
 
@@ -59,6 +74,8 @@ def _severity_for_locale_qc(issue_type: str) -> str:
 def _severity_for_ar_locale_qc(issue_type: str) -> str:
     if issue_type == "forbidden_term":
         return "high"
+    if issue_type in {"context_sensitive_term_conflict", "role_entity_misalignment"}:
+        return "medium"
     if issue_type == "inconsistent_translation":
         return "medium"
     if issue_type in {"whitespace", "spacing", "punctuation_spacing", "bracket_spacing", "slash_spacing"}:
@@ -80,8 +97,12 @@ def _severity_for_grammar(issue_type: str, row: dict[str, Any]) -> str:
 
 
 def _severity_for_terminology(issue_type: str) -> str:
-    if issue_type in {"terminology_violation", "forbidden_term"}:
+    if issue_type == "forbidden_term":
         return "high"
+    if issue_type == "hard_violation":
+        return "medium"
+    if issue_type == "soft_terminology_drift":
+        return "low"
     return "medium"
 
 
@@ -124,11 +145,11 @@ def normalize_localization(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "group": SOURCE_GROUPS["localization"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": _severity_for_localization(issue_type),
+                "severity": normalize_severity(row.get("severity"), _severity_for_localization(issue_type)),
                 "message": str(row.get("message", "")),
                 "locale": str(row.get("locale", "")),
                 "details": row,
-                "recommendation": "Synchronize locale keys and fix missing or empty translations.",
+                "recommendation": "Trust confirmed static usage first, then fix confirmed missing keys and review ambiguous locale alignment items manually.",
             }
         )
     return issues
@@ -144,7 +165,7 @@ def normalize_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "group": SOURCE_GROUPS["locale_qc"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": str(row.get("severity") or _severity_for_locale_qc(issue_type)),
+                "severity": normalize_severity(row.get("severity"), _severity_for_locale_qc(issue_type)),
                 "message": str(row.get("message", "")),
                 "locale": "en",
                 "details": row,
@@ -164,7 +185,7 @@ def normalize_ar_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "group": SOURCE_GROUPS["ar_locale_qc"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": str(row.get("severity") or _severity_for_ar_locale_qc(issue_type)),
+                "severity": normalize_severity(row.get("severity"), _severity_for_ar_locale_qc(issue_type)),
                 "message": str(row.get("message", "")),
                 "locale": "ar",
                 "details": row,
@@ -184,7 +205,7 @@ def normalize_grammar(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "group": SOURCE_GROUPS["grammar"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": _severity_for_grammar(issue_type, row),
+                "severity": normalize_severity(row.get("severity"), _severity_for_grammar(issue_type, row)),
                 "message": str(row.get("message", "")),
                 "locale": "en",
                 "details": row,
@@ -204,11 +225,11 @@ def normalize_terminology(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "group": SOURCE_GROUPS["terminology"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": _severity_for_terminology(issue_type),
+                "severity": normalize_severity(row.get("severity"), _severity_for_terminology(issue_type)),
                 "message": str(row.get("message", "")),
                 "locale": "ar",
                 "details": row,
-                "recommendation": "Replace forbidden terms and align Arabic wording with the approved glossary.",
+                "recommendation": "Use hard violations to block release decisions and treat softer terminology drift as a reviewer prompt.",
             }
         )
     return issues
@@ -224,7 +245,7 @@ def normalize_placeholders(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "group": SOURCE_GROUPS["placeholders"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": str(row.get("severity") or _severity_for_placeholder(issue_type)),
+                "severity": normalize_severity(row.get("severity"), _severity_for_placeholder(issue_type)),
                 "message": str(row.get("message", "")),
                 "locale": "en/ar",
                 "details": row,
@@ -244,7 +265,7 @@ def normalize_icu_message_audit(payload: dict[str, Any]) -> list[dict[str, Any]]
                 "group": SOURCE_GROUPS["icu_message_audit"],
                 "key": str(row.get("key", "")),
                 "issue_type": issue_type,
-                "severity": str(row.get("severity") or _severity_for_icu(issue_type)),
+                "severity": normalize_severity(row.get("severity"), _severity_for_icu(issue_type)),
                 "message": str(row.get("message", "")),
                 "locale": "en/ar",
                 "details": row,

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -33,6 +34,7 @@ class AuditPaths:
     glossary_file: Path
     results_dir: Path
     languagetool_dir: Path
+    languagetool_configured_dir: Path | None
     project_profile: str
     locale_format: str
     locale_root: Path
@@ -313,15 +315,13 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         str(effective_config.get("results_dir") or ""),
         tools_dir / "Results",
     )
-    languagetool_dir = _resolve_config_path(
-        tools_dir,
-        str(effective_config.get("languagetool_dir") or ""),
-        vendor_dir / "LanguageTool-6.6",
+    raw_languagetool_dir = str(effective_config.get("languagetool_dir") or "").strip()
+    languagetool_configured_dir = (
+        _resolve_config_path(tools_dir, raw_languagetool_dir, vendor_dir)
+        if raw_languagetool_dir
+        else None
     )
-    if not languagetool_dir.exists():
-        legacy_languagetool_dir = tools_dir / "LanguageTool-6.6"
-        if legacy_languagetool_dir.exists():
-            languagetool_dir = legacy_languagetool_dir.resolve()
+    languagetool_dir = (languagetool_configured_dir or vendor_dir).resolve()
     results_dir.mkdir(parents=True, exist_ok=True)
 
     runtime = AuditPaths(
@@ -338,6 +338,7 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         glossary_file=glossary_file,
         results_dir=results_dir,
         languagetool_dir=languagetool_dir,
+        languagetool_configured_dir=languagetool_configured_dir,
         project_profile=project_profile,
         locale_format=locale_format,
         locale_root=locales_dir,
@@ -581,6 +582,40 @@ def write_simple_xlsx(
         archive.writestr("xl/worksheets/sheet1.xml", worksheet_xml)
         archive.writestr("xl/sharedStrings.xml", shared_strings_xml)
         archive.writestr("xl/styles.xml", styles_xml)
+
+
+def read_simple_xlsx(path: Path) -> list[dict[str, str]]:
+    namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with ZipFile(path) as archive:
+        shared_strings = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall("main:si", namespace):
+                shared_strings.append("".join(text or "" for text in item.itertext()))
+
+        worksheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+        rows: list[list[str]] = []
+        for row in worksheet.findall(".//main:sheetData/main:row", namespace):
+            values: list[str] = []
+            for cell in row.findall("main:c", namespace):
+                cell_type = cell.attrib.get("t", "")
+                value_node = cell.find("main:v", namespace)
+                raw_value = value_node.text if value_node is not None and value_node.text is not None else ""
+                if cell_type == "s" and raw_value.isdigit():
+                    index = int(raw_value)
+                    values.append(shared_strings[index] if index < len(shared_strings) else "")
+                else:
+                    values.append(raw_value)
+            rows.append(values)
+
+    if not rows:
+        return []
+    header = rows[0]
+    table: list[dict[str, str]] = []
+    for row in rows[1:]:
+        padded = row + [""] * max(0, len(header) - len(row))
+        table.append({str(field): str(value) for field, value in zip(header, padded)})
+    return table
 
 
 def ensure_text(value: object) -> str:

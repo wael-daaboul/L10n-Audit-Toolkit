@@ -1,5 +1,127 @@
 # How To Use The Localization QA Toolkit
 
+## Workflow
+
+### English
+
+Step 1 - Run the audit
+
+```bash
+./bin/run_all_audits.sh --stage full
+```
+
+Step 2 - Open the dashboard
+
+Open `Results/final/final_audit_report.md`
+
+This report shows:
+- total issues
+- critical problems
+- safe fixes available
+- review required issues
+
+Step 3 - Review human-decision items
+
+Open `Results/review/review_queue.xlsx`
+
+Edit the `approved_new` column, then set `status = approved`.
+
+Step 4 - Apply reviewed fixes
+
+```bash
+python -m fixes.apply_review_fixes
+```
+
+Step 5 - Export final localization
+
+The final file will appear in `Results/final_locale/ar.final.json`
+
+This file is the cleaned and reviewed localization file ready for use.
+
+### العربية
+
+الخطوة 1 - تشغيل التدقيق
+
+```bash
+./bin/run_all_audits.sh --stage full
+```
+
+الخطوة 2 - فتح التقرير الرئيسي
+
+افتح الملف `Results/final/final_audit_report.md`
+
+سيعرض هذا التقرير:
+- عدد المشاكل الكلي
+- المشاكل الحرجة
+- الإصلاحات التلقائية المتاحة
+- العناصر التي تحتاج مراجعة بشرية
+
+الخطوة 3 - مراجعة العناصر التي تحتاج قراراً بشرياً
+
+افتح الملف `Results/review/review_queue.xlsx`
+
+قم بتعديل العمود `approved_new` ثم ضع في عمود الحالة `status = approved`
+
+الخطوة 4 - تطبيق التعديلات المعتمدة
+
+```bash
+python -m fixes.apply_review_fixes
+```
+
+الخطوة 5 - الحصول على ملف الترجمة النهائي
+
+سيتم إنشاء الملف النهائي في `Results/final_locale/ar.final.json`
+
+وهذا الملف هو نسخة الترجمة النظيفة الجاهزة للاستخدام في التطبيق.
+
+## Context-Aware Review
+
+### English
+
+The toolkit now compares the key, the English source value, the Arabic target value, and inferred usage context from code before making meaning-sensitive review decisions.
+
+LanguageTool and `language-tool-python` remain part of the linguistic review path. Their signals help with grammar, style, punctuation, and literalness suspicion, but they do not decide person-versus-department or role-versus-entity meaning by themselves.
+
+When the toolkit detects context-sensitive ambiguity, it keeps the finding as `review_required` and explains the risk in the review queue.
+
+### العربية
+
+يقارن النظام الآن بين اسم المفتاح والقيمة الإنجليزية والقيمة العربية لنفس المفتاح، ويحاول أيضاً استنتاج مكان استخدام النص داخل الواجهة من الكود قبل اتخاذ أي قرار دلالي حساس.
+
+ما زال LanguageTool و `language-tool-python` جزءاً من مسار المراجعة اللغوية. وتُستخدم إشاراتهما لدعم فحص القواعد والأسلوب والترقيم والتنبيه إلى الصياغة الحرفية، لكنهما لا يقرران وحدهما ما إذا كانت الكلمة تشير إلى شخص أو إدارة أو دور أو كيان.
+
+وعندما يكتشف النظام غموضاً دلالياً مرتبطاً بالسياق، فإنه يبقي الحالة على `review_required` ويشرح سبب ذلك داخل ملف المراجعة.
+
+## LanguageTool Behavior
+
+### English
+
+The toolkit first looks for a local LanguageTool installation in the project.
+
+- It does not depend on a fixed version like `LanguageTool-6.6`.
+- It accepts any local directory named `LanguageTool-*`.
+- Preferred discovery locations are `tools/vendor/` and `vendor/`.
+- If found, it uses the local installation directly.
+- If not found, it falls back to `language-tool-python`, which may download LanguageTool once and cache it.
+
+Optional override:
+
+```json
+{
+  "languagetool_dir": "tools/vendor/LanguageTool-7.0"
+}
+```
+
+### العربية
+
+تحاول الأداة أولاً العثور على نسخة محلية من LanguageTool داخل المشروع.
+
+- لا تعتمد الأداة على رقم إصدار ثابت مثل `LanguageTool-6.6`.
+- يكفي وجود مجلد محلي باسم مشابه لـ `LanguageTool-*`.
+- أماكن البحث المفضلة هي `tools/vendor/` و `vendor/`.
+- إذا وجدته الأداة، تستخدمه مباشرة.
+- إذا لم تجده، تنتقل إلى السلوك الاحتياطي عبر `language-tool-python`، والذي قد يقوم بتحميل LanguageTool مرة واحدة ثم تخزينه مؤقتاً.
+
 ## What This Toolkit Does
 This toolkit audits localization data and key usage across multiple project styles. It supports:
 - localization usage audits
@@ -108,7 +230,7 @@ The detector scores each supported profile using:
 If confidence is too low or ambiguous, the toolkit stops and asks you to set `project_profile` manually.
 
 ## Bootstrap the Environment
-Use the bootstrap script from project root:
+Use the bootstrap script from project root. For many users this is the preferred first step:
 ```bash
 ./bootstrap.sh
 ```
@@ -123,10 +245,13 @@ Useful flags:
 
 The bootstrap script:
 - creates `.venv` if missing
+- upgrades `pip`
 - installs required dependencies
 - optionally installs optional and dev dependencies
 - can run schema validation
 - can run tests
+
+Manual setup is still supported when you want to install dependencies step by step yourself.
 
 ## Run Audits
 Fast audit:
@@ -301,7 +426,7 @@ If code is scanned in the wrong directories:
 
 If grammar audit is shallow:
 - verify Java
-- verify `vendor/LanguageTool-6.6`
+- verify a local `LanguageTool-*` directory under `tools/vendor/` or `vendor/`, or allow the `language-tool-python` fallback to initialize
 
 If fixture tests fail in a copied project:
 - ensure the audit is being run with explicit fixture paths

@@ -4,11 +4,20 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from collections import Counter
 from pathlib import Path
 
+from core.context_evaluator import (
+    build_context_bundle,
+    build_language_tool_python_signals,
+    evaluate_candidate_change,
+    load_en_languagetool_signals,
+    merge_linguistic_signals,
+)
 from core.audit_runtime import load_json_dict, load_locale_mapping, load_runtime, write_json
+from core.usage_scanner import scan_code_usage
 
 
 def compile_term_pattern(term: str) -> re.Pattern[str]:
@@ -24,16 +33,28 @@ def make_violation(
     expected: str = "",
     found: str = "",
     term: str = "",
+    severity: str = "",
+    fix_mode: str = "review_required",
+    context_bundle: dict[str, object] | None = None,
+    review_reason: str = "",
 ) -> dict[str, str]:
+    context_bundle = context_bundle or {}
     return {
         "key": key,
         "violation_type": violation_type,
+        "severity": severity,
+        "fix_mode": fix_mode,
         "message": message,
         "term_en": term,
         "expected_ar": expected,
         "found_ar": found,
         "english_value": english,
         "arabic_value": arabic,
+        "context_type": str(context_bundle.get("inferred_text_type", "")),
+        "context_flags": "|".join(str(item) for item in context_bundle.get("context_sensitive_term_flags", [])),
+        "semantic_risk": str(context_bundle.get("semantic_risk", "low")),
+        "lt_signals": json.dumps(context_bundle.get("linguistic_signals", {}), ensure_ascii=False, sort_keys=True),
+        "review_reason": review_reason or str(context_bundle.get("review_reason", "")),
     }
 
 
@@ -49,6 +70,19 @@ def main() -> None:
     en_data = load_locale_mapping(Path(args.en), runtime, runtime.source_locale)
     ar_data = load_locale_mapping(Path(args.ar), runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
     glossary = load_json_dict(Path(args.glossary))
+    usage_data = scan_code_usage(
+        runtime.code_dirs,
+        runtime.usage_patterns,
+        runtime.allowed_extensions,
+        profile=runtime.project_profile,
+        locale_format=runtime.locale_format,
+        locale_keys=set(en_data) | set(ar_data),
+    )
+    usage_contexts = usage_data.get("usage_contexts", {})
+    lt_signals = merge_linguistic_signals(
+        load_en_languagetool_signals(runtime.results_dir),
+        build_language_tool_python_signals(ar_data, runtime),
+    )
 
     glossary_terms = []
     for term in glossary.get("terms", []):
@@ -78,18 +112,34 @@ def main() -> None:
         ar_text = ar_value.strip()
         if not en_text or not ar_text:
             continue
+        context_bundle = build_context_bundle(
+            key,
+            en_text,
+            ar_text,
+            usage_locations=list(usage_contexts.get(key, [])),
+            linguistic_signals=lt_signals.get(key),
+        )
 
         for forbidden, approved in global_forbidden:
             if forbidden in ar_text:
+                candidate = ar_text.replace(forbidden, approved)
+                decision = evaluate_candidate_change(context_bundle, candidate)
                 violations.append(
                     make_violation(
                         key,
-                        "forbidden_term",
-                        f"Arabic translation uses forbidden term '{forbidden}'.",
+                        "context_sensitive_term_conflict" if decision["review_required"] else "forbidden_term",
+                        (
+                            f"Arabic translation uses forbidden term '{forbidden}', but the replacement is context-sensitive."
+                            if decision["review_required"]
+                            else f"Arabic translation uses forbidden term '{forbidden}'."
+                        ),
                         en_text,
                         ar_text,
-                        expected=approved,
+                        expected="" if decision["review_required"] else approved,
                         found=forbidden,
+                        severity="medium" if decision["review_required"] else "high",
+                        context_bundle={**context_bundle, "semantic_risk": decision["semantic_risk"], "context_sensitive_term_flags": decision["context_flags"]},
+                        review_reason=str(decision["review_reason"]),
                     )
                 )
 
@@ -99,29 +149,45 @@ def main() -> None:
             approved_ar = term["approved_ar"]
             forbidden_terms = term["forbidden_ar"]
             if approved_ar not in ar_text:
+                decision = evaluate_candidate_change(context_bundle, approved_ar)
                 violations.append(
                     make_violation(
                         key,
-                        "approved_term_missing",
-                        f"English references '{term['term_en']}' but Arabic does not use the approved term.",
+                        "context_sensitive_term_conflict" if decision["review_required"] else "soft_terminology_drift",
+                        (
+                            f"English references '{term['term_en']}' but the glossary replacement is context-sensitive."
+                            if decision["review_required"]
+                            else f"English references '{term['term_en']}' but Arabic does not use the approved glossary term."
+                        ),
                         en_text,
                         ar_text,
-                        expected=approved_ar,
+                        expected="" if decision["review_required"] else approved_ar,
                         term=term["term_en"],
+                        severity="medium" if decision["review_required"] else "low",
+                        context_bundle={**context_bundle, "semantic_risk": decision["semantic_risk"], "context_sensitive_term_flags": decision["context_flags"]},
+                        review_reason=str(decision["review_reason"]),
                     )
                 )
             for forbidden in forbidden_terms:
                 if forbidden in ar_text:
+                    decision = evaluate_candidate_change(context_bundle, ar_text.replace(forbidden, approved_ar))
                     violations.append(
                         make_violation(
                             key,
-                            "terminology_violation",
-                            f"English references '{term['term_en']}' but Arabic uses forbidden terminology.",
+                            "context_sensitive_term_conflict" if decision["review_required"] else "hard_violation",
+                            (
+                                f"English references '{term['term_en']}' but the replacement is context-sensitive."
+                                if decision["review_required"]
+                                else f"English references '{term['term_en']}' but Arabic uses forbidden terminology."
+                            ),
                             en_text,
                             ar_text,
-                            expected=approved_ar,
+                            expected="" if decision["review_required"] else approved_ar,
                             found=forbidden,
                             term=term["term_en"],
+                            severity="medium",
+                            context_bundle={**context_bundle, "semantic_risk": decision["semantic_risk"], "context_sensitive_term_flags": decision["context_flags"]},
+                            review_reason=str(decision["review_reason"]),
                         )
                     )
 

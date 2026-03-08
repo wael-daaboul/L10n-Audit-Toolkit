@@ -15,7 +15,7 @@
   },
   "glossary_file": "docs/terminology/betaxi_glossary_official.json",
   "results_dir": "Results",
-  "languagetool_dir": "vendor/LanguageTool-6.6",
+  "languagetool_dir": "vendor/LanguageTool-current",
   "ar_locale_qc": {
     "enable_exclamation_style": true
   },

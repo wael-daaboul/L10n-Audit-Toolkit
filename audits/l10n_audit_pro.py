@@ -22,17 +22,16 @@ LABELS = {
         "keys_in_en": "Keys in en.json",
         "keys_detected_in_code": "Keys detected in code",
         "dynamic_usage_count": "Dynamic translation usages",
+        "suspicious_usage_count": "Suspicious translation-like usages",
         "used_keys": "Used keys (code ∩ (AR ∪ EN))",
-        "missing_both": "Missing in both language files (code only)",
-        "in_ar_not_en": "In AR not EN",
-        "in_en_not_ar": "In EN not AR",
-        "unused_ar": "Unused in code (AR)",
-        "unused_en": "Unused in code (EN)",
+        "confirmed_missing_keys": "Confirmed missing keys",
+        "confirmed_unused_keys": "Confirmed unused keys",
+        "needs_manual_review": "Needs manual review",
         "empty_ar": "Empty translations (AR)",
         "empty_en": "Empty translations (EN)",
-        "used_missing_both_title": "Keys used in code but missing from BOTH language files",
+        "used_missing_both_title": "Confirmed missing keys",
         "evidence_sample": "Evidence (sample)",
-        "language_mismatch": "Language mismatch",
+        "language_mismatch": "Needs manual review",
         "present_in_ar_not_en_title": "Present in AR but missing in EN",
         "present_in_en_not_ar_title": "Present in EN but missing in AR",
         "missing_in_specific_locale": "Keys missing in a specific locale but present in code + other locale",
@@ -60,17 +59,16 @@ LABELS = {
         "keys_in_en": "عدد المفاتيح في en.json",
         "keys_detected_in_code": "عدد المفاتيح المكتشفة في الكود",
         "dynamic_usage_count": "عدد استخدامات الترجمة الديناميكية",
+        "suspicious_usage_count": "عدد الاستخدامات المشبوهة الشبيهة بالترجمة",
         "used_keys": "المفاتيح المستخدمة (الكود ∩ (العربية ∪ الإنجليزية))",
-        "missing_both": "مفاتيح مفقودة من ملفي اللغة معاً (وموجودة في الكود فقط)",
-        "in_ar_not_en": "موجودة في العربية وغير موجودة في الإنجليزية",
-        "in_en_not_ar": "موجودة في الإنجليزية وغير موجودة في العربية",
-        "unused_ar": "غير مستخدمة في الكود (العربية)",
-        "unused_en": "غير مستخدمة في الكود (الإنجليزية)",
+        "confirmed_missing_keys": "المفاتيح المفقودة المؤكدة",
+        "confirmed_unused_keys": "المفاتيح غير المستخدمة المؤكدة",
+        "needs_manual_review": "عناصر تحتاج مراجعة بشرية",
         "empty_ar": "ترجمات فارغة (العربية)",
         "empty_en": "ترجمات فارغة (الإنجليزية)",
-        "used_missing_both_title": "مفاتيح مستخدمة في الكود لكنها غير موجودة في ملفي اللغة معاً",
+        "used_missing_both_title": "المفاتيح المفقودة المؤكدة",
         "evidence_sample": "أمثلة من أماكن الاستخدام",
-        "language_mismatch": "اختلافات بين ملفي اللغة",
+        "language_mismatch": "عناصر تحتاج مراجعة بشرية",
         "present_in_ar_not_en_title": "موجودة في العربية وغير موجودة في الإنجليزية",
         "present_in_en_not_ar_title": "موجودة في الإنجليزية وغير موجودة في العربية",
         "missing_in_specific_locale": "مفاتيح ناقصة في إحدى اللغتين لكنها موجودة في الكود وفي اللغة الأخرى",
@@ -102,6 +100,8 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
     occurrences = usage_data["static_occurrences"]
     dynamic_examples = usage_data["dynamic_examples"]
     dynamic_usage_count = int(usage_data["dynamic_usage_count"])
+    suspicious_examples = usage_data["suspicious_examples"]
+    suspicious_usage_count = int(usage_data["suspicious_usage_count"])
     static_breakdown = usage_data["static_breakdown"]
     dynamic_breakdown = usage_data["dynamic_breakdown"]
 
@@ -116,6 +116,9 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
     in_code_missing_en = sorted((code_keys & ar_keys) - en_keys)
     unused_ar = sorted(ar_keys - code_keys)
     unused_en = sorted(en_keys - code_keys)
+    confirmed_missing_keys = sorted(in_code_missing_both + in_code_missing_ar + in_code_missing_en)
+    confirmed_unused_keys = sorted(unused_ar + unused_en)
+    manual_review_keys = sorted(in_ar_not_en + in_en_not_ar)
     empty_ar = sorted([k for k, v in ar.items() if is_empty_translation(v)])
     empty_en = sorted([k for k, v in en.items() if is_empty_translation(v)])
 
@@ -162,12 +165,11 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
         f.write(f"- {L['keys_in_en']}: **{len(en_keys)}**\n")
         f.write(f"- {L['keys_detected_in_code']}: **{len(code_keys)}**\n")
         f.write(f"- {L['dynamic_usage_count']}: **{dynamic_usage_count}**\n")
+        f.write(f"- {L['suspicious_usage_count']}: **{suspicious_usage_count}**\n")
         f.write(f"- {L['used_keys']}: **{len(used_keys)}**\n")
-        f.write(f"- {L['missing_both']}: **{len(in_code_missing_both)}**\n")
-        f.write(f"- {L['in_ar_not_en']}: **{len(in_ar_not_en)}**\n")
-        f.write(f"- {L['in_en_not_ar']}: **{len(in_en_not_ar)}**\n")
-        f.write(f"- {L['unused_ar']}: **{len(unused_ar)}**\n")
-        f.write(f"- {L['unused_en']}: **{len(unused_en)}**\n")
+        f.write(f"- {L['confirmed_missing_keys']}: **{len(confirmed_missing_keys)}**\n")
+        f.write(f"- {L['confirmed_unused_keys']}: **{len(confirmed_unused_keys)}**\n")
+        f.write(f"- {L['needs_manual_review']}: **{len(manual_review_keys) + suspicious_usage_count}**\n")
         f.write(f"- {L['empty_ar']}: **{len(empty_ar)}**\n")
         f.write(f"- {L['empty_en']}: **{len(empty_en)}**\n\n")
 
@@ -189,6 +191,13 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
         f.write(md_list(in_ar_not_en, limit=300))
         f.write(f"\n### {L['present_in_en_not_ar_title']}\n\n")
         f.write(md_list(in_en_not_ar, limit=300))
+        if suspicious_examples:
+            f.write(f"\n### {L['dynamic_usage_title']}\n\n")
+            for item in suspicious_examples:
+                f.write(
+                    f"- `{item['family']}` — `{project_relative(item['file'], runtime)}:{item['line']}` — "
+                    f"`{item['text']}`\n"
+                )
 
         f.write("---\n\n")
 
@@ -290,25 +299,75 @@ def main():
     unused_en = sorted(en_keys - code_keys)
     empty_ar = sorted([k for k, v in ar.items() if is_empty_translation(v)])
     empty_en = sorted([k for k, v in en.items() if is_empty_translation(v)])
+    confirmed_missing_keys = []
+    for key in in_code_missing_both:
+        confirmed_missing_keys.append({"key": key, "locale": "en/ar", "issue_type": "missing_in_both"})
+    for key in in_code_missing_ar:
+        confirmed_missing_keys.append({"key": key, "locale": "ar", "issue_type": "missing_in_ar"})
+    for key in in_code_missing_en:
+        confirmed_missing_keys.append({"key": key, "locale": "en", "issue_type": "missing_in_en"})
+    confirmed_unused_keys = (
+        [{"key": key, "locale": "ar", "issue_type": "unused_ar"} for key in unused_ar]
+        + [{"key": key, "locale": "en", "issue_type": "unused_en"} for key in unused_en]
+    )
+    needs_manual_review = (
+        [{"key": key, "locale": "en", "issue_type": "in_ar_not_en"} for key in in_ar_not_en]
+        + [{"key": key, "locale": "ar", "issue_type": "in_en_not_ar"} for key in in_en_not_ar]
+        + [
+            {
+                "key": str(item.get("candidate", "")),
+                "locale": "unknown",
+                "issue_type": "suspicious_usage",
+                "family": item["family"],
+                "file": project_relative(item["file"], runtime),
+                "line": item["line"],
+                "text": item["text"],
+            }
+            for item in usage_data["suspicious_usage"]
+        ]
+    )
+    possibly_dynamic_usage = [
+        {
+            "expression": item["expression"],
+            "family": item["family"],
+            "file": project_relative(item["file"], runtime),
+            "line": item["line"],
+            "text": item["text"],
+        }
+        for item in usage_data["dynamic_usage"]
+    ]
 
     write_markdown_report(Path(args.out_en), "en", ar_path, en_path, code_dirs, ar, en, usage_data, runtime)
     write_markdown_report(Path(args.out_ar), "ar", ar_path, en_path, code_dirs, ar, en, usage_data, runtime)
 
     findings = []
-    for key in in_code_missing_both:
-        findings.append({"key": key, "issue_type": "missing_in_both", "locale": "en/ar", "message": "Key is used in code but missing from both locale files."})
-    for key in in_code_missing_ar:
-        findings.append({"key": key, "issue_type": "missing_in_ar", "locale": "ar", "message": "Key is used in code and present in English, but missing in Arabic."})
-    for key in in_code_missing_en:
-        findings.append({"key": key, "issue_type": "missing_in_en", "locale": "en", "message": "Key is used in code and present in Arabic, but missing in English."})
-    for key in in_ar_not_en:
-        findings.append({"key": key, "issue_type": "in_ar_not_en", "locale": "en", "message": "Key exists in Arabic but not in English."})
-    for key in in_en_not_ar:
-        findings.append({"key": key, "issue_type": "in_en_not_ar", "locale": "ar", "message": "Key exists in English but not in Arabic."})
-    for key in unused_ar:
-        findings.append({"key": key, "issue_type": "unused_ar", "locale": "ar", "message": "Arabic locale key is not detected in code."})
-    for key in unused_en:
-        findings.append({"key": key, "issue_type": "unused_en", "locale": "en", "message": "English locale key is not detected in code."})
+    for item in confirmed_missing_keys:
+        message = "Confirmed static key is used in code but missing from the locale file."
+        if item["issue_type"] == "missing_in_both":
+            message = "Confirmed static key is used in code but missing from both locale files."
+        findings.append({**item, "issue_type": "confirmed_missing_key", "message": message})
+    for item in confirmed_unused_keys:
+        findings.append({**item, "issue_type": "confirmed_unused_key", "message": "Locale key is not referenced by any confirmed static usage."})
+    for item in needs_manual_review:
+        findings.append(
+            {
+                "key": item["key"],
+                "issue_type": "needs_manual_review",
+                "locale": item["locale"],
+                "message": "This item needs manual review before the locale files can be considered aligned.",
+                **{k: v for k, v in item.items() if k not in {"key", "issue_type", "locale"}},
+            }
+        )
+    for item in possibly_dynamic_usage:
+        findings.append(
+            {
+                "key": item["expression"],
+                "issue_type": "possibly_dynamic_usage",
+                "locale": "unknown",
+                "message": "Dynamic translation usage was detected and excluded from confirmed missing-key checks.",
+                **item,
+            }
+        )
     for key in empty_ar:
         findings.append({"key": key, "issue_type": "empty_ar", "locale": "ar", "message": "Arabic translation is empty."})
     for key in empty_en:
@@ -324,11 +383,27 @@ def main():
             "en_keys": len(en),
             "code_keys": len(occurrences),
             "dynamic_usage_count": usage_data["dynamic_usage_count"],
+            "suspicious_usage_count": usage_data["suspicious_usage_count"],
             "used_keys": len(set(occurrences) & (set(ar) | set(en))),
-            "missing_in_both": len(set(occurrences) - (set(ar) | set(en))),
+            "confirmed_missing_keys": len(confirmed_missing_keys),
+            "confirmed_unused_keys": len(confirmed_unused_keys),
+            "needs_manual_review": len(needs_manual_review),
         },
         "static_breakdown": usage_data["static_breakdown"],
         "dynamic_breakdown": usage_data["dynamic_breakdown"],
+        "suspicious_breakdown": usage_data["suspicious_breakdown"],
+        "confirmed_static_usage": usage_data["confirmed_static_usage"],
+        "possibly_dynamic_usage": possibly_dynamic_usage,
+        "suspicious_usage_examples": [
+            {
+                "family": item["family"],
+                "file": project_relative(item["file"], runtime),
+                "line": item["line"],
+                "text": item["text"],
+                "candidate": item["candidate"],
+            }
+            for item in usage_data["suspicious_examples"]
+        ],
         "dynamic_usage_examples": [
             {
                 "family": item["family"],
@@ -340,6 +415,10 @@ def main():
             for item in usage_data["dynamic_examples"]
         ],
         "key_normalizations": usage_data["static_raw_keys"],
+        "usage_contexts": usage_data["usage_contexts"],
+        "confirmed_missing_keys": confirmed_missing_keys,
+        "confirmed_unused_keys": confirmed_unused_keys,
+        "needs_manual_review": needs_manual_review,
         "code_occurrences": {
             k: [{"file": project_relative(f, runtime), "line": ln, "text": t} for f, ln, t in v]
             for k, v in occurrences.items()

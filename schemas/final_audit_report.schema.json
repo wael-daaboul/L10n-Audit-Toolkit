@@ -49,7 +49,7 @@
           "group": { "type": "string", "minLength": 1 },
           "key": { "type": "string" },
           "issue_type": { "type": "string", "minLength": 1 },
-          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "warning"] },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
           "message": { "type": "string", "minLength": 1 },
           "locale": { "type": "string" },
           "details": {

@@ -4,16 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
-import shutil
-import subprocess
-import tempfile
-from bisect import bisect_right
 from collections import Counter
 from pathlib import Path
 
 from core.audit_runtime import load_locale_mapping, load_runtime, write_csv, write_json, write_simple_xlsx
+from core.languagetool_manager import create_language_tool_session
 
 CUSTOM_RULES = [
     (r"\bcan not\b", "cannot", "Style/grammar"),
@@ -58,85 +54,44 @@ def build_custom_findings(key: str, text: str) -> list[dict[str, object]]:
     return findings
 
 
-def _extract_json_payload(stdout: str) -> dict[str, object]:
-    json_start = stdout.find("{")
-    if json_start < 0:
-        raise ValueError("LanguageTool output did not contain JSON.")
-    return json.loads(stdout[json_start:])
+def build_languagetool_findings(text_by_key: list[tuple[str, str]], runtime) -> tuple[str, list[dict[str, object]], str | None]:
+    session = create_language_tool_session("en-US", runtime)
+    if session.tool is None:
+        return "rule-based", [], session.note or "LanguageTool session unavailable."
 
-
-def build_languagetool_findings(text_by_key: list[tuple[str, str]], command_jar: Path) -> tuple[str, list[dict[str, object]], str | None]:
-    if not shutil.which("java"):
-        return "rule-based", [], "Java runtime not available."
-    if not command_jar.exists():
-        return "rule-based", [], "Local LanguageTool jar not found."
-
-    lines = [text for _, text in text_by_key]
-    if not lines:
-        return "languagetool-local", [], None
-
-    line_starts: list[int] = []
-    cursor = 0
-    for text in lines:
-        line_starts.append(cursor)
-        cursor += len(text) + 1
-
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".txt", delete=False) as handle:
-        temp_path = Path(handle.name)
-        handle.write("\n".join(lines))
-
+    findings: list[dict[str, object]] = []
     try:
-        command = [
-            "java",
-            "-jar",
-            str(command_jar),
-            "--json",
-            "-l",
-            "en-US",
-            str(temp_path),
-        ]
-        result = subprocess.run(command, check=False, capture_output=True, text=True)
-        if result.returncode != 0:
-            error_text = clean_message(result.stderr or result.stdout)
-            return "rule-based", [], f"LanguageTool execution failed: {error_text}"
-
-        payload = _extract_json_payload(result.stdout)
-        matches = payload.get("matches", [])
-        findings: list[dict[str, object]] = []
-        for match in matches:
-            if not isinstance(match, dict):
-                continue
-            global_offset = int(match.get("offset", 0))
-            line_index = bisect_right(line_starts, global_offset) - 1
-            if line_index < 0 or line_index >= len(text_by_key):
-                continue
-            key, original_text = text_by_key[line_index]
-            local_offset = global_offset - line_starts[line_index]
-            error_length = int(match.get("length", 0))
-            replacements = [item.get("value", "") for item in match.get("replacements", [])[:3] if isinstance(item, dict)]
-            suggested = ""
-            if replacements:
-                suggested = original_text[:local_offset] + replacements[0] + original_text[local_offset + error_length :]
-
-            rule = match.get("rule", {}) if isinstance(match.get("rule"), dict) else {}
-            context = match.get("context", {}) if isinstance(match.get("context"), dict) else {}
-            findings.append(
-                {
-                    "key": key,
-                    "issue_type": rule.get("issueType", "Unknown"),
-                    "rule_id": rule.get("id", "LANGUAGETOOL"),
-                    "message": clean_message(str(match.get("message", ""))),
-                    "old": original_text,
-                    "new": suggested,
-                    "replacements": ", ".join(replacements),
-                    "context": clean_message(str(context.get("text", original_text))),
-                    "offset": local_offset,
-                    "error_length": error_length,
-                }
-            )
-        return "languagetool-local", findings, None
+        for key, original_text in text_by_key:
+            try:
+                matches = session.tool.check(original_text)
+            except Exception as exc:
+                return "rule-based", findings, f"{session.note} LanguageTool check failed: {clean_message(str(exc))}".strip()
+            for match in matches:
+                replacements = [str(getattr(item, "value", item)) for item in getattr(match, "replacements", [])[:3]]
+                offset = int(getattr(match, "offset", 0))
+                error_length = int(getattr(match, "errorLength", getattr(match, "error_length", 0)))
+                suggested = ""
+                if replacements:
+                    suggested = original_text[:offset] + replacements[0] + original_text[offset + error_length :]
+                category = getattr(getattr(match, "category", None), "id", "") or "Unknown"
+                context = getattr(match, "context", original_text)
+                findings.append(
+                    {
+                        "key": key,
+                        "issue_type": str(category),
+                        "rule_id": str(getattr(match, "ruleId", "LANGUAGETOOL")),
+                        "message": clean_message(str(getattr(match, "message", ""))),
+                        "old": original_text,
+                        "new": suggested,
+                        "replacements": ", ".join(replacements),
+                        "context": clean_message(str(context)),
+                        "offset": offset,
+                        "error_length": error_length,
+                    }
+                )
     finally:
-        temp_path.unlink(missing_ok=True)
+        session.close()
+    return session.mode, findings, session.note or None
 
 
 def dedupe_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -174,14 +129,11 @@ def main() -> None:
 
     engine = "rule-based"
     note = None
-    if runtime.languagetool_dir.exists():
-        engine, lt_rows, note = build_languagetool_findings(
-            text_by_key,
-            runtime.languagetool_dir / "languagetool-commandline.jar",
-        )
+    if text_by_key:
+        engine, lt_rows, note = build_languagetool_findings(text_by_key, runtime)
         rows.extend(lt_rows)
     else:
-        note = "Local LanguageTool directory not found. Used built-in rule-based grammar checks only."
+        note = "No English strings required LanguageTool analysis."
 
     rows = dedupe_rows(rows)
     rows.sort(key=lambda item: (str(item["key"]), str(item.get("issue_type", "")), str(item.get("rule_id", ""))))

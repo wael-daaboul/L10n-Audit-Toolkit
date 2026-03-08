@@ -21,12 +21,13 @@ BUILTIN_USAGE_SPECS: dict[str, UsagePatternSpec] = {
     "flutter_getx_tr_dynamic": UsagePatternSpec("flutter_getx_tr_dynamic", r"""\b(?P<expr>[A-Za-z_][A-Za-z0-9_.$>\-?]*)\s*\.tr\b""", "flutter_getx_dynamic", "dynamic"),
     "flutter_tr_call": UsagePatternSpec("flutter_tr_call", r"""(?<![\w.$])tr\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "flutter_getx_static", "static"),
     "flutter_tr_call_dynamic": UsagePatternSpec("flutter_tr_call_dynamic", r"""(?<![\w.$])tr\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "flutter_getx_dynamic", "dynamic"),
-    "flutter_translate": UsagePatternSpec("flutter_translate", r"""\btranslate\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "flutter_translate_static", "static"),
-    "flutter_translate_dynamic": UsagePatternSpec("flutter_translate_dynamic", r"""\btranslate\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "flutter_translate_dynamic", "dynamic"),
+    "flutter_translate": UsagePatternSpec("flutter_translate", r"""(?<![\w$.])translate\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "flutter_translate_static", "static"),
+    "flutter_translate_dynamic": UsagePatternSpec("flutter_translate_dynamic", r"""(?<![\w$.])translate\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "flutter_translate_dynamic", "dynamic"),
     "flutter_get_translated": UsagePatternSpec("flutter_get_translated", r"""\bgetTranslated\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "flutter_getx_static", "static"),
-    "flutter_dot_translate": UsagePatternSpec("flutter_dot_translate", r"""\.translate\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "flutter_getx_static", "static"),
-    "laravel_custom_translate_static": UsagePatternSpec("laravel_custom_translate_static", r"""\btranslate\s*\(\s*(?:key\s*:\s*)?(['"])(?P<key>[^'"\r\n]+)\1""", "laravel_custom_translate_static", "static"),
-    "laravel_custom_translate_dynamic": UsagePatternSpec("laravel_custom_translate_dynamic", r"""\btranslate\s*\(\s*(?:key\s*:\s*)?(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "laravel_custom_translate_dynamic", "dynamic"),
+    "flutter_dot_translate": UsagePatternSpec("flutter_dot_translate", r"""\.translate\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "flutter_translate_suspicious", "suspicious"),
+    "flutter_dot_translate_dynamic": UsagePatternSpec("flutter_dot_translate_dynamic", r"""\.translate\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "flutter_translate_suspicious", "suspicious"),
+    "laravel_custom_translate_static": UsagePatternSpec("laravel_custom_translate_static", r"""(?<![\w$.])translate\s*\(\s*(?:key\s*:\s*)?(['"])(?P<key>[^'"\r\n]+)\1""", "laravel_custom_translate_static", "static"),
+    "laravel_custom_translate_dynamic": UsagePatternSpec("laravel_custom_translate_dynamic", r"""(?<![\w$.])translate\s*\(\s*(?:key\s*:\s*)?(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "laravel_custom_translate_dynamic", "dynamic"),
     "laravel_trans_helper": UsagePatternSpec("laravel_trans_helper", r"""\b__\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "laravel_native_static", "static"),
     "laravel_trans_helper_dynamic": UsagePatternSpec("laravel_trans_helper_dynamic", r"""\b__\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "laravel_native_dynamic", "dynamic"),
     "laravel_lang_directive": UsagePatternSpec("laravel_lang_directive", r"""@lang\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "laravel_native_static", "static"),
@@ -46,6 +47,7 @@ DYNAMIC_PATTERN_COMPANIONS = {
     "flutter_getx_tr": ("flutter_getx_tr_dynamic",),
     "flutter_tr_call": ("flutter_tr_call_dynamic",),
     "flutter_translate": ("flutter_translate_dynamic",),
+    "flutter_dot_translate": ("flutter_dot_translate_dynamic",),
     "laravel_custom_translate_static": ("laravel_custom_translate_dynamic",),
     "laravel_trans_helper": ("laravel_trans_helper_dynamic",),
     "laravel_lang_directive": ("laravel_lang_directive_dynamic",),
@@ -114,6 +116,35 @@ def matches_extension(path: Path, allowed_extensions: tuple[str, ...] | list[str
     return any(as_posix.endswith(extension) for extension in allowed_extensions)
 
 
+def infer_usage_location(file_path: Path, snippet: str) -> str:
+    haystack = f"{file_path.name} {snippet}".lower()
+    if any(token in haystack for token in ("snackbar", "flushbar", "scaffoldmessenger")):
+        return "snackbar"
+    if "toast" in haystack:
+        return "toast"
+    if "notification_title" in haystack:
+        return "notification_title"
+    if "notification_body" in haystack or "pushbody" in haystack:
+        return "notification_body"
+    if "subtitle" in haystack:
+        return "subtitle"
+    if "helpertext" in haystack or "helper_text" in haystack:
+        return "helper_text"
+    if "hinttext" in haystack or "placeholder" in haystack:
+        return "form_hint"
+    if "labeltext" in haystack or "formfield" in haystack or "textfield" in haystack:
+        return "form_label"
+    if "alertdialog" in haystack and "title" in haystack:
+        return "dialog_title"
+    if "alertdialog" in haystack or "showdialog" in haystack or "dialog" in haystack:
+        return "dialog_body"
+    if "appbar" in haystack or "title:" in haystack:
+        return "title"
+    if any(token in haystack for token in ("elevatedbutton", "textbutton", "outlinedbutton", "iconbutton", "button(")):
+        return "button"
+    return "unknown"
+
+
 def _line_starts(text: str) -> list[int]:
     starts = [0]
     for index, char in enumerate(text):
@@ -151,9 +182,12 @@ def scan_code_usage(
 ) -> dict[str, object]:
     static_occurrences: dict[str, list[tuple[Path, int, str]]] = defaultdict(list)
     static_raw_keys: dict[str, set[str]] = defaultdict(set)
+    usage_contexts: dict[str, set[str]] = defaultdict(set)
     static_breakdown: Counter[str] = Counter()
     dynamic_breakdown: Counter[str] = Counter()
+    suspicious_breakdown: Counter[str] = Counter()
     dynamic_usages: list[dict[str, object]] = []
+    suspicious_usages: list[dict[str, object]] = []
     seen_files: set[Path] = set()
     compiled_specs = compile_usage_specs(patterns)
 
@@ -180,25 +214,33 @@ def scan_code_usage(
                         normalized_key = normalize_usage_key(raw_key, spec.family, profile, locale_format, locale_keys)
                         static_occurrences[normalized_key].append((file_path, line_number, snippet))
                         static_raw_keys[normalized_key].add(raw_key)
+                        usage_contexts[normalized_key].add(infer_usage_location(file_path, snippet))
                         static_breakdown[spec.family] += 1
                     else:
-                        expr = str(match.groupdict().get("expr", "")).strip()
-                        if not expr:
-                            continue
-                        if expr.startswith(("'", '"')):
-                            continue
-                        if expr.startswith("key:") and expr.split(":", 1)[1].lstrip().startswith(("'", '"')):
-                            continue
-                        dynamic_usages.append(
-                            {
-                                "family": spec.family,
-                                "file": file_path,
-                                "line": line_number,
-                                "text": snippet,
-                                "expression": expr,
-                            }
-                        )
-                        dynamic_breakdown[spec.family] += 1
+                        payload = {
+                            "family": spec.family,
+                            "file": file_path,
+                            "line": line_number,
+                            "text": snippet,
+                        }
+                        if spec.mode == "dynamic":
+                            expr = str(match.groupdict().get("expr", "")).strip()
+                            if not expr:
+                                continue
+                            if expr.startswith(("'", '"')):
+                                continue
+                            if expr.startswith("key:") and expr.split(":", 1)[1].lstrip().startswith(("'", '"')):
+                                continue
+                            payload["expression"] = expr
+                            dynamic_usages.append(payload)
+                            dynamic_breakdown[spec.family] += 1
+                        else:
+                            candidate = str(match.groupdict().get("key") or match.groupdict().get("expr") or "").strip()
+                            if not candidate:
+                                continue
+                            payload["candidate"] = candidate
+                            suspicious_usages.append(payload)
+                            suspicious_breakdown[spec.family] += 1
 
     dynamic_examples = [
         {
@@ -210,15 +252,32 @@ def scan_code_usage(
         }
         for item in dynamic_usages[:20]
     ]
+    suspicious_examples = [
+        {
+            "family": item["family"],
+            "file": item["file"],
+            "line": item["line"],
+            "text": item["text"],
+            "candidate": item["candidate"],
+        }
+        for item in suspicious_usages[:20]
+    ]
 
     return {
+        "confirmed_static_usage": sorted(static_occurrences),
         "static_occurrences": static_occurrences,
         "static_breakdown": dict(sorted(static_breakdown.items())),
         "static_raw_keys": {key: sorted(values) for key, values in static_raw_keys.items()},
+        "usage_contexts": {key: sorted(value for value in values if value) for key, values in usage_contexts.items()},
+        "dynamic_usage": dynamic_usages,
         "dynamic_usages": dynamic_usages,
         "dynamic_breakdown": dict(sorted(dynamic_breakdown.items())),
         "dynamic_usage_count": len(dynamic_usages),
         "dynamic_examples": dynamic_examples,
+        "suspicious_usage": suspicious_usages,
+        "suspicious_breakdown": dict(sorted(suspicious_breakdown.items())),
+        "suspicious_usage_count": len(suspicious_usages),
+        "suspicious_examples": suspicious_examples,
     }
 
 

@@ -134,3 +134,38 @@ def test_existing_framework_static_support_is_preserved(tmp_path: Path) -> None:
     assert "common.save" in usage["static_occurrences"]
     assert "common.cancel" in usage["static_occurrences"]
     assert "nav.home" in usage["static_occurrences"]
+
+
+def test_suspicious_translate_member_calls_do_not_create_confirmed_keys(tmp_path: Path) -> None:
+    code_dir = tmp_path / "src"
+    code_dir.mkdir()
+    (code_dir / "widget.dart").write_text(
+        "\n".join(
+            [
+                "Transform.translate(offset: offset, child: child);",
+                "controller.translate('cta.title');",
+                "'real.key'.tr;",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    usage = scan_code_usage(
+        [code_dir],
+        ["flutter_getx_tr", "flutter_translate", "flutter_dot_translate"],
+        [".dart"],
+    )
+
+    assert usage["confirmed_static_usage"] == ["real.key"]
+    assert usage["suspicious_usage_count"] == 2
+    assert {item["candidate"] for item in usage["suspicious_usage"]} == {"cta.title", "offset: offset"}
+
+
+def test_usage_scanner_infers_button_context(tmp_path: Path) -> None:
+    code_dir = tmp_path / "src"
+    code_dir.mkdir()
+    (code_dir / "page.dart").write_text("TextButton(onPressed: save, child: 'common.save'.tr)\n", encoding="utf-8")
+
+    usage = scan_code_usage([code_dir], ["flutter_getx_tr"], [".dart"])
+
+    assert usage["usage_contexts"]["common.save"] == ["button"]

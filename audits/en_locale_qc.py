@@ -59,11 +59,24 @@ RULES = [
 ]
 
 
-def make_finding(key: str, issue_type: str, message: str, old: str, new: str = "", severity: str = "warning", related: str = "") -> dict[str, str]:
+def severity_for_issue(issue_type: str, severity: str | None = None) -> str:
+    if severity:
+        normalized = severity.lower()
+        return "medium" if normalized == "warning" else normalized
+    if issue_type in {"grammar", "ui_wording"}:
+        return "medium"
+    if issue_type in {"spacing", "style", "spelling", "capitalization"}:
+        return "low"
+    if issue_type in {"key_naming", "placeholder_mismatch"}:
+        return "high"
+    return "info"
+
+
+def make_finding(key: str, issue_type: str, message: str, old: str, new: str = "", severity: str = "", related: str = "") -> dict[str, str]:
     return {
         "key": key,
         "issue_type": issue_type,
-        "severity": severity,
+        "severity": severity_for_issue(issue_type, severity),
         "message": message,
         "old": old,
         "new": new,

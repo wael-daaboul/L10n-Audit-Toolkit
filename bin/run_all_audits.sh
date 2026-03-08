@@ -11,6 +11,11 @@ mkdir -p "$RESULTS_DIR"
 usage() {
   cat <<'EOF'
 Usage: ./tools/bin/run_all_audits.sh [--stage fast|full|grammar|terminology|placeholders|ar-qc|icu|reports|autofix]
+
+Main workflow outputs:
+- Dashboard:    Results/final/final_audit_report.md
+- Review queue: Results/review/review_queue.xlsx
+- Final locale: Results/final_locale/ar.final.json
 EOF
 }
 
@@ -130,3 +135,9 @@ esac
 echo
 echo "Generated reports:"
 find "$RESULTS_DIR" -maxdepth 3 -type f | sort | sed "s|$TOOLS_DIR/||"
+echo
+echo "Primary workflow artifacts:"
+echo "- Results/final/final_audit_report.md"
+echo "- Results/review/review_queue.xlsx"
+echo "- Results/fixes/safe_fixes_applied_report.json"
+echo "- Results/final_locale/ar.final.json"

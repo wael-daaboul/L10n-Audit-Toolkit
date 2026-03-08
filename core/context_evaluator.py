@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import re
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+from core.languagetool_manager import create_language_tool_session
+
+EN_RISK_TERMS = {
+    "admin",
+    "administration",
+    "manager",
+    "customer",
+    "rider",
+    "driver",
+    "captain",
+    "delivery man",
+    "operator",
+    "team",
+    "department",
+    "office",
+    "support",
+}
+EN_PERSON_TERMS = {"manager", "customer", "rider", "driver", "captain", "delivery man", "operator"}
+EN_ENTITY_TERMS = {"admin", "administration", "team", "department", "office", "support"}
+AR_PERSON_TERMS = {"المدير", "المشرف", "العميل", "الراكب", "السائق", "الكابتن", "المندوب", "الموظف"}
+AR_ENTITY_TERMS = {"الإدارة", "الدعم", "الفريق", "القسم", "المكتب", "النظام"}
+SENTENCE_END_RE = re.compile(r"[.!?؟]$")
+WORD_RE = re.compile(r"[A-Za-z\u0600-\u06FF0-9]+")
+
+TEXT_TYPE_HINTS = {
+    "button": {"button", "btn", "cta", "submit", "save", "cancel"},
+    "title": {"title", "heading", "header", "screen_title"},
+    "subtitle": {"subtitle", "sub_title", "caption"},
+    "helper_text": {"helper", "hint", "instruction", "details", "description", "helper_text", "note"},
+    "dialog_title": {"dialog_title", "alert_title", "modal_title"},
+    "dialog_body": {"dialog_body", "dialog_message", "alert_message", "modal_body"},
+    "snackbar": {"snackbar", "toast", "flash_message"},
+    "notification_title": {"notification_title"},
+    "notification_body": {"notification_body", "push_body"},
+    "form_label": {"label", "field", "name"},
+    "form_hint": {"hint", "placeholder"},
+}
+
+
+def split_key_tokens(key: str) -> list[str]:
+    normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key)
+    normalized = re.sub(r"[^A-Za-z0-9]+", "_", normalized)
+    return [token.lower() for token in normalized.split("_") if token]
+
+
+def is_sentence_like(text: str) -> bool:
+    stripped = text.strip()
+    words = WORD_RE.findall(stripped)
+    return bool(stripped) and (len(words) >= 7 or "\n" in stripped or bool(SENTENCE_END_RE.search(stripped)))
+
+
+def is_short_label(text: str) -> bool:
+    stripped = text.strip()
+    words = WORD_RE.findall(stripped)
+    return bool(stripped) and len(words) <= 3 and not SENTENCE_END_RE.search(stripped)
+
+
+def infer_text_type(key: str, en_value: str, usage_locations: list[str]) -> str:
+    if usage_locations:
+        preferred = [item for item in usage_locations if item != "unknown"]
+        if preferred:
+            counts = Counter(preferred)
+            return counts.most_common(1)[0][0]
+
+    tokens = set(split_key_tokens(key))
+    for text_type, hints in TEXT_TYPE_HINTS.items():
+        if tokens & hints:
+            return text_type
+
+    lowered = en_value.strip().lower()
+    if is_sentence_like(en_value):
+        if any(token in lowered for token in ("please", "tap", "click", "add ", "enter ", "select ", "to ")):
+            return "helper_text"
+        return "subtitle"
+    if is_short_label(en_value):
+        return "button"
+    return "text"
+
+
+def load_en_languagetool_signals(results_dir: Path) -> dict[str, dict[str, Any]]:
+    report_path = results_dir / "per_tool" / "grammar" / "grammar_audit_report.json"
+    if not report_path.exists():
+        return {}
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    grouped: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in payload.get("findings", []):
+        if isinstance(row, dict):
+            grouped[str(row.get("key", ""))].append(row)
+
+    signals: dict[str, dict[str, Any]] = {}
+    for key, rows in grouped.items():
+        issue_types = Counter(str(row.get("issue_type", "")).lower() for row in rows)
+        rule_ids = [str(row.get("rule_id", "")) for row in rows if row.get("rule_id")]
+        literal_support = any("style" in issue_type or "grammar" in issue_type for issue_type in issue_types)
+        signals[key] = {
+            "lt_style_flags": issue_types.get("style", 0),
+            "lt_grammar_flags": issue_types.get("grammar", 0),
+            "lt_literalness_support": literal_support,
+            "lt_rule_ids": rule_ids[:5],
+            "sources": ["languagetool"],
+        }
+    return signals
+
+
+def build_language_tool_python_signals(ar_data: dict[str, object], runtime) -> dict[str, dict[str, Any]]:
+    session = create_language_tool_session("ar", runtime)
+    if session.tool is None:
+        return {}
+    signals: dict[str, dict[str, Any]] = {}
+    try:
+        for key, value in ar_data.items():
+            if not isinstance(value, str) or not value.strip():
+                continue
+            try:
+                matches = session.tool.check(value)
+            except Exception:
+                continue
+            if not matches:
+                continue
+            categories = Counter(str(getattr(getattr(match, "category", None), "id", "unknown")).lower() for match in matches)
+            signals[str(key)] = {
+                "lt_style_flags": categories.get("style", 0),
+                "lt_grammar_flags": categories.get("grammar", 0),
+                "lt_literalness_support": any("style" in category for category in categories),
+                "lt_rule_ids": [str(getattr(match, "ruleId", "")) for match in matches[:5]],
+                "sources": [session.mode],
+            }
+    finally:
+        session.close()
+    return signals
+
+
+def merge_linguistic_signals(*signal_sets: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    merged: defaultdict[str, dict[str, Any]] = defaultdict(lambda: {"lt_style_flags": 0, "lt_grammar_flags": 0, "lt_literalness_support": False, "lt_rule_ids": [], "sources": []})
+    for signal_set in signal_sets:
+        for key, payload in signal_set.items():
+            target = merged[key]
+            target["lt_style_flags"] += int(payload.get("lt_style_flags", 0))
+            target["lt_grammar_flags"] += int(payload.get("lt_grammar_flags", 0))
+            target["lt_literalness_support"] = bool(target["lt_literalness_support"] or payload.get("lt_literalness_support"))
+            for rule_id in payload.get("lt_rule_ids", []):
+                if rule_id and rule_id not in target["lt_rule_ids"]:
+                    target["lt_rule_ids"].append(rule_id)
+            for source in payload.get("sources", []):
+                if source not in target["sources"]:
+                    target["sources"].append(source)
+    return dict(merged)
+
+
+def english_term_flags(en_value: str) -> list[str]:
+    lowered = en_value.casefold()
+    flags = []
+    for term in sorted(EN_RISK_TERMS):
+        if term in lowered:
+            flags.append(f"en:{term}")
+    return flags
+
+
+def arabic_role_flags(ar_value: str) -> list[str]:
+    flags = []
+    for term in sorted(AR_PERSON_TERMS):
+        if term in ar_value:
+            flags.append(f"ar_person:{term}")
+    for term in sorted(AR_ENTITY_TERMS):
+        if term in ar_value:
+            flags.append(f"ar_entity:{term}")
+    return flags
+
+
+def evaluate_candidate_change(bundle: dict[str, Any], candidate_text: str) -> dict[str, Any]:
+    flags = list(bundle.get("context_sensitive_term_flags", []))
+    semantic_risk = "low"
+    review_reasons: list[str] = []
+    inferred_text_type = str(bundle.get("inferred_text_type", "text"))
+    en_value = str(bundle.get("en_value", ""))
+    ar_value = str(bundle.get("ar_value", ""))
+
+    if bundle.get("has_context_sensitive_terms"):
+        semantic_risk = "medium"
+        review_reasons.append("Possible role/entity ambiguity detected in the English and Arabic pair.")
+
+    en_lower = en_value.casefold()
+    candidate_person = any(term in candidate_text for term in AR_PERSON_TERMS)
+    current_entity = any(term in ar_value for term in AR_ENTITY_TERMS)
+    if ("admin" in en_lower or "administration" in en_lower or "department" in en_lower) and candidate_person and current_entity:
+        semantic_risk = "high"
+        flags.append("role_entity_misalignment")
+        review_reasons.append("Candidate changes an administrative or department reference into a person role.")
+
+    if (is_sentence_like(en_value) or inferred_text_type in {"helper_text", "subtitle", "dialog_body", "notification_body"}) and is_short_label(candidate_text):
+        semantic_risk = "high"
+        flags.append("structural_mismatch")
+        review_reasons.append("Candidate collapses a sentence-like string into a short label or entity term.")
+
+    return {
+        "context_flags": sorted(set(flags)),
+        "semantic_risk": semantic_risk,
+        "review_required": semantic_risk in {"medium", "high"},
+        "review_reason": " ".join(review_reasons).strip(),
+    }
+
+
+def build_context_bundle(
+    key: str,
+    en_value: str,
+    ar_value: str,
+    *,
+    usage_locations: list[str] | None = None,
+    linguistic_signals: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    usage_locations = sorted(set(usage_locations or []))
+    inferred_text_type = infer_text_type(key, en_value, usage_locations)
+    key_tokens = split_key_tokens(key)
+    risk_flags = english_term_flags(en_value) + arabic_role_flags(ar_value)
+    signals = {
+        "lt_style_flags": int((linguistic_signals or {}).get("lt_style_flags", 0)),
+        "lt_grammar_flags": int((linguistic_signals or {}).get("lt_grammar_flags", 0)),
+        "lt_literalness_support": bool((linguistic_signals or {}).get("lt_literalness_support", False)),
+        "lt_rule_ids": list((linguistic_signals or {}).get("lt_rule_ids", [])),
+        "sources": list((linguistic_signals or {}).get("sources", [])),
+    }
+    semantic_risk = "medium" if risk_flags else "low"
+    review_reason = ""
+    if risk_flags:
+        review_reason = "Possible person/department or role/entity ambiguity. Human review required."
+
+    return {
+        "key": key,
+        "en_value": en_value,
+        "ar_value": ar_value,
+        "normalized_key_shape": key_tokens,
+        "inferred_text_type": inferred_text_type,
+        "usage_locations": usage_locations,
+        "linguistic_signals": signals,
+        "context_sensitive_term_flags": sorted(set(risk_flags)),
+        "has_context_sensitive_terms": bool(risk_flags),
+        "semantic_risk": semantic_risk,
+        "review_reason": review_reason,
+    }

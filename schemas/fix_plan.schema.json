@@ -38,7 +38,7 @@
           "locale": { "type": "string", "minLength": 1 },
           "source": { "type": "string", "minLength": 1 },
           "issue_type": { "type": "string", "minLength": 1 },
-          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", "warning", ""] },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info", ""] },
           "classification": { "type": "string", "enum": ["auto_safe", "review_required"] },
           "message": { "type": "string", "minLength": 1 },
           "current_value": { "type": "string" },

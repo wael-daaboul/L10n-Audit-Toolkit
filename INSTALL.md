@@ -23,9 +23,9 @@ Current compatibility scope:
 
 ### Optional System Dependencies
 - Java
-  - needed for local LanguageTool grammar analysis
+  - needed for local LanguageTool grammar analysis and for the `language-tool-python` fallback
 - Local LanguageTool bundle
-  - expected under `vendor/LanguageTool-6.6`
+  - optional, discovered dynamically under `tools/vendor/LanguageTool-*` or `vendor/LanguageTool-*`
 
 ### Python Dependency Files
 - `requirements.txt`
@@ -37,8 +37,11 @@ Current compatibility scope:
 
 ### Current Dependency Model
 - Core runtime and reporting work without third-party Python packages.
-- Grammar gets deeper with Java plus local LanguageTool.
+- Grammar first tries a local LanguageTool installation and then falls back to `language-tool-python`.
 - Some optional Python packages are reserved for richer future audits and developer workflows.
+
+### Recommended First Step
+For many users, `bootstrap.sh` is the preferred first step because it creates `.venv`, upgrades `pip`, installs dependencies, and can optionally validate schemas or run tests.
 
 ### Create and Activate a Virtual Environment
 ```bash
@@ -46,10 +49,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Bootstrap alternative:
+Preferred bootstrap flow:
 ```bash
 ./bootstrap.sh
 ./bootstrap.sh --with-tests --validate-schemas
+./bootstrap.sh --run-tests
 ```
 
 ### Install Mandatory Packages
@@ -87,24 +91,34 @@ If Java is missing:
 - then ensure Java is on `PATH`
 
 ### Verify Local LanguageTool
-Check that this exists:
-- `vendor/LanguageTool-6.6/languagetool-commandline.jar`
+The toolkit first looks for a local LanguageTool installation in the project.
+
+It does not rely on a fixed version like `LanguageTool-6.6`. Instead it accepts any local directory named `LanguageTool-*`.
+
+Preferred discovery locations:
+- `tools/vendor/LanguageTool-*`
+- `vendor/LanguageTool-*`
+
+If you want to pin a specific path, set:
+
+```json
+{
+  "languagetool_dir": "tools/vendor/LanguageTool-7.0"
+}
+```
 
 Quick verification:
 ```bash
-ls vendor/LanguageTool-6.6/languagetool-commandline.jar
+find tools/vendor vendor -maxdepth 1 -type d -name 'LanguageTool-*'
 ```
 
 ### If LanguageTool Is Missing
-Place a compatible LanguageTool distribution under:
-- `vendor/LanguageTool-6.6/`
+If no local LanguageTool installation is found, the toolkit falls back to `language-tool-python`. That fallback may download LanguageTool once and cache it automatically.
 
-Expected important files:
-- `languagetool-commandline.jar`
-- `languagetool.jar`
-- `libs/`
-
-If it is missing, grammar audit still runs with local fallback rules.
+This means:
+- local bundled LanguageTool is used immediately when present
+- no hardcoded version directory is required
+- the GitHub repository can stay smaller because `vendor/LanguageTool-*` does not need to be committed
 
 ### Optional NLP Data
 If future optional checks use TextBlob or NLTK corpora, initialize them only when needed.
@@ -176,7 +190,7 @@ python3 -m pytest tests
 - `java` not found
   - install Java or accept grammar fallback mode
 - LanguageTool jar missing
-  - place the bundle in `vendor/LanguageTool-6.6`
+  - place a `LanguageTool-*` directory under `tools/vendor/` or `vendor/`, or use the cached fallback
 - Permission denied on shell scripts
   - run:
     - `chmod +x bin/run_all_audits.sh`
@@ -193,9 +207,9 @@ python3 -m pytest tests
 
 ### Graceful Degradation Summary
 - No Java:
-  - grammar falls back to local rules
+  - grammar cannot use LanguageTool, so the audit falls back to deterministic local grammar rules
 - No local LanguageTool:
-  - grammar falls back to local rules
+  - grammar falls back to `language-tool-python`, which may download and cache LanguageTool
 - No optional Python packages:
   - core audit, aggregation, and fix-planning still work
 - No optional NLP corpora:
@@ -228,9 +242,9 @@ python3 -m pytest tests
 
 ### التبعيات النظامية الاختيارية
 - Java
-  - مطلوب فقط لتشغيل LanguageTool المحلي
+  - مطلوب لتشغيل LanguageTool المحلي وأيضاً لسلوك `language-tool-python` الاحتياطي
 - LanguageTool المحلي
-  - متوقع داخل `vendor/LanguageTool-6.6`
+  - اختياري، ويتم اكتشافه ديناميكياً داخل `tools/vendor/LanguageTool-*` أو `vendor/LanguageTool-*`
 
 ### ملفات التبعيات في Python
 - `requirements.txt`
@@ -245,6 +259,17 @@ python3 -m pytest tests
 cd tools
 python3 -m venv .venv
 source .venv/bin/activate
+```
+
+### الخطوة الأولى الموصى بها
+بالنسبة لكثير من المستخدمين، يعتبر `bootstrap.sh` أفضل خطوة أولى لأنه ينشئ `.venv` ويرقي `pip` ويثبت المتطلبات ويمكنه أيضاً تشغيل التحقق من المخططات أو الاختبارات.
+
+أمثلة:
+```bash
+./bootstrap.sh
+./bootstrap.sh --with-tests
+./bootstrap.sh --validate-schemas
+./bootstrap.sh --run-tests
 ```
 
 ### تثبيت الحزم الأساسية
@@ -281,14 +306,29 @@ java -version
   - `brew install openjdk`
 
 ### التحقق من LanguageTool المحلي
-تأكد من وجود:
-- `vendor/LanguageTool-6.6/languagetool-commandline.jar`
+تحاول الأداة أولاً العثور على نسخة محلية من LanguageTool داخل المشروع.
+
+ولا تعتمد الأداة على رقم إصدار ثابت مثل `LanguageTool-6.6`، بل تقبل أي مجلد محلي باسم مشابه لـ `LanguageTool-*`.
+
+أماكن البحث المفضلة:
+- `tools/vendor/LanguageTool-*`
+- `vendor/LanguageTool-*`
+
+وإذا أردت تحديد المسار صراحةً في الإعدادات:
+
+```json
+{
+  "languagetool_dir": "tools/vendor/LanguageTool-7.0"
+}
+```
 
 ### إذا كان LanguageTool مفقوداً
-ضع نسخة متوافقة داخل:
-- `vendor/LanguageTool-6.6/`
+إذا لم تجد الأداة نسخة محلية من LanguageTool، فإنها تنتقل إلى السلوك الاحتياطي عبر `language-tool-python`، والذي قد يقوم بتحميل LanguageTool مرة واحدة ثم تخزينه مؤقتاً.
 
-وعند غيابه، ستستمر طبقة القواعد بالعمل باستخدام قواعد محلية أخف.
+وهذا يعني:
+- إذا وجدت الأداة نسخة محلية فإنها تستخدمها فوراً
+- لا حاجة للاعتماد على مجلد بإصدار ثابت
+- يمكن إبقاء مستودع GitHub أخف لأن `vendor/LanguageTool-*` ليس إلزامياً
 
 ### بيانات NLP الاختيارية
 إذا احتاجت بعض الفحوص المستقبلية إلى TextBlob أو NLTK، يمكن تنزيل البيانات عند الحاجة فقط:
@@ -351,7 +391,7 @@ python3 -m pytest tests
 - عدم وجود `java`
   - ثبّت Java أو اقبل وضع التراجع في طبقة القواعد
 - غياب ملفات LanguageTool
-  - ضعها داخل `vendor/LanguageTool-6.6`
+  - ضع مجلد `LanguageTool-*` داخل `tools/vendor/` أو `vendor/` أو استخدم السلوك الاحتياطي عبر التخزين المؤقت
 - مشكلة صلاحيات التنفيذ
   - نفّذ:
     - `chmod +x bin/run_all_audits.sh`
@@ -367,9 +407,9 @@ python3 -m pytest tests
 
 ### ملخص التراجع الآمن
 - غياب Java:
-  - تدقيق القواعد يرجع إلى القواعد المحلية
+  - لا يمكن استخدام LanguageTool، لذلك يرجع تدقيق القواعد إلى القواعد المحلية الحتمية
 - غياب LanguageTool المحلي:
-  - تدقيق القواعد يرجع إلى القواعد المحلية
+  - ينتقل تدقيق القواعد إلى `language-tool-python` والذي قد يقوم بالتحميل والتخزين المؤقت
 - غياب الحزم الاختيارية:
   - تبقى الطبقات الأساسية والتجميع وخطة الإصلاح عاملة
 - غياب `pytest`:

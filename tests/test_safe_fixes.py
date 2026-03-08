@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from core.audit_runtime import read_simple_xlsx, write_simple_xlsx
+from fixes.apply_review_fixes import main as review_main
 from fixes.apply_safe_fixes import apply_safe_changes, build_fix_plan, main
 
 
@@ -65,6 +67,8 @@ def test_safe_fixes_main_supports_json_locales(monkeypatch, tmp_path: Path) -> N
             str(runtime.results_dir / "fixes" / "fix_plan.json"),
             "--out-plan-xlsx",
             str(runtime.results_dir / "fixes" / "fix_plan.xlsx"),
+            "--out-applied-report",
+            str(runtime.results_dir / "fixes" / "safe_fixes_applied_report.json"),
             "--out-en-fixed",
             str(runtime.results_dir / "fixes" / "en.fixed.json"),
             "--out-ar-fixed",
@@ -78,8 +82,10 @@ def test_safe_fixes_main_supports_json_locales(monkeypatch, tmp_path: Path) -> N
 
     fixed_en = json.loads((runtime.results_dir / "fixes" / "en.fixed.json").read_text(encoding="utf-8"))
     fixed_ar = json.loads((runtime.results_dir / "fixes" / "ar.fixed.json").read_text(encoding="utf-8"))
+    applied_report = json.loads((runtime.results_dir / "fixes" / "safe_fixes_applied_report.json").read_text(encoding="utf-8"))
     assert fixed_en["trimmed"] == "hello"
     assert fixed_ar["trimmed"] == "مرحبا"
+    assert applied_report["summary"]["keys_auto_fixed"] == 2
     assert (runtime.results_dir / "exports" / "en.json").exists()
     assert (runtime.results_dir / "exports" / "ar.json").exists()
 
@@ -104,6 +110,8 @@ def test_safe_fixes_main_supports_laravel_php_locales(monkeypatch, tmp_path: Pat
             str(runtime.results_dir / "fixes" / "fix_plan.json"),
             "--out-plan-xlsx",
             str(runtime.results_dir / "fixes" / "fix_plan.xlsx"),
+            "--out-applied-report",
+            str(runtime.results_dir / "fixes" / "safe_fixes_applied_report.json"),
             "--out-en-fixed",
             str(runtime.results_dir / "fixes" / "en.fixed.json"),
             "--out-ar-fixed",
@@ -121,3 +129,46 @@ def test_safe_fixes_main_supports_laravel_php_locales(monkeypatch, tmp_path: Pat
     assert "lang.intro_link" in fixed_ar
     assert (runtime.results_dir / "exports" / "en" / "lang.php").exists()
     assert (runtime.results_dir / "exports" / "ar" / "lang.php").exists()
+
+
+def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> None:
+    ar_file = tmp_path / "ar.json"
+    _write_json(ar_file, {"welcome": "اهلا", "keep": "كما هو"})
+    runtime = SimpleNamespace(
+        results_dir=tmp_path / "Results",
+        ar_file=ar_file,
+        locale_format="json",
+        target_locales=("ar",),
+    )
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    write_simple_xlsx(
+        [
+            {"key": "welcome", "locale": "ar", "old_value": "اهلا", "issue_type": "confirmed_missing_key", "suggested_fix": "Welcome", "approved_new": "مرحبا", "status": "approved", "notes": ""},
+            {"key": "keep", "locale": "ar", "old_value": "كما هو", "issue_type": "soft_terminology_drift", "suggested_fix": "", "approved_new": "", "status": "pending", "notes": ""},
+        ],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes"],
+        review_queue,
+        sheet_name="Review Queue",
+    )
+
+    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "apply_review_fixes.py",
+            "--review-queue",
+            str(review_queue),
+            "--out-final-json",
+            str(runtime.results_dir / "final_locale" / "ar.final.json"),
+            "--out-report",
+            str(runtime.results_dir / "final_locale" / "review_fixes_report.json"),
+        ],
+    )
+
+    review_main()
+
+    final_payload = json.loads((runtime.results_dir / "final_locale" / "ar.final.json").read_text(encoding="utf-8"))
+    report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
+    assert final_payload["welcome"] == "مرحبا"
+    assert final_payload["keep"] == "كما هو"
+    assert report_payload["summary"]["approved_rows_applied"] == 1
