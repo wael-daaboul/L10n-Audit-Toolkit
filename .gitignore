@@ -37,4 +37,6 @@ Results/*
 !Results/.gitkeep
 reports_output/
 *.log
-vendor/*
+
+# Bundled tools and local dependencies
+vendor/
