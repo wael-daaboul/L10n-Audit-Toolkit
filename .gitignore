@@ -1,4 +1,4 @@
-python3 -m pytest tests# Python bytecode and caches
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
 *.pyo
@@ -37,3 +37,4 @@ Results/*
 !Results/.gitkeep
 reports_output/
 *.log
+vendor/*
