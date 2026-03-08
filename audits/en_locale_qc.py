@@ -10,6 +10,8 @@ from pathlib import Path
 
 from core.audit_runtime import (
     extract_placeholders,
+    is_likely_technical_text,
+    is_risky_for_whitespace_normalization,
     load_json_dict,
     load_locale_mapping,
     load_runtime,
@@ -113,6 +115,8 @@ def detect_capitalization_issue(key: str, text: str) -> dict[str, str] | None:
     stripped = text.strip()
     if not stripped or not re.search(r"[A-Za-z]", stripped):
         return None
+    if is_likely_technical_text(stripped) or any(token in stripped for token in {"<", ">", "{", "}", "%", "$"}):
+        return None
     words = re.findall(r"[A-Za-z][A-Za-z']*", stripped)
     capitalized_words = [word for word in words if word[0].isupper()]
     if len(words) >= 4 and len(capitalized_words) == len(words):
@@ -157,11 +161,12 @@ def main() -> None:
         if isinstance(value, str):
             text = value
             trimmed = text.strip()
-            rows.extend(apply_rules(key, text))
+            if not is_likely_technical_text(text) and "<" not in text and ">" not in text:
+                rows.extend(apply_rules(key, text))
 
             if text != trimmed:
                 rows.append(make_finding(key, "whitespace", "Leading or trailing whitespace.", text, trimmed))
-            if "  " in text:
+            if "  " in text and not is_risky_for_whitespace_normalization(text):
                 rows.append(make_finding(key, "spacing", "Contains repeated internal spaces.", text, re.sub(r" {2,}", " ", text)))
 
             capitalization = detect_capitalization_issue(key, text)

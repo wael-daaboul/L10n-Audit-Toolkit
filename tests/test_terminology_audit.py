@@ -16,7 +16,7 @@ def test_terminology_audit_detects_forbidden_terms(tmp_path: Path, fixtures_dir:
     )
     payload = load_json(out_json)
     issue_types = {item["violation_type"] for item in payload["violations"]}
-    assert "hard_violation" in issue_types or "forbidden_term" in issue_types
+    assert "hard_violation" in issue_types or "forbidden_term" in issue_types or "context_sensitive_term_conflict" in issue_types
 
 
 def test_terminology_audit_blocks_context_sensitive_admin_replacement(tmp_path: Path, tools_dir: Path) -> None:

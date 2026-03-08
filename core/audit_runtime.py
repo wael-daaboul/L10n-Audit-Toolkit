@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -466,6 +467,15 @@ def _excel_column_name(index: int) -> str:
     return label
 
 
+def _excel_column_index(label: str) -> int:
+    index = 0
+    for char in label:
+        if not char.isalpha():
+            break
+        index = index * 26 + (ord(char.upper()) - 64)
+    return max(index - 1, 0)
+
+
 def _xlsx_shared_strings(rows: Sequence[Sequence[str]]) -> tuple[list[str], dict[str, int]]:
     values: list[str] = []
     indices: dict[str, int] = {}
@@ -584,7 +594,7 @@ def write_simple_xlsx(
         archive.writestr("xl/styles.xml", styles_xml)
 
 
-def read_simple_xlsx(path: Path) -> list[dict[str, str]]:
+def read_simple_xlsx(path: Path, required_columns: Sequence[str] | None = None) -> list[dict[str, str]]:
     namespace = {"main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     with ZipFile(path) as archive:
         shared_strings = []
@@ -596,21 +606,30 @@ def read_simple_xlsx(path: Path) -> list[dict[str, str]]:
         worksheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
         rows: list[list[str]] = []
         for row in worksheet.findall(".//main:sheetData/main:row", namespace):
-            values: list[str] = []
+            values_by_index: dict[int, str] = {}
             for cell in row.findall("main:c", namespace):
+                cell_ref = cell.attrib.get("r", "")
+                column_label = "".join(ch for ch in cell_ref if ch.isalpha())
+                column_index = _excel_column_index(column_label) if column_label else len(values_by_index)
                 cell_type = cell.attrib.get("t", "")
                 value_node = cell.find("main:v", namespace)
                 raw_value = value_node.text if value_node is not None and value_node.text is not None else ""
                 if cell_type == "s" and raw_value.isdigit():
                     index = int(raw_value)
-                    values.append(shared_strings[index] if index < len(shared_strings) else "")
+                    values_by_index[column_index] = shared_strings[index] if index < len(shared_strings) else ""
                 else:
-                    values.append(raw_value)
-            rows.append(values)
+                    values_by_index[column_index] = raw_value
+            if values_by_index:
+                max_index = max(values_by_index)
+                rows.append([values_by_index.get(index, "") for index in range(max_index + 1)])
 
     if not rows:
         return []
     header = rows[0]
+    if required_columns:
+        missing = [column for column in required_columns if column not in header]
+        if missing:
+            raise AuditRuntimeError(f"Malformed XLSX sheet '{path}': missing required columns: {', '.join(missing)}")
     table: list[dict[str, str]] = []
     for row in rows[1:]:
         padded = row + [""] * max(0, len(header) - len(row))
@@ -628,26 +647,127 @@ def iter_rows(mapping: dict[str, object]) -> Iterable[tuple[str, str]]:
             yield key, value
 
 
+HTML_TAG_RE = re.compile(r"<[^>]+>")
+ICU_BLOCK_RE = re.compile(r"\{[^{}]+,\s*(plural|select|selectordinal)\s*,", re.IGNORECASE)
+URL_RE = re.compile(r"(https?://\S+|www\.\S+)", re.IGNORECASE)
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+PATH_RE = re.compile(r"(?:\b[a-zA-Z]:\\[^\s]+|(?:^|[\s(])(?:/|~/)[^\s]+)")
+FLAG_RE = re.compile(r"(^|[\s(])--[A-Za-z0-9][A-Za-z0-9-]*")
+CODE_SPAN_RE = re.compile(r"`[^`]+`")
+CLI_COMMAND_RE = re.compile(r"(^|\s)(npm|yarn|pnpm|npx|cd|ls|cat|pip|python|node|git|cargo|composer)\b")
+CAMEL_OR_BRAND_RE = re.compile(r"\b(?:[a-z]+[A-Z][A-Za-z0-9]*|iPhone|iPad|macOS|GitHub)\b")
+PLACEHOLDER_LIKE_RE = re.compile(
+    r"(%(?:\d+\$)?[@sdfox]|\$\{[A-Za-z0-9_]+\}|\{\{?[A-Za-z0-9_]+\}?\}|\$\d+|:\w+|#)"
+)
+
+
+def compute_text_hash(value: object) -> str:
+    text = value if isinstance(value, str) else str(value)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def compute_plan_id(*parts: object) -> str:
+    joined = "\x1f".join(str(part) for part in parts)
+    return compute_text_hash(joined)[:16]
+
+
+def has_html_or_xml(text: str) -> bool:
+    return bool(HTML_TAG_RE.search(text))
+
+
+def has_icu_syntax(text: str) -> bool:
+    return bool(ICU_BLOCK_RE.search(text))
+
+
+def is_likely_technical_text(text: str) -> bool:
+    return any(
+        (
+            URL_RE.search(text),
+            EMAIL_RE.search(text),
+            PATH_RE.search(text),
+            FLAG_RE.search(text),
+            CODE_SPAN_RE.search(text),
+            CLI_COMMAND_RE.search(text),
+            CAMEL_OR_BRAND_RE.search(text),
+            "://" in text,
+            "\\" in text,
+        )
+    )
+
+
+def is_risky_for_whitespace_normalization(text: str) -> bool:
+    return any(
+        (
+            "\n" in text,
+            "\r" in text,
+            "\t" in text,
+            has_html_or_xml(text),
+            has_icu_syntax(text),
+            bool(parse_placeholders(text)),
+            is_likely_technical_text(text),
+        )
+    )
+
+
+def preserve_original_order(mapping: dict[str, object]) -> dict[str, object]:
+    return {key: mapping[key] for key in mapping}
+
+
 def extract_placeholders(text: str) -> set[str]:
-    patterns = [
-        r"\{[A-Za-z0-9_]+\}",
-        r"\$\{[A-Za-z0-9_]+\}",
-        r"%\d*\$?[sdfox]",
-        r"%@[A-Za-z0-9_]+",
-        r":[A-Za-z_][A-Za-z0-9_]*",
-    ]
-    found: set[str] = set()
-    for pattern in patterns:
-        found.update(re.findall(pattern, text))
-    return found
+    return {str(item["raw"]) for item in parse_placeholders(text)}
+
+
+def _looks_like_colon_placeholder(text: str, start: int, end: int) -> bool:
+    before = text[:start]
+    preceding_word = re.search(r"([A-Za-z][A-Za-z0-9+.-]*)$", before)
+    if preceding_word:
+        protocol = preceding_word.group(1).lower()
+        if protocol in {"http", "https", "mailto", "tel", "ftp", "file"}:
+            return False
+    prev_char = before[-1] if before else ""
+    if prev_char and (prev_char.isalnum() or prev_char in {"/", "\\", "-", "`"}):
+        return False
+    next_char = text[end:end + 1]
+    if next_char and next_char in {"/", "\\", "@"}:
+        return False
+    return True
+
+
+def _add_placeholder_match(
+    items: list[dict[str, object]],
+    occupied: list[tuple[int, int]],
+    *,
+    style: str,
+    raw: str,
+    canonical: str,
+    name: str,
+    position: str,
+    start: int,
+    end: int,
+) -> None:
+    if any(not (end <= left or start >= right) for left, right in occupied):
+        return
+    occupied.append((start, end))
+    items.append(
+        {
+            "raw": raw,
+            "style": style,
+            "canonical": canonical,
+            "name": name,
+            "position": position,
+            "start": start,
+            "end": end,
+        }
+    )
 
 
 def parse_placeholders(text: str) -> list[dict[str, object]]:
     token_specs = [
         ("dollar_brace", re.compile(r"\$\{(?P<name>[A-Za-z0-9_]+)\}")),
+        ("mustache", re.compile(r"\{\{(?P<name>[A-Za-z0-9_]+)\}\}")),
         ("brace", re.compile(r"\{(?P<name>[A-Za-z0-9_]+)\}")),
-        ("printf", re.compile(r"%(?:(?P<position>\d+)\$)?(?P<spec>[sdfox])")),
-        ("percent_named", re.compile(r"%@(?P<name>[A-Za-z0-9_]+)")),
+        ("printf", re.compile(r"%(?:(?P<position>\d+)\$)?(?P<spec>@|[sdfox])")),
+        ("dollar_index", re.compile(r"\$(?P<position>\d+)")),
         ("colon", re.compile(r":(?P<name>[A-Za-z_][A-Za-z0-9_]*)")),
     ]
 
@@ -658,9 +778,6 @@ def parse_placeholders(text: str) -> list[dict[str, object]]:
     for style, pattern in token_specs:
         for match in pattern.finditer(text):
             start, end = match.span()
-            if any(not (end <= left or start >= right) for left, right in occupied):
-                continue
-            occupied.append((start, end))
             name = match.groupdict().get("name") or ""
             spec = match.groupdict().get("spec") or ""
             position = match.groupdict().get("position") or ""
@@ -669,18 +786,42 @@ def parse_placeholders(text: str) -> list[dict[str, object]]:
                     position = str(unnamed_index)
                     unnamed_index += 1
                 canonical = f"%{spec}:{position}"
+                placeholder_name = spec
+            elif style == "dollar_index":
+                canonical = f"${position}"
+                placeholder_name = position
+            elif style == "colon":
+                if not _looks_like_colon_placeholder(text, start, end):
+                    continue
+                canonical = f":{name}"
+                placeholder_name = name
             else:
-                canonical = name.casefold()
-            items.append(
-                {
-                    "raw": match.group(0),
-                    "style": style,
-                    "canonical": canonical,
-                    "name": name or spec,
-                    "position": position,
-                    "start": start,
-                    "end": end,
-                }
+                canonical = name
+                placeholder_name = name
+            _add_placeholder_match(
+                items,
+                occupied,
+                style=style,
+                raw=match.group(0),
+                canonical=canonical,
+                name=placeholder_name,
+                position=position,
+                start=start,
+                end=end,
+            )
+
+    if has_icu_syntax(text):
+        for match in re.finditer(r"#", text):
+            _add_placeholder_match(
+                items,
+                occupied,
+                style="icu_pound",
+                raw="#",
+                canonical="#",
+                name="#",
+                position="",
+                start=match.start(),
+                end=match.end(),
             )
 
     items.sort(key=lambda item: int(item["start"]))

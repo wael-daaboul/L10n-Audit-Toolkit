@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from core.audit_runtime import AuditRuntimeError
 from core.locale_exporters import export_locale_mapping
 from core.locale_loaders import load_locale_mapping
 
@@ -55,3 +58,17 @@ def test_json_exporter_writes_safe_generated_json(tmp_path: Path) -> None:
     assert paths == [out_file]
     loaded = load_locale_mapping(out_file, locale_format="json")
     assert loaded == mapping
+
+
+def test_json_exporter_preserves_original_key_order(tmp_path: Path) -> None:
+    mapping = {"z.last": "Last", "a.first": "First", "m.middle": "Middle"}
+    out_file = tmp_path / "exports" / "ordered.json"
+    export_locale_mapping(mapping, "json", out_file)
+    content = out_file.read_text(encoding="utf-8")
+    assert content.index('"z.last"') < content.index('"a.first"') < content.index('"m.middle"')
+
+
+def test_laravel_php_exporter_rejects_structural_collision(tmp_path: Path) -> None:
+    mapping = {"messages.a": "Value", "messages.a.b": "Nested"}
+    with pytest.raises(AuditRuntimeError):
+        export_locale_mapping(mapping, "laravel_php", tmp_path / "exports" / "en")

@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from core.audit_report_utils import load_all_report_issues, severity_rank, summarize_issues, write_unified_json
-from core.audit_runtime import load_locale_mapping, load_runtime, write_simple_xlsx
+from core.audit_runtime import compute_plan_id, compute_text_hash, load_locale_mapping, load_runtime, write_simple_xlsx
 from fixes.apply_safe_fixes import build_fix_plan
 
 REVIEW_QUEUE_COLUMNS = [
@@ -26,6 +27,12 @@ REVIEW_QUEUE_COLUMNS = [
     "semantic_risk",
     "lt_signals",
     "review_reason",
+    "source_old_value",
+    "source_hash",
+    "suggested_hash",
+    "plan_id",
+    "generated_at",
+    "provenance",
 ]
 HIDDEN_WHEN_EMPTY = {"placeholders", "icu_message_audit"}
 
@@ -124,20 +131,28 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
 
     rows: list[dict[str, str]] = []
     seen: set[tuple[str, str, str, str]] = set()
+    generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     for issue in issues:
         locale = review_locale(issue)
         key = str(issue.get("key", ""))
         issue_type = str(issue.get("issue_type", ""))
+        current_value = old_value_for_issue(issue, en_data, ar_data)
         suggested_fix = suggested_fix_for_issue(issue, en_data, ar_data)
         signature = (key, locale, issue_type, suggested_fix)
         if signature in auto_safe or signature in seen:
             continue
         seen.add(signature)
+        provenance = {
+            "source": str(issue.get("source", "")),
+            "issue_type": issue_type,
+            "severity": str(issue.get("severity", "")),
+            "message": str(issue.get("message", "")),
+        }
         rows.append(
             {
                 "key": key,
                 "locale": locale,
-                "old_value": old_value_for_issue(issue, en_data, ar_data),
+                "old_value": current_value,
                 "issue_type": issue_type,
                 "suggested_fix": suggested_fix,
                 "approved_new": "",
@@ -148,6 +163,12 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "semantic_risk": str((issue.get("details", {}) or {}).get("semantic_risk", "")),
                 "lt_signals": str((issue.get("details", {}) or {}).get("lt_signals", "")),
                 "review_reason": str((issue.get("details", {}) or {}).get("review_reason", "")),
+                "source_old_value": current_value,
+                "source_hash": compute_text_hash(current_value),
+                "suggested_hash": compute_text_hash(suggested_fix),
+                "plan_id": compute_plan_id(key, locale, issue_type, current_value, suggested_fix),
+                "generated_at": generated_at,
+                "provenance": f"{provenance['source']}|{provenance['issue_type']}|{provenance['severity']}",
             }
         )
 

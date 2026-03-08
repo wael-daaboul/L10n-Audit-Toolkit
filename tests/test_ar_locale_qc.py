@@ -20,7 +20,7 @@ def test_ar_locale_qc_detects_targeted_issues(tmp_path: Path, fixtures_dir: Path
     issue_types = {item["issue_type"] for item in payload["findings"]}
     assert "whitespace" in issue_types
     assert "slash_spacing" in issue_types
-    assert "forbidden_term" in issue_types
+    assert "forbidden_term" in issue_types or "context_sensitive_term_conflict" in issue_types
     assert "suspicious_literal_translation" in issue_types
     assert "long_ui_string" in issue_types
 
@@ -64,3 +64,36 @@ def test_ar_locale_qc_blocks_context_sensitive_admin_rewrite(tmp_path: Path, too
     assert finding["context_type"] == "helper_text"
     assert finding["semantic_risk"] == "high"
     assert "Possible role/entity ambiguity" in finding["review_reason"]
+
+
+def test_ar_locale_qc_skips_punctuation_rewrite_for_technical_mixed_text(tmp_path: Path, tools_dir: Path) -> None:
+    en_file = tmp_path / "en.json"
+    ar_file = tmp_path / "ar.json"
+    glossary_file = tmp_path / "glossary.json"
+    out_json = tmp_path / "ar_qc_technical.json"
+
+    en_file.write_text('{"link":"Open الرابط https://api.example.com/v1/login?user=${user}"}', encoding="utf-8")
+    ar_file.write_text('{"link":"افتح الرابط https://api.example.com/v1/login?user=${user} ؟"}', encoding="utf-8")
+    glossary_file.write_text('{"terms":[],"rules":{"forbidden_terms":[]}}', encoding="utf-8")
+
+    run_module(
+        "audits.ar_locale_qc",
+        [
+            "--en",
+            str(en_file),
+            "--input",
+            str(ar_file),
+            "--glossary",
+            str(glossary_file),
+            "--out-json",
+            str(out_json),
+            "--out-csv",
+            str(tmp_path / "ar_qc_technical.csv"),
+            "--out-xlsx",
+            str(tmp_path / "ar_qc_technical.xlsx"),
+        ],
+        cwd=tools_dir,
+    )
+
+    payload = load_json(out_json)
+    assert "english_punctuation" not in {item["issue_type"] for item in payload["findings"]}

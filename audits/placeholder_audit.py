@@ -141,11 +141,15 @@ def compare_placeholders(key: str, en_text: str, ar_text: str) -> list[dict[str,
     en_sequence = [str(item["canonical"]) for item in en_items]
     ar_sequence = [str(item["canonical"]) for item in ar_items]
     if en_sequence and ar_sequence and Counter(en_sequence) == Counter(ar_sequence) and en_sequence != ar_sequence:
+        order_severity = "low"
+        risky_order_styles = {"printf", "dollar_index", "brace", "dollar_brace", "mustache"}
+        if any(str(item["style"]) in risky_order_styles for item in [*en_items, *ar_items]):
+            order_severity = "high"
         findings.append(
             make_finding(
                 key,
                 "order_mismatch",
-                "low",
+                order_severity,
                 "Placeholder order differs between locales.",
                 en_items,
                 ar_items,

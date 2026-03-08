@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 from core.locale_exporters import export_locale_mapping
 from core.audit_report_utils import load_all_report_issues
-from core.audit_runtime import load_locale_mapping, load_runtime, write_json, write_simple_xlsx
+from core.audit_runtime import is_risky_for_whitespace_normalization, load_locale_mapping, load_runtime, write_json, write_simple_xlsx
 
 SAFE_REPLACEMENTS = {
     "can not": "cannot",
@@ -68,7 +69,7 @@ def classify_issue(issue: dict[str, Any]) -> str:
 
 def build_fix_plan(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: dict[tuple[str, str, str], dict[str, Any]] = {}
     for issue in issues:
         details = issue.get("details", {})
         key = str(issue.get("key", ""))
@@ -79,22 +80,29 @@ def build_fix_plan(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
         current = str(details.get("old", details.get("english_value", "")))
         classification = classify_issue(issue)
         signature = (key, locale, candidate)
+        provenance = {
+            "source": str(issue.get("source", "")),
+            "issue_type": str(issue.get("issue_type", "")),
+            "message": str(issue.get("message", "")),
+            "severity": str(issue.get("severity", "")),
+        }
         if signature in seen:
+            seen[signature]["provenance"].append(provenance)
             continue
-        seen.add(signature)
-        plan.append(
-            {
-                "key": key,
-                "locale": locale,
-                "source": str(issue.get("source", "")),
-                "issue_type": str(issue.get("issue_type", "")),
-                "severity": str(issue.get("severity", "")),
-                "classification": classification,
-                "message": str(issue.get("message", "")),
-                "current_value": current,
-                "candidate_value": candidate,
-            }
-        )
+        item = {
+            "key": key,
+            "locale": locale,
+            "source": str(issue.get("source", "")),
+            "issue_type": str(issue.get("issue_type", "")),
+            "severity": str(issue.get("severity", "")),
+            "classification": classification,
+            "message": str(issue.get("message", "")),
+            "current_value": current,
+            "candidate_value": candidate,
+            "provenance": [provenance],
+        }
+        seen[signature] = item
+        plan.append(item)
     return plan
 
 
@@ -146,8 +154,8 @@ def add_direct_locale_safety_pass(data: dict[str, object], locale: str) -> list[
                     "candidate_value": trimmed,
                 }
             )
-        normalized = " ".join(trimmed.split())
-        if normalized != trimmed:
+        normalized = re.sub(r" {2,}", " ", trimmed)
+        if normalized != trimmed and not is_risky_for_whitespace_normalization(value):
             rows.append(
                 {
                     "key": key,
@@ -156,15 +164,16 @@ def add_direct_locale_safety_pass(data: dict[str, object], locale: str) -> list[
                     "issue_type": "spacing",
                     "severity": "low",
                     "classification": "auto_safe",
-                    "message": "Normalize repeated internal spaces.",
+                    "message": "Normalize repeated ASCII spaces.",
                     "current_value": value,
                     "candidate_value": normalized,
+                    "provenance": [{"source": "direct_scan", "issue_type": "spacing", "message": "Normalize repeated ASCII spaces.", "severity": "low"}],
                 }
             )
         if locale == "en":
             lowered = normalized
             for before, after in SAFE_REPLACEMENTS.items():
-                if before in lowered and before != after:
+                if before in lowered and before != after and not is_risky_for_whitespace_normalization(value):
                     rows.append(
                         {
                             "key": key,
@@ -176,6 +185,7 @@ def add_direct_locale_safety_pass(data: dict[str, object], locale: str) -> list[
                             "message": f"Apply known safe replacement: {before} -> {after}",
                             "current_value": value,
                             "candidate_value": lowered.replace(before, after),
+                            "provenance": [{"source": "direct_scan", "issue_type": "known_safe_replacement", "message": f"Apply known safe replacement: {before} -> {after}", "severity": "low"}],
                         }
                     )
     return rows

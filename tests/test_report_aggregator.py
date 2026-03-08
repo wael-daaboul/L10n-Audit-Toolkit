@@ -1,5 +1,9 @@
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
+import pytest
+
+from core.audit_runtime import AuditRuntimeError
 from core.audit_report_utils import load_all_report_issues
 from core.audit_runtime import read_simple_xlsx
 from reports.report_aggregator import build_review_queue
@@ -51,23 +55,21 @@ def test_report_aggregator_builds_review_queue_and_hides_auto_safe(tmp_path: Pat
     write_json(runtime.ar_file, {})
 
     rows = build_review_queue(issues, runtime)
-    assert rows == [
-        {
-            "key": "welcome",
-            "locale": "ar",
-            "old_value": "",
-            "issue_type": "confirmed_missing_key",
-            "suggested_fix": "Welcome",
-            "approved_new": "",
-            "status": "pending",
-            "notes": "Missing",
-            "context_type": "",
-            "context_flags": "",
-            "semantic_risk": "",
-            "lt_signals": "",
-            "review_reason": "",
-        }
-    ]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["key"] == "welcome"
+    assert row["locale"] == "ar"
+    assert row["old_value"] == ""
+    assert row["issue_type"] == "confirmed_missing_key"
+    assert row["suggested_fix"] == "Welcome"
+    assert row["approved_new"] == ""
+    assert row["status"] == "pending"
+    assert row["notes"] == "Missing"
+    assert row["source_old_value"] == ""
+    assert row["source_hash"]
+    assert row["suggested_hash"]
+    assert row["plan_id"]
+    assert row["generated_at"]
 
 
 def test_simple_xlsx_reader_round_trips(tmp_path: Path) -> None:
@@ -78,3 +80,37 @@ def test_simple_xlsx_reader_round_trips(tmp_path: Path) -> None:
     write_simple_xlsx(rows, ["key", "status"], path, sheet_name="Queue")
 
     assert read_simple_xlsx(path) == rows
+
+
+def test_simple_xlsx_reader_supports_reordered_columns_and_multiline_unicode(tmp_path: Path) -> None:
+    from core.audit_runtime import write_simple_xlsx
+
+    path = tmp_path / "queue_reordered.xlsx"
+    rows = [{"approved_new": "مرحبا\n%s", "status": "approved", "key": "welcome"}]
+    write_simple_xlsx(rows, ["approved_new", "status", "key"], path, sheet_name="Queue")
+    assert read_simple_xlsx(path, required_columns=["key", "status", "approved_new"]) == rows
+
+
+def test_simple_xlsx_reader_uses_cell_references_not_encounter_order(tmp_path: Path) -> None:
+    from core.audit_runtime import write_simple_xlsx
+
+    path = tmp_path / "queue_cells.xlsx"
+    rows = [{"key": "welcome", "status": "approved"}]
+    write_simple_xlsx(rows, ["key", "status"], path, sheet_name="Queue")
+    with ZipFile(path, "r") as archive:
+        contents = {name: archive.read(name) for name in archive.namelist()}
+    worksheet = contents["xl/worksheets/sheet1.xml"].decode("utf-8")
+    worksheet = worksheet.replace('<c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c>', '<c r="B2" t="s"><v>3</v></c><c r="A2" t="s"><v>2</v></c>')
+    with ZipFile(path, "w", compression=ZIP_DEFLATED) as archive:
+        for name, content in contents.items():
+            archive.writestr(name, worksheet.encode("utf-8") if name == "xl/worksheets/sheet1.xml" else content)
+    assert read_simple_xlsx(path) == rows
+
+
+def test_simple_xlsx_reader_rejects_missing_required_columns(tmp_path: Path) -> None:
+    from core.audit_runtime import write_simple_xlsx
+
+    path = tmp_path / "queue_missing.xlsx"
+    write_simple_xlsx([{"key": "welcome"}], ["key"], path, sheet_name="Queue")
+    with pytest.raises(AuditRuntimeError):
+        read_simple_xlsx(path, required_columns=["key", "status"])

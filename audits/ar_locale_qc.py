@@ -46,7 +46,19 @@ from core.context_evaluator import (
     load_en_languagetool_signals,
     merge_linguistic_signals,
 )
-from core.audit_runtime import load_json_dict, load_locale_mapping, load_runtime, write_csv, write_json, write_simple_xlsx
+from core.audit_runtime import (
+    has_html_or_xml,
+    has_icu_syntax,
+    is_likely_technical_text,
+    is_risky_for_whitespace_normalization,
+    load_json_dict,
+    load_locale_mapping,
+    load_runtime,
+    parse_placeholders,
+    write_csv,
+    write_json,
+    write_simple_xlsx,
+)
 from core.usage_scanner import scan_code_usage
 
 ARABIC_LETTER_RE = re.compile(r"[\u0600-\u06FF]")
@@ -269,7 +281,7 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
             )
         )
 
-    if REPEATED_SPACE_RE.search(text):
+    if REPEATED_SPACE_RE.search(text) and not is_risky_for_whitespace_normalization(text):
         findings.append(
             make_finding(
                 key,
@@ -328,6 +340,8 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
 
 def detect_punctuation_issues(key: str, text: str, toggles: dict[str, bool]) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
+    if any((is_likely_technical_text(text), has_html_or_xml(text), has_icu_syntax(text), bool(parse_placeholders(text)))):
+        return findings
 
     replacements = {",": "،", ";": "؛", "?": "؟"}
     english_punct_found = [char for char in replacements if char in text]
