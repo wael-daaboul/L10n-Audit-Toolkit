@@ -48,6 +48,7 @@ def _stage_modules(stage: str) -> list[tuple[str, list[str]]]:
         "icu": [("audits.icu_message_audit", [])],
         "reports": [("reports.report_aggregator", [])],
         "autofix": [("fixes.apply_safe_fixes", [])],
+        "ai-review": [("audits.ai_review", [])],
     }
     return mapping[stage]
 
@@ -100,7 +101,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     config_path = workspace_config_path(project_root)
     for module, module_args in _stage_modules(args.stage):
         print(f"Running {module}...")
-        _run_module(module, module_args, config_path)
+        curr_args = list(module_args)
+        if args.command == "run":
+            if getattr(args, "ai_enabled", False):
+                curr_args.append("--ai-enabled")
+            if getattr(args, "ai_api_key", None):
+                curr_args.extend(["--ai-api-key", args.ai_api_key])
+            if getattr(args, "ai_api_base", None):
+                curr_args.extend(["--ai-api-base", args.ai_api_base])
+            if getattr(args, "ai_model", None):
+                curr_args.extend(["--ai-model", args.ai_model])
+        _run_module(module, curr_args, config_path)
     return 0
 
 
@@ -146,7 +157,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run audits using the local workspace config")
     run_parser.add_argument("--path", default=".")
-    run_parser.add_argument("--stage", default="full", choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix"])
+    run_parser.add_argument("--stage", default="full", choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix", "ai-review"])
+    run_parser.add_argument("--ai-enabled", action="store_true", help="Enable AI review features (opt-in)")
+    run_parser.add_argument("--ai-api-key", help="API Key for AI provider")
+    run_parser.add_argument("--ai-api-base", help="Custom API Base URL (OpenAI-compatible)")
+    run_parser.add_argument("--ai-model", help="AI Model to use")
     run_parser.set_defaults(func=cmd_run)
 
     doctor_parser = subparsers.add_parser("doctor", help="Inspect project and workspace discovery")

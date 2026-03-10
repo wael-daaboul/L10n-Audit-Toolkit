@@ -123,11 +123,8 @@ l10n-audit run --stage full
 Useful stage-specific commands:
 
 ```bash
-l10n-audit run --stage fast
-l10n-audit run --stage placeholders
-l10n-audit run --stage terminology
-l10n-audit run --stage icu
-l10n-audit run --stage autofix
+l10n-audit run --stage ai-review --ai-enabled
+l10n-audit run --stage ai-review --ai-enabled --ai-model gpt-4o-mini --ai-api-base https://api.openai.com/v1
 l10n-audit doctor
 l10n-audit update --check
 ```
