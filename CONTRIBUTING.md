@@ -36,6 +36,14 @@ Good contribution areas include:
 - documentation and onboarding
 - framework-profile examples
 
+### Adding a New Audit Module
+
+If you are proposing a new audit module (e.g., `audits/my_new_audit.py`):
+1. **Input:** Modules should accept configuration directly or via the parsed `L10N_AUDIT_CONFIG`.
+2. **Execution:** Keep the logic deterministic. If adding AI or network-heavy checks, put them behind an explicit `--enabled` flag.
+3. **Output:** The module must write its structured JSON findings to `Results/per_tool/your_module_name/report.json` to be picked up by the aggregator.
+4. **Integration:** Add your module to the relevant stages in `core/cli.py` (`_stage_modules` mapping).
+
 ## Development Setup
 
 ```bash

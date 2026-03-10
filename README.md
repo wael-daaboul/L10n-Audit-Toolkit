@@ -72,16 +72,49 @@ The toolkit can report issues such as:
 - Arabic semantic review suggestions for sentence-level meaning loss
 - risky review items that require explicit human approval
 
-## Quick Start
+## 🚀 Quick Start
 
-```bash
-./bootstrap.sh --with-tests
-source .venv/bin/activate
-l10n-audit init
-l10n-audit run --stage fast
-```
+The L10n Audit Toolkit now comes with a powerful CLI. To get started in your localization project:
+
+1. **Initialize Workspace:**
+   ```bash
+   l10n-audit init
+   ```
+2. **Verify Setup:**
+   ```bash
+   l10n-audit doctor
+   ```
+3. **Run a Fast Audit:**
+   ```bash
+   l10n-audit run --stage fast
+   ```
 
 Primary outputs are written under `Results/`.
+
+## 💻 CLI Commands
+
+Here are the main commands you will use daily:
+
+- `l10n-audit --help` - Shows help, usage instructions, and available arguments.
+- `l10n-audit --version` - Displays the current installed version of the toolkit.
+- `l10n-audit init` - Discovers your project and creates the `.l10n-audit/` workspace.
+- `l10n-audit run --stage <STAGE>` - Runs specific or all audit modules (e.g., `fast`, `full`, `autofix`).
+- `l10n-audit doctor` - Diagnoses your current environment and tool configuration.
+- `l10n-audit update` - Fetches the latest global rules and dictionaries to your local workspace.
+- `l10n-audit self-update` - Shows instructions to globally update the CLI tool.
+
+### 🤖 AI-Powered Review
+
+You can enhance your audits with AI (e.g., OpenAI, OpenRouter) to check context, tone, and grammar:
+
+```bash
+l10n-audit run --stage ai-review \
+  --ai-enabled \
+  --ai-api-base "https://openrouter.ai/api/v1" \
+  --ai-model "openai/gpt-4o-mini"
+```
+
+> **Note:** For deep technical details and developer scripts, check the `docs/` folder.
 
 If you are using the repository checkout directly rather than an installed launcher, you can still run:
 
@@ -215,7 +248,11 @@ Detailed directory roles are documented in [docs/overview.md](docs/overview.md).
 - [docs/quickstart.md](docs/quickstart.md): shortest path to first successful run
 - [docs/audit_modules.md](docs/audit_modules.md): audit module reference
 - [docs/review_workflow.md](docs/review_workflow.md): fix plan and review queue behavior
+- [docs/ai_usage.md](docs/ai_usage.md): AI-assisted translation review and CLI options
 - [docs/output_reports.md](docs/output_reports.md): generated outputs and report formats
+- [docs/configuration.md](docs/configuration.md): detailed configuration schema and profiles
+- [docs/ci_cd_integration.md](docs/ci_cd_integration.md): GitHub Actions and GitLab CI setups
+- [docs/terminology_guide.md](docs/terminology_guide.md): formatting your custom glossary.json
 - [examples/README.md](examples/README.md): supported example layouts
 
 ## Contributing

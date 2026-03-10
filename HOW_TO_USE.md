@@ -6,77 +6,121 @@ This guide documents the standard audit, review, approved-fix, and final-locale 
 
 ### English
 
-Step 1 - Run the audit
+## Complete Workflow Guide
 
+The standard process using the L10n Audit Toolkit involves three main phases: Discovery, Auditing, and Fixing.
+
+### 1. Discovery & Initialization
+Go to your project directory and run:
 ```bash
 l10n-audit init
+```
+*Why?* This creates a localized `.l10n-audit` folder containing your project's tailored configurations.
+
+Check if everything was discovered correctly:
+```bash
+l10n-audit doctor
+```
+
+### 2. Running Audits
+You can choose the depth of your audit using the `--stage` parameter.
+
+**For a quick daily check:**
+```bash
+l10n-audit run --stage fast
+```
+*What it does:* Checks basic localization, Arabic localization QC, Semantic QC, Placeholders, and Terminology.
+
+**For a comprehensive check:**
+```bash
 l10n-audit run --stage full
 ```
+*What it does:* Includes `fast` stage plus ICU messages formatting and English grammar checks.
 
-Step 2 - Open the dashboard
-
-Open `Results/final/final_audit_report.md`
-
-This report shows:
-- total issues
-- critical problems
-- safe fixes available
-- review required issues
-
-Step 3 - Review human-decision items
-
-Open `Results/review/review_queue.xlsx`
-
-Edit the `approved_new` column, then set `status = approved`.
-
-Step 4 - Apply reviewed fixes
-
+### 3. Review & Fixes
+To generate a safe fix plan for trivial issues (like whitespace or basic punctuation):
 ```bash
-python -m fixes.apply_review_fixes
+l10n-audit run --stage autofix
 ```
 
-Step 5 - Export final localization
+To leverage AI for reviewing complex translations:
+```bash
+export OPENROUTER_API_KEY="your-key"
+l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
+```
 
-The final file will appear in `Results/final_locale/ar.final.json`
+### 4. Direct Module Execution (Advanced)
+Instead of stages, you can run isolated checks:
+```bash
+l10n-audit run --stage placeholders
+l10n-audit run --stage ar-semantic
+```
 
-This file is the cleaned and reviewed localization file ready for use.
+### 5. Helper Commands
+To check the version or get help on available options:
+```bash
+l10n-audit --version
+l10n-audit --help
+l10n-audit run --help
+```
 
 ### العربية
 
-الخطوة 1 - تشغيل التدقيق
+يتكون مسار العمل القياسي باستخدام L10n Audit Toolkit من ثلاث مراحل رئيسية: الاكتشاف، التدقيق، والإصلاح.
 
+### 1. الاكتشاف والتهيئة (Discovery & Initialization)
+انتقل إلى مجلد مشروعك وقم بتشغيل:
 ```bash
 l10n-audit init
+```
+*لماذا؟* سيقوم هذا بإنشاء مجلد `.l10n-audit` محلي يحتوي على الإعدادات المخصصة لمشروعك.
+
+تحقق مما إذا كان قد تم اكتشاف كل شيء بشكل صحيح:
+```bash
+l10n-audit doctor
+```
+
+### 2. تشغيل التدقيق (Running Audits)
+يمكنك اختيار عمق التدقيق باستخدام معامل `--stage`.
+
+**للفحص السريع اليومي:**
+```bash
+l10n-audit run --stage fast
+```
+*ماذا يفعل:* يفحص الترجمة الأساسية، وعناصر الجودة للعربية، والمراجعة الدلالية، والمتغيرات (Placeholders)، والمصطلحات.
+
+**للفحص الشامل:**
+```bash
 l10n-audit run --stage full
 ```
+*ماذا يفعل:* يتضمن المرحلة السريعة بالإضافة إلى فحص رسائل ICU وقواعد اللغة الإنجليزية.
 
-الخطوة 2 - فتح التقرير الرئيسي
-
-افتح الملف `Results/final/final_audit_report.md`
-
-سيعرض هذا التقرير:
-- عدد المشاكل الكلي
-- المشاكل الحرجة
-- الإصلاحات التلقائية المتاحة
-- العناصر التي تحتاج مراجعة بشرية
-
-الخطوة 3 - مراجعة العناصر التي تحتاج قراراً بشرياً
-
-افتح الملف `Results/review/review_queue.xlsx`
-
-قم بتعديل العمود `approved_new` ثم ضع في عمود الحالة `status = approved`
-
-الخطوة 4 - تطبيق التعديلات المعتمدة
-
+### 3. المراجعة والإصلاح (Review & Fixes)
+لتوليد خطة إصلاح آمنة للمشاكل البسيطة (مثل المسافات الزائدة أو الترقيم):
 ```bash
-python -m fixes.apply_review_fixes
+l10n-audit run --stage autofix
 ```
 
-الخطوة 5 - الحصول على ملف الترجمة النهائي
+لاستخدام الذكاء الاصطناعي لمراجعة الترجمات المعقدة:
+```bash
+export OPENROUTER_API_KEY="your-key"
+l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
+```
 
-سيتم إنشاء الملف النهائي في `Results/final_locale/ar.final.json`
+### 4. تشغيل الوحدات المباشر (Advanced)
+بدلاً من المراحل، يمكنك تشغيل فحوصات معزولة:
+```bash
+l10n-audit run --stage placeholders
+l10n-audit run --stage ar-semantic
+```
 
-وهذا الملف هو نسخة الترجمة النظيفة الجاهزة للاستخدام في التطبيق.
+### 5. أوامر المساعدة ومعرفة الإصدار
+للتحقق من رقم الإصدار الحالي المثبت أو طلب عرض دليل الاستخدام والخيارات المتاحة:
+```bash
+l10n-audit --version
+l10n-audit --help
+l10n-audit run --help
+```
 
 ## Context-Aware Review
 

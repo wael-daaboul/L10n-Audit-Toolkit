@@ -42,20 +42,44 @@ Current compatibility scope:
 - Grammar first tries a local LanguageTool installation and then falls back to `language-tool-python`.
 - Some optional Python packages are reserved for richer future audits and developer workflows.
 
-### Recommended First Step
-For many users, `bootstrap.sh` is the preferred first step because it creates `.venv`, upgrades `pip`, installs dependencies, and can optionally validate schemas or run tests.
+## Installation Guide
 
-### Create and Activate a Virtual Environment
+### For Users (Recommended)
+Install the global CLI tool directly from GitHub using `pipx` to keep it isolated from your system Python:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+pipx install git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
 ```
 
-Preferred bootstrap flow:
+**Verify your installation:**
 ```bash
-./bootstrap.sh
-./bootstrap.sh --with-tests --validate-schemas
-./bootstrap.sh --run-tests
+l10n-audit doctor
+```
+
+### For Developers (Source Code)
+If you want to contribute or use raw scripts, clone the repository and run the bootstrap script:
+
+```bash
+git clone https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
+cd L10n-Audit-Toolkit
+./bootstrap.sh --with-tests
+```
+*(Optional flags: `--skip-optional`, `--validate-schemas`, `--run-tests`)*
+
+When working from source, you can use the legacy bash wrapper if needed:
+```bash
+./bin/run_all_audits.sh --stage fast
+```
+*(We highly recommend using `l10n-audit` CLI instead).*
+
+### Updating
+To update the global CLI:
+```bash
+l10n-audit self-update
+# Or directly via pipx:
+pipx upgrade l10n-audit-toolkit
+# Note: If upgrade fails, you can force reinstall from GitHub:
+# pipx install --force git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
 ```
 
 ### Install Mandatory Packages
@@ -284,14 +308,43 @@ source .venv/bin/activate
 ```
 
 ### الخطوة الأولى الموصى بها
-بالنسبة لكثير من المستخدمين، يعتبر `bootstrap.sh` أفضل خطوة أولى لأنه ينشئ `.venv` ويرقي `pip` ويثبت المتطلبات ويمكنه أيضاً تشغيل التحقق من المخططات أو الاختبارات.
 
-أمثلة:
+#### للمستخدمين (طريقة التثبيت الموصى بها)
+ثبّت الأداة كأمر نظام عالمي (Global CLI) مباشرة من المستودع باستخدام `pipx` لضمان عزلها عن بيئة بايثون الأساسية:
+
 ```bash
-./bootstrap.sh
+pipx install git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
+```
+
+**للتحقق من التثبيت:**
+```bash
+l10n-audit doctor
+```
+
+#### للمطورين (من الكود المصدري)
+إذا كنت ترغب في المساهمة في المشروع أو استخدام السكريبتات الخام، قم بسحب المستودع وتشغيل سكريبت الـ bootstrap:
+
+```bash
+git clone https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
+cd L10n-Audit-Toolkit
 ./bootstrap.sh --with-tests
-./bootstrap.sh --validate-schemas
-./bootstrap.sh --run-tests
+```
+*(خيارات إضافية: `--skip-optional`, `--validate-schemas`, `--run-tests`)*
+
+عند العمل من الكود المصدري، يمكنك استخدام سكريبت الـ bash القديم إذا لزم الأمر:
+```bash
+./bin/run_all_audits.sh --stage fast
+```
+*(نوصي بشدة باستخدام أمر `l10n-audit` بدلاً منه).*
+
+#### التحديث
+لتحديث الأداة العالمية:
+```bash
+l10n-audit self-update
+# أو مباشرة عبر pipx:
+pipx upgrade l10n-audit-toolkit
+# ملاحظة: إذا فشل التحديث، يمكنك إعادة التثبيت إجبارياً من GitHub:
+# pipx install --force git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
 ```
 
 ### تثبيت الحزم الأساسية

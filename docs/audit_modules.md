@@ -109,17 +109,28 @@ The toolkit is modular:
 
 This separation keeps audit logic independent from fix application logic.
 
-## Running Individual Modules
+## Available Stages (`l10n-audit run --stage <STAGE>`)
 
-Examples:
+- `fast`: Localizations + AR QC + Placeholders + Terminology + Aggregation.
+- `full`: `fast` + ICU Audit + Grammar + Full Aggregation.
+- `grammar`: Runs `audits.en_grammar_audit`
+- `terminology`: Runs `audits.terminology_audit`
+- `placeholders`: Runs `audits.placeholder_audit`
+- `ar-qc`: Runs `audits.ar_locale_qc`
+- `ar-semantic`: Runs `audits.ar_semantic_qc`
+- `icu`: Runs `audits.icu_message_audit`
+- `reports`: Runs `reports.report_aggregator`
+- `autofix`: Runs `fixes.apply_safe_fixes`
+- `ai-review`: Runs `audits.ai_review`
+
+### Legacy Scripts vs Python Modules
+If you are developing modules or need raw Python execution, you can bypass the CLI by exporting `L10N_AUDIT_CONFIG`:
 
 ```bash
-python -m audits.placeholder_audit
-python -m audits.terminology_audit
-python -m audits.icu_message_audit
-python -m audits.en_locale_qc
-python -m audits.ar_locale_qc
-python -m audits.ar_semantic_qc
-```
+# Recommended CLI approach
+l10n-audit run --stage terminology
 
-For most users, `./bin/run_all_audits.sh` is the preferred entry point because it runs modules in a predictable sequence and writes standard outputs under `Results/`.
+# Raw Developer approach
+python -m audits.terminology_audit
+```
+Note: Legacy bash scripts (`bin/run_all_audits.sh` and `bin/l10n_audit.sh`) are maintained for backward compatibility but using the Python modules or the CLI is the official path.

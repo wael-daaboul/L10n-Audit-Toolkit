@@ -120,11 +120,18 @@ Contains:
 - skipped fixes
 - integrity-failure reasons
 
-## How To Use The Outputs
+## Manual Execution
+Normally handled by the `fast` or `full` stages, but you can trigger it manually:
+```bash
+l10n-audit run --stage reports
+```
 
-- start with the final Markdown dashboard
-- inspect per-tool reports for module-specific detail
-- use the review queue for approved fixes
-- keep JSON artifacts for CI or archival use
+For developers building raw modules, the module can be invoked with specific sources:
+```bash
+python -m reports.report_aggregator --sources "localization,locale_qc,terminology"
+```
 
-When troubleshooting a change, compare the original per-tool finding, the fix plan entry, and the final review-fix report.
+## Structure Output Summary
+- **`Results/final/final_audit_report.md`**: The main dashboard.
+- **`Results/review/review_queue.xlsx`**: Excel sheet for translators.
+- **`Results/fixes/`**: Logs of safe fixes applied.
