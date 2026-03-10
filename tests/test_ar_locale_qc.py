@@ -97,3 +97,41 @@ def test_ar_locale_qc_skips_punctuation_rewrite_for_technical_mixed_text(tmp_pat
 
     payload = load_json(out_json)
     assert "english_punctuation" not in {item["issue_type"] for item in payload["findings"]}
+
+
+def test_ar_locale_qc_flags_sentence_shape_and_meaning_loss(tmp_path: Path, tools_dir: Path) -> None:
+    en_file = tmp_path / "en.json"
+    ar_file = tmp_path / "ar.json"
+    glossary_file = tmp_path / "glossary.json"
+    out_json = tmp_path / "ar_qc_sentence.json"
+
+    en_file.write_text('{"save_profile_helper":"Save your profile to continue."}', encoding="utf-8")
+    ar_file.write_text('{"save_profile_helper":"الملف الشخصي للمتابعة"}', encoding="utf-8")
+    glossary_file.write_text('{"terms":[],"rules":{"forbidden_terms":[]}}', encoding="utf-8")
+
+    run_module(
+        "audits.ar_locale_qc",
+        [
+            "--en",
+            str(en_file),
+            "--input",
+            str(ar_file),
+            "--glossary",
+            str(glossary_file),
+            "--out-json",
+            str(out_json),
+            "--out-csv",
+            str(tmp_path / "ar_qc_sentence.csv"),
+            "--out-xlsx",
+            str(tmp_path / "ar_qc_sentence.xlsx"),
+        ],
+        cwd=tools_dir,
+    )
+
+    payload = load_json(out_json)
+    issue_types = {item["issue_type"] for item in payload["findings"]}
+    assert "sentence_shape_mismatch" in issue_types
+    assert "possible_meaning_loss" in issue_types
+    finding = next(item for item in payload["findings"] if item["issue_type"] == "possible_meaning_loss")
+    assert finding["fix_mode"] == "review_required"
+    assert finding["text_role"] == "message"

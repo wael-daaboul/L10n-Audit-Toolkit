@@ -152,6 +152,7 @@ Expected canonical outputs:
 
 For full validation:
 ```bash
+cp config/config.example.json config/config.json
 ./bin/run_all_audits.sh --stage full
 ```
 
@@ -163,7 +164,11 @@ For fix planning:
 For schema validation from the repository root:
 ```bash
 python3 -m core.schema_validation --input config/config.json --schema schemas/config.schema.json
-python3 -m core.schema_validation --input docs/terminology/betaxi_glossary_official.json --schema schemas/glossary.schema.json
+python3 -m core.schema_validation --input docs/terminology/<your-glossary-file>.json --schema schemas/glossary.schema.json
+
+Any glossary filename is supported. For new projects, `docs/terminology/glossary.json` is the recommended neutral name.
+
+The bundled `docs/terminology/glossary.json` file is only a small neutral example. Replace it with your own approved terminology data.
 ```
 
 After generating audit outputs, you can validate the full built-in contract set:
@@ -364,7 +369,7 @@ PY
 وللتحقق من المخططات من جذر المستودع:
 ```bash
 python3 -m core.schema_validation --input config/config.json --schema schemas/config.schema.json
-python3 -m core.schema_validation --input docs/terminology/betaxi_glossary_official.json --schema schemas/glossary.schema.json
+python3 -m core.schema_validation --input docs/terminology/<your-glossary-file>.json --schema schemas/glossary.schema.json
 ```
 
 وبعد توليد مخرجات التدقيق يمكن التحقق من جميع العقود المضمنة عبر:

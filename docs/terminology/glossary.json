@@ -1,0 +1,38 @@
+{
+  "meta": {
+    "name": "Project Glossary Example",
+    "version": "1.0",
+    "status": "example",
+    "source_language": "en",
+    "target_language": "ar",
+    "description": "Small neutral glossary example that shows the expected structure. Replace these entries with your project's approved terminology."
+  },
+  "rules": {
+    "forbidden_terms": [
+      {
+        "forbidden_ar": "ملف تعريفي",
+        "use_instead": "ملف شخصي"
+      }
+    ]
+  },
+  "terms": [
+    {
+      "term_en": "Profile",
+      "approved_ar": "ملف شخصي",
+      "forbidden_ar": [
+        "ملف تعريفي"
+      ],
+      "category": "generic_ui",
+      "definition": "A neutral example of a preferred Arabic UI term."
+    },
+    {
+      "term_en": "Save",
+      "approved_ar": "حفظ",
+      "forbidden_ar": [
+        "خزن"
+      ],
+      "category": "generic_ui",
+      "definition": "A neutral example for a common action label."
+    }
+  ]
+}

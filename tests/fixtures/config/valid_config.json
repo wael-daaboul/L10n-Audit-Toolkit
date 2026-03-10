@@ -13,7 +13,7 @@
     "en": "assets/language/en.json",
     "ar": "assets/language/ar.json"
   },
-  "glossary_file": "docs/terminology/betaxi_glossary_official.json",
+  "glossary_file": "docs/terminology/glossary.json",
   "results_dir": "Results",
   "languagetool_dir": "vendor/LanguageTool-current",
   "ar_locale_qc": {

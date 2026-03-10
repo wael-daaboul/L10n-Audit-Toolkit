@@ -104,6 +104,7 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
     suspicious_usage_count = int(usage_data["suspicious_usage_count"])
     static_breakdown = usage_data["static_breakdown"]
     dynamic_breakdown = usage_data["dynamic_breakdown"]
+    usage_metadata = usage_data.get("usage_metadata", {})
 
     ar_keys = set(ar.keys())
     en_keys = set(en.keys())
@@ -194,9 +195,12 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
         if suspicious_examples:
             f.write(f"\n### {L['dynamic_usage_title']}\n\n")
             for item in suspicious_examples:
+                context_suffix = ""
+                if item.get("usage_location") and item.get("usage_location") != "unknown":
+                    context_suffix = f" [{item['usage_location']}/{item.get('ui_surface', 'generic')}]"
                 f.write(
                     f"- `{item['family']}` — `{project_relative(item['file'], runtime)}:{item['line']}` — "
-                    f"`{item['text']}`\n"
+                    f"`{item['text']}`{context_suffix}\n"
                 )
 
         f.write("---\n\n")
@@ -230,9 +234,12 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
             f.write(f"{L['none']}\n")
         else:
             for item in dynamic_examples:
+                context_suffix = ""
+                if item.get("usage_location") and item.get("usage_location") != "unknown":
+                    context_suffix = f" [{item['usage_location']}/{item.get('ui_surface', 'generic')}]"
                 f.write(
                     f"- `{item['family']}` — `{project_relative(item['file'], runtime)}:{item['line']}` — "
-                    f"`{item['text']}`\n"
+                    f"`{item['text']}`{context_suffix}\n"
                 )
         f.write("\n---\n\n")
 
@@ -286,6 +293,11 @@ def main():
         locale_keys=locale_key_set,
     )
     occurrences = usage_data["static_occurrences"]
+    usage_metadata = usage_data.get("usage_metadata", {})
+    suspicious_usage = usage_data["suspicious_usage"]
+    dynamic_usage = usage_data["dynamic_usage"]
+    suspicious_examples = usage_data["suspicious_examples"]
+    dynamic_examples = usage_data["dynamic_examples"]
 
     ar_keys = set(ar.keys())
     en_keys = set(en.keys())
@@ -323,7 +335,7 @@ def main():
                 "line": item["line"],
                 "text": item["text"],
             }
-            for item in usage_data["suspicious_usage"]
+            for item in suspicious_usage
         ]
     )
     possibly_dynamic_usage = [
@@ -334,7 +346,7 @@ def main():
             "line": item["line"],
             "text": item["text"],
         }
-        for item in usage_data["dynamic_usage"]
+        for item in dynamic_usage
     ]
 
     write_markdown_report(Path(args.out_en), "en", ar_path, en_path, code_dirs, ar, en, usage_data, runtime)
@@ -401,8 +413,11 @@ def main():
                 "line": item["line"],
                 "text": item["text"],
                 "candidate": item["candidate"],
+                "usage_location": item.get("usage_location", "unknown"),
+                "ui_surface": item.get("ui_surface", "generic"),
+                "text_role": item.get("text_role", "body"),
             }
-            for item in usage_data["suspicious_examples"]
+            for item in suspicious_examples
         ],
         "dynamic_usage_examples": [
             {
@@ -411,11 +426,15 @@ def main():
                 "line": item["line"],
                 "text": item["text"],
                 "expression": item["expression"],
+                "usage_location": item.get("usage_location", "unknown"),
+                "ui_surface": item.get("ui_surface", "generic"),
+                "text_role": item.get("text_role", "body"),
             }
-            for item in usage_data["dynamic_examples"]
+            for item in dynamic_examples
         ],
         "key_normalizations": usage_data["static_raw_keys"],
         "usage_contexts": usage_data["usage_contexts"],
+        "usage_metadata": usage_metadata,
         "confirmed_missing_keys": confirmed_missing_keys,
         "confirmed_unused_keys": confirmed_unused_keys,
         "needs_manual_review": needs_manual_review,

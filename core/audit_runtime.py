@@ -71,6 +71,18 @@ def _resolve_many_paths(base_dir: Path, raw_values: Sequence[str] | None, fallba
     return tuple(resolved)
 
 
+def _discover_glossary_path(docs_dir: Path) -> Path:
+    terminology_dir = docs_dir / "terminology"
+    preferred = terminology_dir / "glossary.json"
+    if preferred.exists():
+        return preferred.resolve()
+    if terminology_dir.exists():
+        candidates = sorted(path for path in terminology_dir.glob("*.json") if path.is_file())
+        if candidates:
+            return candidates[0].resolve()
+    return preferred.resolve()
+
+
 def _load_json_file(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
@@ -309,7 +321,7 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
     glossary_file = _resolve_config_path(
         tools_dir,
         str(effective_config.get("glossary_file") or ""),
-        docs_dir / "terminology" / "betaxi_glossary_official.json",
+        _discover_glossary_path(docs_dir),
     )
     results_dir = _resolve_config_path(
         tools_dir,

@@ -10,12 +10,14 @@ Project-specific content should live outside core logic, for example:
 - project-specific ignore lists
 
 Current state:
-- the Betaxi glossary remains at `docs/terminology/betaxi_glossary_official.json` for backward compatibility
+- the toolkit accepts any glossary filename as long as `glossary_file` points to it
+- `docs/terminology/glossary.json` is the recommended neutral name for new projects
+- the repository ships with a small neutral glossary example for demonstration
 
 Recommended future layout:
 ```text
 docs/project_assets/
-├── betaxi/
+├── sample-project/
 │   ├── glossary.json
 │   ├── allowlists/
 │   └── notes.md

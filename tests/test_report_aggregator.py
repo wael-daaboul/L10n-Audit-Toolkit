@@ -72,6 +72,45 @@ def test_report_aggregator_builds_review_queue_and_hides_auto_safe(tmp_path: Pat
     assert row["generated_at"]
 
 
+def test_report_aggregator_uses_semantic_candidate_value_for_review_rows(tmp_path: Path) -> None:
+    results = tmp_path / "Results"
+    write_json(
+        results / "per_tool" / "ar_semantic_qc" / "ar_semantic_qc_report.json",
+        {
+            "findings": [
+                {
+                    "key": "profile.helper",
+                    "issue_type": "possible_meaning_loss",
+                    "severity": "medium",
+                    "message": "Meaning loss",
+                    "old": "الملف الشخصي للمتابعة",
+                    "candidate_value": "احفظ الملف الشخصي للمتابعة.",
+                }
+            ]
+        },
+    )
+    issues = load_all_report_issues(results)[1]
+
+    runtime = type(
+        "Runtime",
+        (),
+        {
+            "en_file": tmp_path / "en.json",
+            "ar_file": tmp_path / "ar.json",
+            "locale_format": "json",
+            "source_locale": "en",
+            "target_locales": ("ar",),
+        },
+    )()
+    write_json(runtime.en_file, {"profile.helper": "Save your profile to continue."})
+    write_json(runtime.ar_file, {"profile.helper": "الملف الشخصي للمتابعة"})
+
+    rows = build_review_queue(issues, runtime)
+    assert len(rows) == 1
+    assert rows[0]["locale"] == "ar"
+    assert rows[0]["suggested_fix"] == "احفظ الملف الشخصي للمتابعة."
+
+
 def test_simple_xlsx_reader_round_trips(tmp_path: Path) -> None:
     from core.audit_runtime import write_simple_xlsx
 

@@ -10,7 +10,7 @@ mkdir -p "$RESULTS_DIR"
 
 usage() {
   cat <<'EOF'
-Usage: ./tools/bin/run_all_audits.sh [--stage fast|full|grammar|terminology|placeholders|ar-qc|icu|reports|autofix]
+Usage: ./tools/bin/run_all_audits.sh [--stage fast|full|grammar|terminology|placeholders|ar-qc|ar-semantic|icu|reports|autofix]
 
 Main workflow outputs:
 - Dashboard:    Results/final/final_audit_report.md
@@ -48,8 +48,19 @@ print_profile_selection() {
   cd "$TOOLS_DIR"
   python3 - <<'PY'
 from core.audit_runtime import load_runtime
+from core.audit_runtime import AuditRuntimeError
 
-runtime = load_runtime("bin/run_all_audits.sh", validate=False)
+try:
+    runtime = load_runtime("bin/run_all_audits.sh", validate=False)
+except AuditRuntimeError as exc:
+    print("Unable to prepare runtime from config/config.json.")
+    print(str(exc))
+    print()
+    print("Recommended next steps:")
+    print("- Copy config/config.example.json and adjust project_root if needed")
+    print("- Or set L10N_AUDIT_CONFIG to a project-specific config file")
+    raise SystemExit(1)
+
 print(f"Project profile: {runtime.project_profile} ({runtime.profile_selection_mode})")
 if runtime.profile_selection_mode == "auto":
     print(f"Detection score: {runtime.profile_score}")
@@ -75,6 +86,9 @@ run_fast() {
   echo "Running Arabic locale QC..."
   run_python "audits.ar_locale_qc"
 
+  echo "Running Arabic semantic review..."
+  run_python "audits.ar_semantic_qc"
+
   echo "Running placeholder validation..."
   run_python "audits.placeholder_audit"
 
@@ -86,7 +100,7 @@ case "$STAGE" in
   fast)
     run_fast
     echo "Aggregating reports..."
-    run_python "reports.report_aggregator" --sources "localization,locale_qc,ar_locale_qc,terminology,placeholders"
+    run_python "reports.report_aggregator" --sources "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders"
     ;;
   full)
     run_fast
@@ -95,7 +109,7 @@ case "$STAGE" in
     echo "Running English grammar audit..."
     run_python "audits.en_grammar_audit"
     echo "Aggregating reports..."
-    run_python "reports.report_aggregator" --sources "localization,locale_qc,ar_locale_qc,terminology,placeholders,icu_message_audit,grammar"
+    run_python "reports.report_aggregator" --sources "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders,icu_message_audit,grammar"
     ;;
   grammar)
     echo "Running English grammar audit..."
@@ -112,6 +126,10 @@ case "$STAGE" in
   ar-qc)
     echo "Running Arabic locale QC..."
     run_python "audits.ar_locale_qc"
+    ;;
+  ar-semantic)
+    echo "Running Arabic semantic review..."
+    run_python "audits.ar_semantic_qc"
     ;;
   icu)
     echo "Running ICU message audit..."
@@ -139,5 +157,5 @@ echo
 echo "Primary workflow artifacts:"
 echo "- Results/final/final_audit_report.md"
 echo "- Results/review/review_queue.xlsx"
-echo "- Results/fixes/safe_fixes_applied_report.json"
-echo "- Results/final_locale/ar.final.json"
+echo "- Results/fixes/safe_fixes_applied_report.json (after --stage autofix)"
+echo "- Results/final_locale/ar.final.json (after approved review fixes are applied)"

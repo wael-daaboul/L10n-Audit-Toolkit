@@ -29,4 +29,21 @@ jobs:
       - name: Validate schemas
         run: |
           python -m core.schema_validation --input config/config.json --schema schemas/config.schema.json
-          python -m core.schema_validation --input docs/terminology/betaxi_glossary_official.json --schema schemas/glossary.schema.json
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          terminology_dir = Path("docs/terminology")
+          glossary = terminology_dir / "glossary.json"
+          if not glossary.exists():
+              candidates = sorted(path for path in terminology_dir.glob("*.json") if path.is_file())
+              if not candidates:
+                  raise SystemExit("No glossary JSON file found under docs/terminology")
+              glossary = candidates[0]
+
+          subprocess.run(
+              [sys.executable, "-m", "core.schema_validation", "--input", str(glossary), "--schema", "schemas/glossary.schema.json"],
+              check=True,
+          )
+          PY

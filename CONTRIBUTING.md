@@ -60,7 +60,9 @@ Run the relevant validation commands for your change:
 ```bash
 python -m pytest tests
 python -m core.schema_validation --input config/config.json --schema schemas/config.schema.json
-python -m core.schema_validation --input docs/terminology/betaxi_glossary_official.json --schema schemas/glossary.schema.json
+python -m core.schema_validation --input docs/terminology/<your-glossary-file>.json --schema schemas/glossary.schema.json
+
+Use `docs/terminology/glossary.json` as the neutral example structure only. Do not add project-specific brands or private terminology to the default example glossary.
 ```
 
 If your change affects audit behavior, run at least one representative audit stage locally:

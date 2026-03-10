@@ -117,32 +117,87 @@ def matches_extension(path: Path, allowed_extensions: tuple[str, ...] | list[str
 
 
 def infer_usage_location(file_path: Path, snippet: str) -> str:
+    return infer_usage_metadata(file_path, snippet)["usage_location"]
+
+
+def _sentence_shape(snippet: str) -> str:
+    stripped = snippet.strip()
+    if not stripped:
+        return "unknown"
+    token_count = len(re.findall(r"[A-Za-z\u0600-\u06FF0-9]+", stripped))
+    if "\n" in stripped or token_count >= 7 or any(char in stripped for char in (".", "?", "!", "؟")):
+        return "sentence_like"
+    if token_count <= 3:
+        return "short_label"
+    return "phrase"
+
+
+def infer_usage_metadata(file_path: Path, snippet: str) -> dict[str, str]:
     haystack = f"{file_path.name} {snippet}".lower()
+    usage_location = "unknown"
     if any(token in haystack for token in ("snackbar", "flushbar", "scaffoldmessenger")):
-        return "snackbar"
-    if "toast" in haystack:
-        return "toast"
-    if "notification_title" in haystack:
-        return "notification_title"
-    if "notification_body" in haystack or "pushbody" in haystack:
-        return "notification_body"
-    if "subtitle" in haystack:
-        return "subtitle"
-    if "helpertext" in haystack or "helper_text" in haystack:
-        return "helper_text"
-    if "hinttext" in haystack or "placeholder" in haystack:
-        return "form_hint"
-    if "labeltext" in haystack or "formfield" in haystack or "textfield" in haystack:
-        return "form_label"
-    if "alertdialog" in haystack and "title" in haystack:
-        return "dialog_title"
-    if "alertdialog" in haystack or "showdialog" in haystack or "dialog" in haystack:
-        return "dialog_body"
-    if "appbar" in haystack or "title:" in haystack:
-        return "title"
-    if any(token in haystack for token in ("elevatedbutton", "textbutton", "outlinedbutton", "iconbutton", "button(")):
-        return "button"
-    return "unknown"
+        usage_location = "snackbar"
+    elif "toast" in haystack:
+        usage_location = "toast"
+    elif "notification_title" in haystack:
+        usage_location = "notification_title"
+    elif "notification_body" in haystack or "pushbody" in haystack:
+        usage_location = "notification_body"
+    elif "subtitle" in haystack:
+        usage_location = "subtitle"
+    elif "helpertext" in haystack or "helper_text" in haystack or "helper" in haystack:
+        usage_location = "helper_text"
+    elif "hinttext" in haystack or "placeholder" in haystack:
+        usage_location = "form_hint"
+    elif "labeltext" in haystack or "formfield" in haystack or "textfield" in haystack:
+        usage_location = "form_label"
+    elif "alertdialog" in haystack and "title" in haystack:
+        usage_location = "dialog_title"
+    elif "alertdialog" in haystack or "showdialog" in haystack or "dialog" in haystack or "modal" in haystack:
+        usage_location = "dialog_body"
+    elif "appbar" in haystack or "title:" in haystack or "screen_title" in haystack:
+        usage_location = "title"
+    elif any(token in haystack for token in ("elevatedbutton", "textbutton", "outlinedbutton", "iconbutton", "button(")):
+        usage_location = "button"
+
+    ui_surface = "generic"
+    if usage_location in {"dialog_title", "dialog_body"}:
+        ui_surface = "dialog"
+    elif usage_location in {"notification_title", "notification_body"}:
+        ui_surface = "notification"
+    elif usage_location in {"snackbar", "toast"}:
+        ui_surface = "feedback"
+    elif usage_location in {"form_label", "form_hint", "helper_text"}:
+        ui_surface = "form"
+    elif usage_location in {"title", "subtitle"}:
+        ui_surface = "screen"
+    elif usage_location == "button":
+        ui_surface = "action"
+
+    text_role = "body"
+    if usage_location in {"button", "form_label", "title", "dialog_title", "notification_title"}:
+        text_role = "label"
+    elif usage_location in {"form_hint", "helper_text", "subtitle", "dialog_body", "notification_body", "snackbar", "toast"}:
+        text_role = "message"
+
+    action_hint = "inform"
+    if any(token in haystack for token in ("save", "submit", "continue", "next", "retry", "confirm", "approve", "send", "delete", "add", "create", "tap", "click", "press")):
+        action_hint = "action"
+    elif any(token in haystack for token in ("error", "failed", "warning", "invalid", "required", "success", "done")):
+        action_hint = "status"
+
+    audience_hint = "general"
+    if any(token in haystack for token in ("driver", "captain", "rider", "customer", "admin", "manager", "user", "passenger")):
+        audience_hint = "role_specific"
+
+    return {
+        "usage_location": usage_location,
+        "ui_surface": ui_surface,
+        "text_role": text_role,
+        "action_hint": action_hint,
+        "audience_hint": audience_hint,
+        "sentence_shape": _sentence_shape(snippet),
+    }
 
 
 def _line_starts(text: str) -> list[int]:
@@ -183,6 +238,15 @@ def scan_code_usage(
     static_occurrences: dict[str, list[tuple[Path, int, str]]] = defaultdict(list)
     static_raw_keys: dict[str, set[str]] = defaultdict(set)
     usage_contexts: dict[str, set[str]] = defaultdict(set)
+    usage_metadata: dict[str, dict[str, set[str]]] = defaultdict(
+        lambda: {
+            "ui_surfaces": set(),
+            "text_roles": set(),
+            "action_hints": set(),
+            "audience_hints": set(),
+            "sentence_shapes": set(),
+        }
+    )
     static_breakdown: Counter[str] = Counter()
     dynamic_breakdown: Counter[str] = Counter()
     suspicious_breakdown: Counter[str] = Counter()
@@ -209,12 +273,18 @@ def scan_code_usage(
                 for match in pattern.finditer(content):
                     line_number = _line_number(starts, match.start())
                     snippet = content[starts[line_number - 1]: content.find("\n", match.start()) if "\n" in content[match.start():] else len(content)].strip()
+                    metadata = infer_usage_metadata(file_path, snippet)
                     if spec.mode == "static":
                         raw_key = str(match.group("key")).strip()
                         normalized_key = normalize_usage_key(raw_key, spec.family, profile, locale_format, locale_keys)
                         static_occurrences[normalized_key].append((file_path, line_number, snippet))
                         static_raw_keys[normalized_key].add(raw_key)
-                        usage_contexts[normalized_key].add(infer_usage_location(file_path, snippet))
+                        usage_contexts[normalized_key].add(metadata["usage_location"])
+                        usage_metadata[normalized_key]["ui_surfaces"].add(metadata["ui_surface"])
+                        usage_metadata[normalized_key]["text_roles"].add(metadata["text_role"])
+                        usage_metadata[normalized_key]["action_hints"].add(metadata["action_hint"])
+                        usage_metadata[normalized_key]["audience_hints"].add(metadata["audience_hint"])
+                        usage_metadata[normalized_key]["sentence_shapes"].add(metadata["sentence_shape"])
                         static_breakdown[spec.family] += 1
                     else:
                         payload = {
@@ -222,6 +292,12 @@ def scan_code_usage(
                             "file": file_path,
                             "line": line_number,
                             "text": snippet,
+                            "usage_location": metadata["usage_location"],
+                            "ui_surface": metadata["ui_surface"],
+                            "text_role": metadata["text_role"],
+                            "action_hint": metadata["action_hint"],
+                            "audience_hint": metadata["audience_hint"],
+                            "sentence_shape": metadata["sentence_shape"],
                         }
                         if spec.mode == "dynamic":
                             expr = str(match.groupdict().get("expr", "")).strip()
@@ -269,6 +345,16 @@ def scan_code_usage(
         "static_breakdown": dict(sorted(static_breakdown.items())),
         "static_raw_keys": {key: sorted(values) for key, values in static_raw_keys.items()},
         "usage_contexts": {key: sorted(value for value in values if value) for key, values in usage_contexts.items()},
+        "usage_metadata": {
+            key: {
+                "ui_surfaces": sorted(value for value in payload["ui_surfaces"] if value),
+                "text_roles": sorted(value for value in payload["text_roles"] if value),
+                "action_hints": sorted(value for value in payload["action_hints"] if value),
+                "audience_hints": sorted(value for value in payload["audience_hints"] if value),
+                "sentence_shapes": sorted(value for value in payload["sentence_shapes"] if value),
+            }
+            for key, payload in usage_metadata.items()
+        },
         "dynamic_usage": dynamic_usages,
         "dynamic_usages": dynamic_usages,
         "dynamic_breakdown": dict(sorted(dynamic_breakdown.items())),

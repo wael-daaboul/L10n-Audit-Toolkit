@@ -97,7 +97,6 @@ ALLOWED_LATIN_TOKENS = {
     "TikTok",
     "iOS",
     "Android",
-    "BeTaxi",
     "Bkash",
     "Flutterwave",
     "Liqpay",
@@ -229,6 +228,10 @@ def make_finding(
         "audit_source": "ar_locale_qc",
         "fix_mode": fix_mode,
         "context_type": str(context_bundle.get("inferred_text_type", "")),
+        "ui_surface": str(context_bundle.get("ui_surface", "")),
+        "text_role": str(context_bundle.get("text_role", "")),
+        "action_hint": str(context_bundle.get("action_hint", "")),
+        "audience_hint": str(context_bundle.get("audience_hint", "")),
         "context_flags": "|".join(str(item) for item in context_bundle.get("context_sensitive_term_flags", [])),
         "semantic_risk": str(context_bundle.get("semantic_risk", "low")),
         "lt_signals": json.dumps(linguistic_signals, ensure_ascii=False, sort_keys=True),
@@ -635,6 +638,65 @@ def detect_style_issues(key: str, text: str, toggles: dict[str, bool]) -> list[d
     return findings
 
 
+def detect_sentence_semantic_issues(
+    key: str,
+    en_text: str,
+    ar_text: str,
+    context_bundle: dict[str, object],
+) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
+    if not en_text.strip() or not ar_text.strip() or not contains_arabic(ar_text):
+        return findings
+    if any((has_html_or_xml(ar_text), has_icu_syntax(ar_text), is_likely_technical_text(ar_text))):
+        return findings
+
+    english_shape = str(context_bundle.get("english_sentence_shape", ""))
+    arabic_shape = str(context_bundle.get("arabic_sentence_shape", ""))
+    text_role = str(context_bundle.get("text_role", ""))
+    semantic_flags = list(context_bundle.get("semantic_flags", [])) if isinstance(context_bundle.get("semantic_flags", []), list) else []
+
+    if english_shape == "sentence_like" and arabic_shape == "short_label":
+        findings.append(
+            make_finding(
+                key,
+                "sentence_shape_mismatch",
+                "medium",
+                "English source is sentence-like, but the Arabic text looks too short to preserve the full instruction or message.",
+                ar_text,
+                fix_mode="review_required",
+                context_bundle=context_bundle,
+            )
+        )
+
+    if text_role == "message" and english_shape == "sentence_like" and arabic_shape == "short_label":
+        findings.append(
+            make_finding(
+                key,
+                "message_label_mismatch",
+                "medium",
+                "This UI message appears to have collapsed into a label-like Arabic phrase. Review whether part of the meaning is missing.",
+                ar_text,
+                fix_mode="review_required",
+                context_bundle=context_bundle,
+            )
+        )
+
+    missing_actions = [flag.split(":", 1)[1] for flag in semantic_flags if flag.startswith("missing_action:")]
+    if missing_actions and english_shape == "sentence_like":
+        findings.append(
+            make_finding(
+                key,
+                "possible_meaning_loss",
+                "medium",
+                f"Arabic text may be missing action meaning from the English sentence: {', '.join(sorted(set(missing_actions)))}.",
+                ar_text,
+                fix_mode="review_required",
+                context_bundle=context_bundle,
+            )
+        )
+    return findings
+
+
 def dedupe_findings(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     seen: set[tuple[str, str, str, str, str]] = set()
     deduped: list[dict[str, str]] = []
@@ -728,6 +790,7 @@ def main() -> None:
         locale_keys=set(en_data) | set(ar_data),
     )
     usage_contexts = usage_data.get("usage_contexts", {})
+    usage_metadata = usage_data.get("usage_metadata", {})
     lt_signals = merge_linguistic_signals(
         load_en_languagetool_signals(runtime.results_dir),
         build_language_tool_python_signals(ar_data, runtime),
@@ -745,6 +808,7 @@ def main() -> None:
             en_text,
             text,
             usage_locations=list(usage_contexts.get(key, [])),
+            usage_metadata=usage_metadata.get(key),
             linguistic_signals=lt_signals.get(key),
         )
         rows.extend(detect_empty_or_weak_issues(key, text))
@@ -755,6 +819,7 @@ def main() -> None:
         if rule_toggles.get("enable_suspicious_literal_translation", True):
             rows.extend(detect_literal_translation_issues(key, text, context_bundle))
         rows.extend(detect_style_issues(key, text, rule_toggles))
+        rows.extend(detect_sentence_semantic_issues(key, en_text, text, context_bundle))
 
     rows.extend(detect_duplicate_and_inconsistency_issues(en_data, ar_data, rule_toggles))
 
@@ -785,6 +850,10 @@ def main() -> None:
         "audit_source",
         "fix_mode",
         "context_type",
+        "ui_surface",
+        "text_role",
+        "action_hint",
+        "audience_hint",
         "context_flags",
         "semantic_risk",
         "lt_signals",

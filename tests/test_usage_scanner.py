@@ -169,3 +169,34 @@ def test_usage_scanner_infers_button_context(tmp_path: Path) -> None:
     usage = scan_code_usage([code_dir], ["flutter_getx_tr"], [".dart"])
 
     assert usage["usage_contexts"]["common.save"] == ["button"]
+    assert usage["usage_metadata"]["common.save"]["ui_surfaces"] == ["action"]
+    assert usage["usage_metadata"]["common.save"]["text_roles"] == ["label"]
+
+
+def test_usage_scanner_tracks_dialog_metadata_and_dynamic_context(tmp_path: Path) -> None:
+    code_dir = tmp_path / "src"
+    code_dir.mkdir()
+    (code_dir / "dialog.dart").write_text(
+        "showDialog(context: context, builder: (_) => AlertDialog(content: Text(translate(messageKey))))\n",
+        encoding="utf-8",
+    )
+
+    usage = scan_code_usage([code_dir], ["flutter_translate"], [".dart"])
+
+    assert usage["dynamic_usage_count"] == 1
+    dynamic_item = usage["dynamic_usage"][0]
+    assert dynamic_item["usage_location"] == "dialog_body"
+    assert dynamic_item["ui_surface"] == "dialog"
+    assert dynamic_item["text_role"] == "message"
+
+
+def test_usage_scanner_tracks_helper_text_metadata(tmp_path: Path) -> None:
+    code_dir = tmp_path / "src"
+    code_dir.mkdir()
+    (code_dir / "form.dart").write_text("TextFormField(helperText: 'profile.helper'.tr)\n", encoding="utf-8")
+
+    usage = scan_code_usage([code_dir], ["flutter_getx_tr"], [".dart"])
+
+    assert usage["usage_contexts"]["profile.helper"] == ["helper_text"]
+    assert usage["usage_metadata"]["profile.helper"]["ui_surfaces"] == ["form"]
+    assert usage["usage_metadata"]["profile.helper"]["text_roles"] == ["message"]

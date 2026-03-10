@@ -33,7 +33,17 @@ Open `config/config.json` and confirm:
 - code directories
 - source and target locales
 
+Start from `config/config.example.json` if you need a clean template.
+
 If your project matches a built-in profile, use that profile directly. If not, use `project_profile = "auto"` or configure paths explicitly.
+
+Recommended defaults for public and reusable setups:
+
+- `project_profile = "auto"`
+- `project_root = "."`
+- `glossary_file = "docs/terminology/glossary.json"`
+
+The bundled `docs/terminology/glossary.json` file is a small neutral example that shows the expected structure. Replace it with your own project glossary when needed.
 
 ## 3. Run The Audit
 

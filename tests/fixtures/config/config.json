@@ -4,5 +4,5 @@
   "source_locale": "en",
   "target_locales": ["ar"],
   "results_dir": "Results",
-  "glossary_file": "docs/terminology/betaxi_glossary_official.json"
+  "glossary_file": "docs/terminology/glossary.json"
 }

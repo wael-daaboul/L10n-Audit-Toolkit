@@ -31,6 +31,7 @@ Examples:
 - terminology and glossary checks
 - ICU message validation
 - English and Arabic locale quality checks
+- Arabic semantic review suggestions for reviewer-only meaning checks
 
 ### `core/`
 
@@ -102,6 +103,8 @@ The fix pipeline is separate:
 - context-sensitive or risky changes are routed to the review queue
 - approved fixes are only applied after integrity validation against the source snapshot
 
+Arabic semantic suggestions stay on the review side of the workflow. They can propose a candidate rewrite for a reviewer, but they are not treated as auto-safe fixes.
+
 This separation keeps translation data integrity higher than aggressive auto-correction.
 
 ## Key Terms
@@ -112,5 +115,6 @@ This separation keeps translation data integrity higher than aggressive auto-cor
 - `review queue`: XLSX sheet for human approval of risky changes
 - `approved fix`: a review-queue row explicitly marked for application
 - `final locale`: reviewed locale output written after approved fixes are applied
+- `semantic suggestion`: a review-only candidate rewrite produced for Arabic meaning-sensitive issues
 
 These terms are used consistently across the repository documentation and generated outputs.

@@ -76,7 +76,7 @@ def review_locale(issue: dict[str, Any]) -> str:
     source = str(issue.get("source", ""))
     if locale in {"ar", "en"}:
         return locale
-    if source in {"ar_locale_qc", "terminology"}:
+    if source in {"ar_locale_qc", "ar_semantic_qc", "terminology"}:
         return "ar"
     if source in {"locale_qc", "grammar"}:
         return "en"

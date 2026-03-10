@@ -129,6 +129,7 @@ This toolkit audits localization data and key usage across multiple project styl
 - localization usage audits
 - English locale QC
 - Arabic locale QC
+- Arabic semantic review suggestions
 - terminology validation
 - placeholder validation
 - ICU message validation
@@ -153,6 +154,54 @@ Unsupported in the current phase:
 - dynamic PHP translation logic
 - non-JSON formats beyond Laravel PHP arrays
 - AST-based framework parsing
+
+## Arabic Semantic Review
+
+### English
+
+Run the standalone semantic review module when you want reviewer-facing Arabic rewrite suggestions without mixing them into deterministic QC:
+
+```bash
+python -m audits.ar_semantic_qc
+```
+
+This module writes:
+
+- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.json`
+- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.csv`
+- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.xlsx`
+
+Typical output includes:
+
+- `possible_meaning_loss`
+- `sentence_shape_mismatch`
+- `message_label_mismatch`
+- review-only `candidate_value` suggestions
+
+These suggestions are not auto-applied. They are intended for human review.
+
+### العربية
+
+يمكنك تشغيل فحص المراجعة الدلالية العربي بشكل مستقل عندما تحتاج إلى اقتراحات صياغة للمراجع البشري دون خلطها مع إصلاحات التنسيق الحتمية:
+
+```bash
+python -m audits.ar_semantic_qc
+```
+
+سيُنتج هذا الفحص الملفات التالية:
+
+- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.json`
+- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.csv`
+- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.xlsx`
+
+ومن أمثلة النتائج:
+
+- `possible_meaning_loss`
+- `sentence_shape_mismatch`
+- `message_label_mismatch`
+- اقتراحات `candidate_value` للمراجعة فقط
+
+هذه الاقتراحات لا تُطبَّق تلقائياً، بل تبقى ضمن مسار المراجعة البشرية.
 
 ## How Project Profiles Work
 Profiles define:
@@ -195,6 +244,11 @@ Built-in profiles live in:
 
 Project-level configuration lives in:
 - `config/config.json`
+- `config/config.example.json`
+
+The glossary filename itself is not fixed. Any JSON filename is supported if `glossary_file` points to it. For new projects, `docs/terminology/glossary.json` is the recommended neutral name.
+
+The repository's `docs/terminology/glossary.json` file is only a small structural example. Replace it with your own glossary data for real projects.
 
 Public extension point:
 - profiles and project config can extend static helper detection through `usage_patterns`
@@ -287,7 +341,7 @@ python3 -m pytest tests
 From the repository root:
 ```bash
 python3 -m core.schema_validation --input config/config.json --schema schemas/config.schema.json
-python3 -m core.schema_validation --input docs/terminology/betaxi_glossary_official.json --schema schemas/glossary.schema.json
+python3 -m core.schema_validation --input docs/terminology/<your-glossary-file>.json --schema schemas/glossary.schema.json
 ```
 
 After generating audit outputs, you can validate the full built-in contract set:

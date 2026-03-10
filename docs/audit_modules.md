@@ -75,6 +75,19 @@ Typical findings:
 
 This audit prefers review-required output over risky automatic rewriting.
 
+### `ar_semantic_qc`
+
+Runs review-only Arabic semantic checks and proposes conservative candidate rewrites for sentence-level meaning loss.
+
+Typical findings:
+
+- sentence shape mismatch between English and Arabic
+- message-versus-label collapse in Arabic UI text
+- possible action meaning loss
+- context-sensitive role/entity ambiguity kept in manual review
+
+This module does not auto-apply changes. Its candidate suggestions are intended for the review queue only.
+
 ## Supporting Audit Modules
 
 ### `l10n_audit_pro`
@@ -106,6 +119,7 @@ python -m audits.terminology_audit
 python -m audits.icu_message_audit
 python -m audits.en_locale_qc
 python -m audits.ar_locale_qc
+python -m audits.ar_semantic_qc
 ```
 
 For most users, `./bin/run_all_audits.sh` is the preferred entry point because it runs modules in a predictable sequence and writes standard outputs under `Results/`.

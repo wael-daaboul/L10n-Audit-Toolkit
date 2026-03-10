@@ -13,6 +13,7 @@ REPORT_FILE_MAP = {
     "localization": "per_tool/localization/localization_audit_pro.json",
     "locale_qc": "per_tool/en_locale_qc/en_locale_qc_report.json",
     "ar_locale_qc": "per_tool/ar_locale_qc/ar_locale_qc_report.json",
+    "ar_semantic_qc": "per_tool/ar_semantic_qc/ar_semantic_qc_report.json",
     "grammar": "per_tool/grammar/grammar_audit_report.json",
     "terminology": "per_tool/terminology/terminology_violations.json",
     "placeholders": "per_tool/placeholders/placeholder_audit_report.json",
@@ -26,6 +27,7 @@ SOURCE_GROUPS = {
     "grammar": "grammar_issues",
     "locale_qc": "locale_qc_issues",
     "ar_locale_qc": "locale_qc_issues",
+    "ar_semantic_qc": "locale_qc_issues",
     "icu_message_audit": "icu_message_issues",
 }
 
@@ -81,6 +83,14 @@ def _severity_for_ar_locale_qc(issue_type: str) -> str:
     if issue_type in {"whitespace", "spacing", "punctuation_spacing", "bracket_spacing", "slash_spacing"}:
         return "low"
     if issue_type in {"long_ui_string", "similar_phrase_variation", "exclamation_style", "suspicious_literal_translation"}:
+        return "info"
+    return "low"
+
+
+def _severity_for_ar_semantic_qc(issue_type: str) -> str:
+    if issue_type in {"sentence_shape_mismatch", "message_label_mismatch", "possible_meaning_loss"}:
+        return "medium"
+    if issue_type == "context_sensitive_meaning":
         return "info"
     return "low"
 
@@ -195,6 +205,26 @@ def normalize_ar_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return issues
 
 
+def normalize_ar_semantic_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for row in payload.get("findings", []):
+        issue_type = str(row.get("issue_type", "unknown"))
+        issues.append(
+            {
+                "source": "ar_semantic_qc",
+                "group": SOURCE_GROUPS["ar_semantic_qc"],
+                "key": str(row.get("key", "")),
+                "issue_type": issue_type,
+                "severity": normalize_severity(row.get("severity"), _severity_for_ar_semantic_qc(issue_type)),
+                "message": str(row.get("message", "")),
+                "locale": "ar",
+                "details": row,
+                "recommendation": "Treat semantic Arabic suggestions as reviewer guidance and approve only after checking the live UI context.",
+            }
+        )
+    return issues
+
+
 def normalize_grammar(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
@@ -279,6 +309,7 @@ NORMALIZERS = {
     "localization": normalize_localization,
     "locale_qc": normalize_locale_qc,
     "ar_locale_qc": normalize_ar_locale_qc,
+    "ar_semantic_qc": normalize_ar_semantic_qc,
     "grammar": normalize_grammar,
     "terminology": normalize_terminology,
     "placeholders": normalize_placeholders,

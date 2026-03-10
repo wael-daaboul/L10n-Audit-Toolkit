@@ -102,9 +102,16 @@ def validate_file(input_path: Path, schema_path: Path) -> list[str]:
 def preset_mappings(tools_dir: Path) -> dict[str, tuple[Path, Path]]:
     schemas = tools_dir / "schemas"
     results = tools_dir / "Results"
+    terminology_dir = tools_dir / "docs" / "terminology"
+    preferred_glossary = terminology_dir / "glossary.json"
+    glossary_input = preferred_glossary
+    if not glossary_input.exists():
+        candidates = sorted(path for path in terminology_dir.glob("*.json") if path.is_file())
+        if candidates:
+            glossary_input = candidates[0]
     return {
         "config": (tools_dir / "config" / "config.json", schemas / "config.schema.json"),
-        "glossary": (tools_dir / "docs" / "terminology" / "betaxi_glossary_official.json", schemas / "glossary.schema.json"),
+        "glossary": (glossary_input, schemas / "glossary.schema.json"),
         "final-report": (results / "final" / "final_audit_report.json", schemas / "final_audit_report.schema.json"),
         "fix-plan": (results / "fixes" / "fix_plan.json", schemas / "fix_plan.schema.json"),
     }

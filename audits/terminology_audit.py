@@ -51,6 +51,10 @@ def make_violation(
         "english_value": english,
         "arabic_value": arabic,
         "context_type": str(context_bundle.get("inferred_text_type", "")),
+        "ui_surface": str(context_bundle.get("ui_surface", "")),
+        "text_role": str(context_bundle.get("text_role", "")),
+        "action_hint": str(context_bundle.get("action_hint", "")),
+        "audience_hint": str(context_bundle.get("audience_hint", "")),
         "context_flags": "|".join(str(item) for item in context_bundle.get("context_sensitive_term_flags", [])),
         "semantic_risk": str(context_bundle.get("semantic_risk", "low")),
         "lt_signals": json.dumps(context_bundle.get("linguistic_signals", {}), ensure_ascii=False, sort_keys=True),
@@ -79,6 +83,7 @@ def main() -> None:
         locale_keys=set(en_data) | set(ar_data),
     )
     usage_contexts = usage_data.get("usage_contexts", {})
+    usage_metadata = usage_data.get("usage_metadata", {})
     lt_signals = merge_linguistic_signals(
         load_en_languagetool_signals(runtime.results_dir),
         build_language_tool_python_signals(ar_data, runtime),
@@ -117,6 +122,7 @@ def main() -> None:
             en_text,
             ar_text,
             usage_locations=list(usage_contexts.get(key, [])),
+            usage_metadata=usage_metadata.get(key),
             linguistic_signals=lt_signals.get(key),
         )
 

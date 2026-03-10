@@ -69,6 +69,7 @@ The toolkit can report issues such as:
 - ICU syntax and branch mismatches
 - English locale wording and grammar issues
 - Arabic locale spacing, punctuation, and context-sensitive review findings
+- Arabic semantic review suggestions for sentence-level meaning loss
 - risky review items that require explicit human approval
 
 ## Quick Start
@@ -76,6 +77,7 @@ The toolkit can report issues such as:
 ```bash
 ./bootstrap.sh --with-tests
 source .venv/bin/activate
+cp config/config.example.json config/config.json
 ./bin/run_all_audits.sh --stage fast
 ```
 
@@ -101,6 +103,8 @@ python -m pip install -r requirements-dev.txt
 ```
 
 Detailed environment setup is documented in [INSTALL.md](INSTALL.md) and [docs/quickstart.md](docs/quickstart.md).
+
+The repository ships with a neutral example glossary at `docs/terminology/glossary.json`. Replace it or point `glossary_file` to your own JSON glossary.
 
 ## Running Audits
 
