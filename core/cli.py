@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from core.workspace import (
+    find_project_root,
+    init_workspace,
+    toolkit_version,
+    update_workspace,
+    workspace_config_path,
+    workspace_status,
+)
+
+
+def _run_module(module: str, args: list[str], config_path: Path) -> None:
+    env = os.environ.copy()
+    env["L10N_AUDIT_CONFIG"] = str(config_path)
+    subprocess.run([sys.executable, "-m", module, *args], check=True, env=env)
+
+
+def _stage_modules(stage: str) -> list[tuple[str, list[str]]]:
+    fast = [
+        ("audits.l10n_audit_pro", []),
+        ("audits.en_locale_qc", []),
+        ("audits.ar_locale_qc", []),
+        ("audits.ar_semantic_qc", []),
+        ("audits.placeholder_audit", []),
+        ("audits.terminology_audit", []),
+    ]
+    mapping = {
+        "fast": fast + [
+            ("reports.report_aggregator", ["--sources", "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders"]),
+        ],
+        "full": fast + [
+            ("audits.icu_message_audit", []),
+            ("audits.en_grammar_audit", []),
+            ("reports.report_aggregator", ["--sources", "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders,icu_message_audit,grammar"]),
+        ],
+        "grammar": [("audits.en_grammar_audit", [])],
+        "terminology": [("audits.terminology_audit", [])],
+        "placeholders": [("audits.placeholder_audit", [])],
+        "ar-qc": [("audits.ar_locale_qc", [])],
+        "ar-semantic": [("audits.ar_semantic_qc", [])],
+        "icu": [("audits.icu_message_audit", [])],
+        "reports": [("reports.report_aggregator", [])],
+        "autofix": [("fixes.apply_safe_fixes", [])],
+    }
+    return mapping[stage]
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    project_root = find_project_root(Path(args.path or Path.cwd()))
+    result = init_workspace(
+        project_root,
+        force=args.force,
+        channel=args.channel,
+        from_github=args.from_github,
+        repo=args.repo,
+    )
+    print(f"Initialized workspace: {result['workspace_dir']}")
+    print(f"Detected profile: {result['profile_name']}")
+    print(f"Config: {result['config_path']}")
+    print(f"Glossary: {result['glossary_path']}")
+    score = int(result["detection"].get("score", 0))
+    if score:
+        print(f"Detection score: {score}")
+    if result.get("github_sync"):
+        print(f"GitHub templates: {result['github_sync']['template_dir']}")
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    project_root = find_project_root(Path(args.path or Path.cwd()))
+    status = workspace_status(project_root)
+    print(f"Project root: {status['project_root']}")
+    print(f"Workspace: {status['workspace_dir']}")
+    print(f"Workspace exists: {'yes' if status['workspace_exists'] else 'no'}")
+    print(f"Config exists: {'yes' if status['config_exists'] else 'no'}")
+    print(f"Glossary exists: {'yes' if status['glossary_exists'] else 'no'}")
+    print(f"Detected profile: {status['detected_profile']}")
+    score = int(status['detection'].get('score', 0))
+    print(f"Detection score: {score}")
+    candidates = status['detection'].get('candidates', [])
+    if candidates:
+        print("Top candidates:")
+        for item in candidates[:3]:
+            print(f"- {item['profile']}: {item['score']}")
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    project_root = find_project_root(Path(args.path or Path.cwd()))
+    config_path = workspace_config_path(project_root)
+    if not config_path.exists():
+        init_workspace(project_root, force=False)
+    config_path = workspace_config_path(project_root)
+    for module, module_args in _stage_modules(args.stage):
+        print(f"Running {module}...")
+        _run_module(module, module_args, config_path)
+    return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    project_root = find_project_root(Path(args.path or Path.cwd()))
+    if args.check:
+        status = workspace_status(project_root)
+        print(f"Workspace: {status['workspace_dir']}")
+        print(f"Detected profile: {status['detected_profile']}")
+        print(f"Toolkit version: {toolkit_version()}")
+        return 0
+    result = update_workspace(project_root, channel=args.channel, from_github=args.from_github, repo=args.repo)
+    print(f"Updated workspace: {result['workspace_dir']}")
+    print(f"Config: {result['config_path']}")
+    backup = result.get("backup_path")
+    if backup:
+        print(f"Backup: {backup}")
+    if result.get("github_sync"):
+        print(f"GitHub templates: {result['github_sync']['template_dir']}")
+    return 0
+
+
+def cmd_self_update(_args: argparse.Namespace) -> int:
+    print("If you installed the launcher with pipx, run:")
+    print("pipx upgrade l10n-audit-toolkit")
+    print("If you installed from GitHub directly, run:")
+    print("pipx upgrade --include-injected l10n-audit-toolkit")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="l10n-audit")
+    parser.add_argument("--version", action="version", version=f"l10n-audit-toolkit {toolkit_version()}")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init", help="Initialize a local .l10n-audit workspace")
+    init_parser.add_argument("--path", default=".")
+    init_parser.add_argument("--force", action="store_true")
+    init_parser.add_argument("--channel", default="stable", choices=["stable", "main"])
+    init_parser.add_argument("--from-github", action="store_true")
+    init_parser.add_argument("--repo", default="")
+    init_parser.set_defaults(func=cmd_init)
+
+    run_parser = subparsers.add_parser("run", help="Run audits using the local workspace config")
+    run_parser.add_argument("--path", default=".")
+    run_parser.add_argument("--stage", default="full", choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix"])
+    run_parser.set_defaults(func=cmd_run)
+
+    doctor_parser = subparsers.add_parser("doctor", help="Inspect project and workspace discovery")
+    doctor_parser.add_argument("--path", default=".")
+    doctor_parser.set_defaults(func=cmd_doctor)
+
+    update_parser = subparsers.add_parser("update", help="Refresh an existing local workspace")
+    update_parser.add_argument("--path", default=".")
+    update_parser.add_argument("--check", action="store_true")
+    update_parser.add_argument("--channel", default="stable", choices=["stable", "main"])
+    update_parser.add_argument("--from-github", action="store_true")
+    update_parser.add_argument("--repo", default="")
+    update_parser.set_defaults(func=cmd_update)
+
+    self_update_parser = subparsers.add_parser("self-update", help="Show how to update the global launcher")
+    self_update_parser.set_defaults(func=cmd_self_update)
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    raise SystemExit(args.func(args))
+
+
+if __name__ == "__main__":
+    main()

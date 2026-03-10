@@ -9,7 +9,8 @@ This guide documents the standard audit, review, approved-fix, and final-locale 
 Step 1 - Run the audit
 
 ```bash
-./bin/run_all_audits.sh --stage full
+l10n-audit init
+l10n-audit run --stage full
 ```
 
 Step 2 - Open the dashboard
@@ -45,7 +46,8 @@ This file is the cleaned and reviewed localization file ready for use.
 الخطوة 1 - تشغيل التدقيق
 
 ```bash
-./bin/run_all_audits.sh --stage full
+l10n-audit init
+l10n-audit run --stage full
 ```
 
 الخطوة 2 - فتح التقرير الرئيسي
@@ -249,6 +251,16 @@ Project-level configuration lives in:
 The glossary filename itself is not fixed. Any JSON filename is supported if `glossary_file` points to it. For new projects, `docs/terminology/glossary.json` is the recommended neutral name.
 
 The repository's `docs/terminology/glossary.json` file is only a small structural example. Replace it with your own glossary data for real projects.
+
+Recommended launcher workflow for real projects:
+
+```bash
+l10n-audit init
+l10n-audit doctor
+l10n-audit run --stage full
+l10n-audit update --check
+l10n-audit update --from-github --channel stable --repo https://github.com/your-org/l10n-audit-toolkit
+```
 
 Public extension point:
 - profiles and project config can extend static helper detection through `usage_patterns`

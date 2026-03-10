@@ -34,8 +34,14 @@ classifiers = [
   "Topic :: Software Development :: Localization"
 ]
 
+[project.scripts]
+l10n-audit = "core.cli:main"
+
 [tool.setuptools]
 include-package-data = true
+
+[tool.setuptools.package-data]
+"core.resources" = ["*.json"]
 
 [tool.setuptools.packages.find]
 include = ["audits*", "bin*", "core*", "fixes*", "reports*"]

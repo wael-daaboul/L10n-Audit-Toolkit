@@ -152,13 +152,28 @@ Expected canonical outputs:
 
 For full validation:
 ```bash
-cp config/config.example.json config/config.json
-./bin/run_all_audits.sh --stage full
+l10n-audit init
+l10n-audit run --stage full
 ```
 
 For fix planning:
 ```bash
-./bin/run_all_audits.sh --stage autofix
+l10n-audit run --stage autofix
+```
+
+To inspect or refresh an existing workspace:
+
+```bash
+l10n-audit doctor
+l10n-audit update --check
+l10n-audit update
+```
+
+To sync workspace templates from GitHub:
+
+```bash
+l10n-audit init --from-github --channel stable --repo https://github.com/your-org/l10n-audit-toolkit
+l10n-audit update --from-github --channel main --repo https://github.com/your-org/l10n-audit-toolkit
 ```
 
 For schema validation from the repository root:

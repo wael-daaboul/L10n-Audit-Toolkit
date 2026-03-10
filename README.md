@@ -77,11 +77,17 @@ The toolkit can report issues such as:
 ```bash
 ./bootstrap.sh --with-tests
 source .venv/bin/activate
-cp config/config.example.json config/config.json
-./bin/run_all_audits.sh --stage fast
+l10n-audit init
+l10n-audit run --stage fast
 ```
 
 Primary outputs are written under `Results/`.
+
+If you are using the repository checkout directly rather than an installed launcher, you can still run:
+
+```bash
+./bin/run_all_audits.sh --stage fast
+```
 
 ## Installation
 
@@ -111,18 +117,29 @@ The repository ships with a neutral example glossary at `docs/terminology/glossa
 Run the full localization audit pipeline:
 
 ```bash
-./bin/run_all_audits.sh --stage full
+l10n-audit run --stage full
 ```
 
 Useful stage-specific commands:
 
 ```bash
-./bin/run_all_audits.sh --stage fast
-./bin/run_all_audits.sh --stage placeholders
-./bin/run_all_audits.sh --stage terminology
-./bin/run_all_audits.sh --stage icu
-./bin/run_all_audits.sh --stage autofix
+l10n-audit run --stage fast
+l10n-audit run --stage placeholders
+l10n-audit run --stage terminology
+l10n-audit run --stage icu
+l10n-audit run --stage autofix
+l10n-audit doctor
+l10n-audit update --check
 ```
+
+To refresh local workspace templates from GitHub or a direct archive URL:
+
+```bash
+l10n-audit init --from-github --channel stable --repo https://github.com/your-org/l10n-audit-toolkit
+l10n-audit update --from-github --channel main --repo https://github.com/your-org/l10n-audit-toolkit
+```
+
+You can also pass a direct `.zip` archive URL or `file://...zip` path during testing.
 
 You can also run the basic localization usage audit directly:
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib.resources
 import json
 import os
 import re
@@ -104,6 +105,9 @@ LEGACY_FLUTTER_DEFAULTS: dict[str, object] = {
 def _load_project_profiles(config_dir: Path) -> dict[str, dict[str, object]]:
     profiles_path = config_dir / "project_profiles.json"
     payload = _load_json_file(profiles_path)
+    if not payload:
+        resource_text = importlib.resources.files("core.resources").joinpath("project_profiles.json").read_text(encoding="utf-8")
+        payload = json.loads(resource_text)
     profiles = payload.get("profiles", {}) if isinstance(payload, dict) else {}
     return {str(name): value for name, value in profiles.items() if isinstance(value, dict)}
 
@@ -262,6 +266,8 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
     override_config = os.environ.get("L10N_AUDIT_CONFIG")
     config_path = Path(override_config).resolve() if override_config else (default_config_dir / "config.json")
     runtime_config_dir = config_path.parent
+    config_root_base = runtime_config_dir if override_config else tools_dir
+    path_base_dir = runtime_config_dir if override_config else tools_dir
     config: dict[str, object] = {}
     if config_path.exists():
         config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -274,13 +280,13 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
             raise AuditRuntimeError(f"Unknown project_profile '{configured_profile}'.")
         effective_config = dict(config)
         project_profile, profile = _merge_profile(effective_config, profiles, configured_profile)
-        project_root = _discover_project_root(tools_dir, configured_root, profile)
+        project_root = _discover_project_root(config_root_base, configured_root, profile)
         profile_selection_mode = "manual"
         profile_score = 0
         profile_reasons = (f"manual config override: {configured_profile}",)
         ranked_candidates: tuple[object, ...] = ()
     else:
-        best_candidate, ranked_candidates = autodetect_profile(tools_dir, configured_root, profiles)
+        best_candidate, ranked_candidates = autodetect_profile(config_root_base, configured_root, profiles)
         second_candidate = ranked_candidates[1] if len(ranked_candidates) > 1 else None
         if best_candidate.score < LOW_CONFIDENCE_THRESHOLD:
             details = "; ".join(
@@ -319,18 +325,18 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
     ar_file = locale_paths.get(target_locales[0], _resolve_config_path(project_root, str(effective_config.get("ar_file") or ""), project_root / "assets" / "language" / "ar.json"))
     code_dir, code_dirs = _resolve_code_dirs(project_root, effective_config, profile)
     glossary_file = _resolve_config_path(
-        tools_dir,
+        path_base_dir,
         str(effective_config.get("glossary_file") or ""),
         _discover_glossary_path(docs_dir),
     )
     results_dir = _resolve_config_path(
-        tools_dir,
+        path_base_dir,
         str(effective_config.get("results_dir") or ""),
         tools_dir / "Results",
     )
     raw_languagetool_dir = str(effective_config.get("languagetool_dir") or "").strip()
     languagetool_configured_dir = (
-        _resolve_config_path(tools_dir, raw_languagetool_dir, vendor_dir)
+        _resolve_config_path(path_base_dir, raw_languagetool_dir, vendor_dir)
         if raw_languagetool_dir
         else None
     )

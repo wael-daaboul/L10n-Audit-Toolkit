@@ -120,6 +120,25 @@ def test_missing_project_profile_uses_auto_detection(tmp_path: Path) -> None:
     assert runtime.profile_selection_mode == "auto"
 
 
+def test_autodetect_handles_default_project_root_dot_when_toolkit_is_nested(tmp_path: Path) -> None:
+    tools_dir = _make_temp_toolkit(
+        tmp_path,
+        {
+            "project_profile": "auto",
+            "project_root": ".",
+        },
+    )
+    project_root = tools_dir.parent
+    _write(project_root / "pubspec.yaml", "name: sample_app")
+    _write(project_root / "assets/language/en.json", "{}")
+    _write(project_root / "assets/language/ar.json", "{}")
+    _write(project_root / "lib/main.dart", "'home.title'.tr;")
+
+    runtime = load_runtime(tools_dir, validate=False)
+    assert runtime.project_profile == "flutter_getx_json"
+    assert runtime.project_root == project_root.resolve()
+
+
 def test_autodetect_fails_when_ambiguous(tmp_path: Path) -> None:
     tools_dir = _make_temp_toolkit(
         tmp_path,

@@ -1,0 +1,101 @@
+{
+  "profiles": {
+    "flutter_getx_json": {
+      "locale_format": "json",
+      "source_locale": "en",
+      "target_locales": ["ar"],
+      "locale_path_templates": {
+        "en": ["assets/language/en.json"],
+        "ar": ["assets/language/ar.json"]
+      },
+      "code_dir_candidates": ["lib"],
+      "usage_patterns": [
+        "flutter_getx_tr",
+        "flutter_tr_call",
+        "flutter_translate",
+        "flutter_get_translated",
+        "flutter_dot_translate"
+      ],
+      "allowed_extensions": [".dart"],
+      "project_markers": [["assets/language", "lib"]],
+      "notes": "Default Flutter/GetX profile for JSON locale files."
+    },
+    "laravel_json": {
+      "locale_format": "json",
+      "source_locale": "en",
+      "target_locales": ["ar"],
+      "locale_path_templates": {
+        "en": ["resources/lang/en.json"],
+        "ar": ["resources/lang/ar.json"]
+      },
+      "code_dir_candidates": ["app", "resources/views", "routes"],
+      "usage_patterns": [
+        "laravel_custom_translate_static",
+        "laravel_trans_helper",
+        "laravel_lang_directive",
+        "laravel_trans_function"
+      ],
+      "allowed_extensions": [".php", ".blade.php"],
+      "project_markers": [["resources/lang", "app"], ["resources/lang", "routes"]],
+      "notes": "Laravel profile for JSON locale files. PHP array translation files are not supported in this phase."
+    },
+    "laravel_php": {
+      "locale_format": "laravel_php",
+      "locale_root": "resources/lang",
+      "source_locale": "en",
+      "target_locales": ["ar"],
+      "locale_path_templates": {
+        "en": ["resources/lang/en"],
+        "ar": ["resources/lang/ar"]
+      },
+      "code_dir_candidates": ["app", "resources/views", "routes"],
+      "usage_patterns": [
+        "laravel_custom_translate_static",
+        "laravel_trans_helper",
+        "laravel_lang_directive",
+        "laravel_trans_function"
+      ],
+      "allowed_extensions": [".php", ".blade.php"],
+      "project_markers": [["resources/lang/en", "app"], ["resources/lang/en", "routes"]],
+      "notes": "Laravel profile for PHP array translation files that return static arrays. Dynamic PHP expressions are intentionally rejected."
+    },
+    "react_i18next_json": {
+      "locale_format": "json",
+      "source_locale": "en",
+      "target_locales": ["ar"],
+      "locale_path_templates": {
+        "*": [
+          "locales/{locale}.json",
+          "public/locales/{locale}.json",
+          "src/locales/{locale}.json"
+        ]
+      },
+      "code_dir_candidates": ["src", "app", "components", "pages"],
+      "usage_patterns": [
+        "react_t_function",
+        "react_i18n_t"
+      ],
+      "allowed_extensions": [".js", ".jsx", ".ts", ".tsx"],
+      "project_markers": [["src"], ["app"]],
+      "notes": "React / Next.js profile for JSON locale files."
+    },
+    "vue_i18n_json": {
+      "locale_format": "json",
+      "source_locale": "en",
+      "target_locales": ["ar"],
+      "locale_path_templates": {
+        "*": [
+          "locales/{locale}.json",
+          "src/locales/{locale}.json"
+        ]
+      },
+      "code_dir_candidates": ["src", "pages", "components"],
+      "usage_patterns": [
+        "vue_t_function"
+      ],
+      "allowed_extensions": [".js", ".ts", ".vue"],
+      "project_markers": [["src"], ["pages"]],
+      "notes": "Vue / Nuxt profile for JSON locale files."
+    }
+  }
+}

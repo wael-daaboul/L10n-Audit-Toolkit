@@ -45,10 +45,17 @@ def _resolve_path(base_dir: Path, raw_value: str | None, fallback: Path) -> Path
     return candidate.resolve()
 
 
-def _resolve_roots(tools_dir: Path, configured_root: str | None) -> tuple[Path, ...]:
+def _resolve_roots(base_dir: Path, configured_root: str | None) -> tuple[Path, ...]:
     if configured_root:
-        return (_resolve_path(tools_dir, configured_root, tools_dir.parent),)
-    return tuple(dict.fromkeys([tools_dir.parent.resolve(), *[parent.resolve() for parent in tools_dir.parents]]))
+        explicit = _resolve_path(base_dir, configured_root, base_dir.parent)
+        roots = [explicit]
+        if explicit == base_dir.resolve():
+            roots.append(base_dir.parent.resolve())
+        roots.extend(parent.resolve() for parent in base_dir.parents)
+        return tuple(dict.fromkeys(root for root in roots if root.is_dir()))
+
+    roots = [base_dir.resolve(), base_dir.parent.resolve(), *[parent.resolve() for parent in base_dir.parents]]
+    return tuple(dict.fromkeys(root for root in roots if root.is_dir()))
 
 
 def _string_list(value: object) -> tuple[str, ...]:
@@ -168,12 +175,12 @@ def score_profile(project_root: Path, profile_name: str, profile: dict[str, obje
 
 
 def autodetect_profile(
-    tools_dir: Path,
+    base_dir: Path,
     configured_root: str | None,
     profiles: dict[str, dict[str, object]],
 ) -> tuple[ProfileCandidate, tuple[ProfileCandidate, ...]]:
     candidates: list[ProfileCandidate] = []
-    for project_root in _resolve_roots(tools_dir, configured_root):
+    for project_root in _resolve_roots(base_dir, configured_root):
         if not project_root.is_dir():
             continue
         for profile_name, profile in profiles.items():

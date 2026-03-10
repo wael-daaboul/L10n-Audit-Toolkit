@@ -57,7 +57,8 @@ except AuditRuntimeError as exc:
     print(str(exc))
     print()
     print("Recommended next steps:")
-    print("- Copy config/config.example.json and adjust project_root if needed")
+    print("- Run 'l10n-audit init' from the project root to generate a local workspace")
+    print("- Or copy config/config.example.json and adjust project_root if needed")
     print("- Or set L10N_AUDIT_CONFIG to a project-specific config file")
     raise SystemExit(1)
 

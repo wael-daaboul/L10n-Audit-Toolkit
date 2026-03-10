@@ -26,7 +26,22 @@ python -m pip install -r requirements-dev.txt
 
 ## 2. Review Configuration
 
-Open `config/config.json` and confirm:
+Recommended launcher-first workflow:
+
+```bash
+l10n-audit init
+l10n-audit doctor
+```
+
+Optional template sync from GitHub:
+
+```bash
+l10n-audit init --from-github --channel stable --repo https://github.com/your-org/l10n-audit-toolkit
+```
+
+This creates a local `.l10n-audit/` workspace inside your project with its own config, glossary example, and results directory.
+
+If you still want repository-level configuration, open `config/config.json` and confirm:
 
 - `project_profile`
 - locale source paths
@@ -50,13 +65,13 @@ The bundled `docs/terminology/glossary.json` file is a small neutral example tha
 Fast pass:
 
 ```bash
-./bin/run_all_audits.sh --stage fast
+l10n-audit run --stage fast
 ```
 
 Full pass:
 
 ```bash
-./bin/run_all_audits.sh --stage full
+l10n-audit run --stage full
 ```
 
 ## 4. Inspect Results
@@ -76,7 +91,7 @@ Per-tool outputs:
 Generate safe fix candidates:
 
 ```bash
-./bin/run_all_audits.sh --stage autofix
+l10n-audit run --stage autofix
 ```
 
 Review:

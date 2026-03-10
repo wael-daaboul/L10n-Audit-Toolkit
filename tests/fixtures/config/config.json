@@ -1,6 +1,6 @@
 {
   "project_profile": "flutter_getx_json",
-  "project_root": "tests/fixtures/runtime_project",
+  "project_root": "../runtime_project",
   "source_locale": "en",
   "target_locales": ["ar"],
   "results_dir": "Results",
