@@ -10,7 +10,7 @@ L10n Audit Toolkit is a Python-based localization QA toolkit for auditing transl
 📚 Documentation: https://wael-daaboul.github.io/L10n-Audit-Toolkit/
 
 ```bash
-pipx install "git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git@v1.0.4"
+pipx install "git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git"
 ```
 
 ## Overview
