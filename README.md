@@ -11,7 +11,7 @@ L10n Audit Toolkit is a Python-based localization QA toolkit for auditing transl
 👉 <https://wael-daaboul.github.io/L10n-Audit-Toolkit/>
 
 ```bash
-pipx install "git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git"
+pipx install l10n-audit-toolkit
 ```
 
 ## Overview
@@ -109,9 +109,7 @@ Here are the main commands you will use daily:
 - `l10n-audit --version` - Displays the current installed version of the toolkit.
 - `l10n-audit init` - Discovers your project and creates the `.l10n-audit/` workspace.
 - `l10n-audit run --stage <STAGE>` - Runs specific or all audit modules (e.g., `fast`, `full`, `autofix`).
-- `l10n-audit doctor` - Diagnoses your current environment and tool configuration.
 - `l10n-audit update` - Fetches the latest global rules and dictionaries to your local workspace.
-- `l10n-audit self-update` - Shows instructions to globally update the CLI tool.
 
 ### 🤖 AI-Powered Review
 

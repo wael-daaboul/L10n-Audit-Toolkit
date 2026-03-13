@@ -1,10 +1,15 @@
+exclude .DS_Store
+recursive-exclude .venv *
+recursive-exclude .build_venv *
+recursive-exclude vendor *
+recursive-exclude Results *
+recursive-exclude examples *
+recursive-exclude tests *
+recursive-exclude docs *
+recursive-exclude مفاتيح *
+exclude config.json
+exclude project-context.txt
+exclude bootstrap.sh
 include README.md
 include LICENSE
-include HOW_TO_USE.md
-include INSTALL.md
-recursive-include config *
-recursive-include docs *
-recursive-include examples *
-recursive-include schemas *
-recursive-include tests *
-recursive-include vendor *
+recursive-include core/resources *.json

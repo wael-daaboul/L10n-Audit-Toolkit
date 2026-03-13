@@ -45,10 +45,10 @@ Current compatibility scope:
 ## Installation Guide
 
 ### For Users (Recommended)
-Install the global CLI tool directly from GitHub using `pipx` to keep it isolated from your system Python:
+Install the global CLI tool directly from PyPI using `pipx` to keep it isolated from your system Python:
 
 ```bash
-pipx install git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
+pipx install l10n-audit-toolkit
 ```
 
 **Verify your installation:**
@@ -75,11 +75,7 @@ When working from source, you can use the legacy bash wrapper if needed:
 ### Updating
 To update the global CLI:
 ```bash
-l10n-audit self-update
-# Or directly via pipx:
 pipx upgrade l10n-audit-toolkit
-# Note: If upgrade fails, you can force reinstall from GitHub:
-# pipx install --force git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
 ```
 
 ### Install Mandatory Packages
@@ -310,10 +306,10 @@ source .venv/bin/activate
 ### الخطوة الأولى الموصى بها
 
 #### للمستخدمين (طريقة التثبيت الموصى بها)
-ثبّت الأداة كأمر نظام عالمي (Global CLI) مباشرة من المستودع باستخدام `pipx` لضمان عزلها عن بيئة بايثون الأساسية:
+ثبّت الأداة كأمر نظام عالمي (Global CLI) مباشرة من PyPI باستخدام `pipx` لضمان عزلها عن بيئة بايثون الأساسية:
 
 ```bash
-pipx install git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
+pipx install l10n-audit-toolkit
 ```
 
 **للتحقق من التثبيت:**
@@ -338,13 +334,9 @@ cd L10n-Audit-Toolkit
 *(نوصي بشدة باستخدام أمر `l10n-audit` بدلاً منه).*
 
 #### التحديث
-لتحديث الأداة العالمية:
+لتحديث الأداة العالمية لأحدث إصدار، استخدم الأمر التالي:
 ```bash
-l10n-audit self-update
-# أو مباشرة عبر pipx:
 pipx upgrade l10n-audit-toolkit
-# ملاحظة: إذا فشل التحديث، يمكنك إعادة التثبيت إجبارياً من GitHub:
-# pipx install --force git+https://github.com/wael-daaboul/L10n-Audit-Toolkit.git
 ```
 
 ### تثبيت الحزم الأساسية
