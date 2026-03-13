@@ -43,7 +43,7 @@ def request_ai_review(prompt, config, max_retries=3):
     retry_delay = 2
     for attempt in range(max_retries):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=90) as response:
                 resp_data = json.loads(response.read().decode("utf-8"))
                 content = resp_data['choices'][0]['message']['content']
                 

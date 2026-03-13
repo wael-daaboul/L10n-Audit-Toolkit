@@ -30,7 +30,7 @@ def load_issues(runtime):
     try:
         with open(report_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("findings", []) + data.get("issues", []) 
+            return data.get("findings", []) + data.get("issues", []) + data.get("review_queue", []) + data.get("rows", [])
     except Exception as e:
         logging.error(f"Failed to load issues from {report_path}: {e}")
         return []
@@ -68,6 +68,9 @@ def main() -> None:
         print("No prior issues found. AI Review skipped.")
         return
         
+    en_data = load_locale_mapping(Path(args.en), runtime, "en")
+    ar_data = load_locale_mapping(Path(args.ar), runtime, "ar")
+        
     # Build unique flawed keys issues dict
     flawed_keys = {}
     for issue in all_issues:
@@ -75,8 +78,8 @@ def main() -> None:
         if not k: 
             continue
             
-        src = issue.get("source")
-        target = issue.get("target") or issue.get("current_translation")
+        src = str(en_data.get(k, ""))
+        target = str(ar_data.get(k, ""))
         if not src or not target:
             continue
             
@@ -100,10 +103,10 @@ def main() -> None:
     # 2. Strict Glossary Integration
     glossary_data = {}
     try:
-        if runtime.config_path:
-            glossary_path = runtime.config_path.parent / "glossary.json"
+        if getattr(runtime, "config_dir", None):
+            glossary_path = runtime.config_dir / "glossary.json"
             if glossary_path.exists():
-                glossary_data = read_json(glossary_path)
+                glossary_data = json.loads(glossary_path.read_text(encoding="utf-8"))
     except Exception as e:
         logging.warning(f"Failed to load glossary: {e}")
 
