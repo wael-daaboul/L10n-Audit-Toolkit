@@ -491,6 +491,10 @@ def scan_code_keys(
                         continue
                     line_number = _line_number(starts, match.start())
                     snippet = content[starts[line_number - 1]: content.find("\n", match.start()) if "\n" in content[match.start():] else len(content)].strip()
-                    occurrences[key].append((file_path, line_number, snippet))
+                    occurrences[key].append({
+                        "file": file_path,
+                        "line": line_number,
+                        "text": snippet
+                    })
 
     return occurrences

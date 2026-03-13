@@ -147,7 +147,10 @@ def write_markdown_report(out_path, lang, ar_path, en_path, code_dirs, ar, en, u
             return f"{L['no_occurrences_found']}\n"
         shown = occ[:max_lines]
         s = ""
-        for file, ln, line in shown:
+        for item in shown:
+            file = item["file"]
+            ln = item["line"]
+            line = item["text"]
             s += f"- `{project_relative(file, runtime)}:{ln}` — `{line}`\n"
         if len(occ) > max_lines:
             s += f"- … (+{len(occ)-max_lines} {L['more']})\n"
@@ -574,7 +577,14 @@ def main():
         "confirmed_unused_keys": confirmed_unused_keys,
         "needs_manual_review": needs_manual_review,
         "code_occurrences": {
-            k: [{"file": project_relative(f, runtime), "line": ln, "text": t} for f, ln, t in v]
+            k: [
+                {
+                    "file": project_relative(Path(item["file"]), runtime),
+                    "line": item["line"],
+                    "text": item["text"]
+                }
+                for item in v
+            ]
             for k, v in occurrences.items()
         },
         "findings": findings,
