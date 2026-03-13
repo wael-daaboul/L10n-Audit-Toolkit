@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -291,6 +292,9 @@ def main():
         profile=runtime.project_profile,
         locale_format=runtime.locale_format,
         locale_keys=locale_key_set,
+        wrappers=runtime.usage_wrappers,
+        accessors=runtime.usage_accessors,
+        config_fields=runtime.usage_config_fields,
     )
     occurrences = usage_data["static_occurrences"]
     usage_metadata = usage_data.get("usage_metadata", {})
@@ -307,8 +311,102 @@ def main():
     in_code_missing_both = sorted(code_keys - (ar_keys | en_keys))
     in_code_missing_ar = sorted((code_keys & en_keys) - ar_keys)
     in_code_missing_en = sorted((code_keys & ar_keys) - en_keys)
-    unused_ar = sorted(ar_keys - code_keys)
-    unused_en = sorted(en_keys - code_keys)
+    unused_ar_raw = ar_keys - code_keys
+    unused_en_raw = en_keys - code_keys
+    # Phase 4 & 5: Dynamic Family Inference & Confidence Classification
+    dynamic_info = []
+    for d in dynamic_examples:
+        expr = d.get("expression", "")
+        if expr:
+            # Normalize expression to regex: "${step}_of_3" -> ".*_of_3"
+            p = expr
+            p = re.sub(r"\$\{.*?\}", "DOT-STAR", p)
+            p = p.replace(" + var + ", "DOT-STAR").replace(" + var", "DOT-STAR").replace("var + ", "DOT-STAR")
+            regex_str = f"^{re.escape(p).replace('DOT-STAR', '.*')}$"
+            try:
+                dynamic_info.append({"rx": re.compile(regex_str), "expr": expr})
+            except re.error:
+                continue
+
+    def get_confidence_data(key: str) -> dict[str, object]:
+        evidence = []
+        confidence = 0.0
+        patterns = []
+        
+        # 1. Direct or static-like usage
+        if key in occurrences:
+            for occ in occurrences[key]:
+                fam = occ.get("family", "")
+                txt = occ.get("text", "")
+                if "static" in fam:
+                    confidence = max(confidence, 1.0)
+                    evidence.append(f"direct_literal:{txt}")
+                elif "accessor" in fam:
+                    confidence = max(confidence, 0.95)
+                    evidence.append(f"accessor_mapping:{txt}")
+                elif "wrapper" in fam:
+                    confidence = max(confidence, 0.92)
+                    evidence.append(f"wrapper_usage:{txt}")
+                elif "config" in fam:
+                    confidence = max(confidence, 0.85)
+                    evidence.append(f"config_reference:{txt}")
+                    
+        # 2. Dynamic inference
+        for info in dynamic_info:
+            if info["rx"].match(key):
+                confidence = max(confidence, 0.65)
+                evidence.append(f"dynamic_pattern:{info['expr']}")
+                patterns.append(info["expr"])
+        
+        if confidence >= 0.9:
+            status = "confirmed_used"
+            action = "keep"
+        elif confidence >= 0.8:
+            status = "likely_used"
+            action = "keep"
+        elif confidence >= 0.6:
+            status = "dynamic_inferred_usage"
+            action = "review_before_delete"
+        elif confidence > 0:
+            status = "uncertain_review_required"
+            action = "manual_check"
+        else:
+            status = "confirmed_unused_key"
+            action = "safe_to_delete_after_review"
+            
+        return {
+            "status": str(status),
+            "confidence": float(confidence),
+            "evidence": list(evidence),
+            "patterns": list(patterns),
+            "action": str(action)
+        }
+
+    unused_ar = []
+    unused_en = []
+    dynamic_inferred_ar = []
+    dynamic_inferred_en = []
+    
+    # Process all keys to get their confidence data
+    all_keys_meta = {}
+    for key in (ar_keys | en_keys):
+        all_keys_meta[key] = get_confidence_data(key)
+
+    for key in sorted(unused_ar_raw):
+        meta = all_keys_meta[key]
+        if meta["status"] == "dynamic_inferred_usage":
+            dynamic_inferred_ar.append(key)
+        elif meta["status"] == "confirmed_unused_key":
+            unused_ar.append(key)
+        # Other likely_used are already in code_keys or handled by occurrences
+
+    for key in sorted(unused_en_raw):
+        meta = all_keys_meta[key]
+        if meta["status"] == "dynamic_inferred_usage":
+            dynamic_inferred_en.append(key)
+        elif meta["status"] == "confirmed_unused_key":
+            unused_en.append(key)
+
     empty_ar = sorted([k for k, v in ar.items() if is_empty_translation(v)])
     empty_en = sorted([k for k, v in en.items() if is_empty_translation(v)])
     confirmed_missing_keys = []
@@ -318,9 +416,15 @@ def main():
         confirmed_missing_keys.append({"key": key, "locale": "ar", "issue_type": "missing_in_ar"})
     for key in in_code_missing_en:
         confirmed_missing_keys.append({"key": key, "locale": "en", "issue_type": "missing_in_en"})
+    
     confirmed_unused_keys = (
         [{"key": key, "locale": "ar", "issue_type": "unused_ar"} for key in unused_ar]
         + [{"key": key, "locale": "en", "issue_type": "unused_en"} for key in unused_en]
+    )
+
+    dynamic_inferred_usage = (
+        [{"key": key, "locale": "ar", "issue_type": "dynamic_inferred_ar"} for key in dynamic_inferred_ar]
+        + [{"key": key, "locale": "en", "issue_type": "dynamic_inferred_en"} for key in dynamic_inferred_en]
     )
     needs_manual_review = (
         [{"key": key, "locale": "en", "issue_type": "in_ar_not_en"} for key in in_ar_not_en]
@@ -353,37 +457,67 @@ def main():
     write_markdown_report(Path(args.out_ar), "ar", ar_path, en_path, code_dirs, ar, en, usage_data, runtime)
 
     findings = []
-    for item in confirmed_missing_keys:
-        message = "Confirmed static key is used in code but missing from the locale file."
-        if item["issue_type"] == "missing_in_both":
-            message = "Confirmed static key is used in code but missing from both locale files."
-        findings.append({**item, "issue_type": "confirmed_missing_key", "message": message})
-    for item in confirmed_unused_keys:
-        findings.append({**item, "issue_type": "confirmed_unused_key", "message": "Locale key is not referenced by any confirmed static usage."})
-    for item in needs_manual_review:
-        findings.append(
-            {
-                "key": item["key"],
-                "issue_type": "needs_manual_review",
-                "locale": item["locale"],
-                "message": "This item needs manual review before the locale files can be considered aligned.",
-                **{k: v for k, v in item.items() if k not in {"key", "issue_type", "locale"}},
-            }
-        )
-    for item in possibly_dynamic_usage:
-        findings.append(
-            {
-                "key": item["expression"],
-                "issue_type": "possibly_dynamic_usage",
-                "locale": "unknown",
-                "message": "Dynamic translation usage was detected and excluded from confirmed missing-key checks.",
-                **item,
-            }
-        )
+    
+    # Process all keys to get final findings with metadata
+    for key in sorted(ar_keys | en_keys | code_keys):
+        meta_obj = all_keys_meta.get(key)
+        if meta_obj is None:
+            # This might be a missing key (used in code but not in JSON)
+            meta = get_confidence_data(str(key))
+        else:
+            meta = meta_obj # type: ignore
+            
+        # Determine locale status
+        locales = []
+        if key in ar_keys: locales.append("ar")
+        if key in en_keys: locales.append("en")
+        locale_str = "/".join(locales) if locales else "none"
+        
+        # Build finding
+        finding = {
+            "key": key,
+            "locale": locale_str,
+            "confidence": meta["confidence"],
+            "status": meta["status"],
+            "action": meta["action"],
+            "evidence": meta["evidence"][:3], # Limit evidence for JSON brevity
+            "patterns": meta["patterns"]
+        }
+        
+        # Map to issues
+        status = meta["status"]
+        if status == "confirmed_unused_key":
+            finding["issue_type"] = "unused_ar" if "ar" in locales else "unused_en"
+            findings.append(finding)
+        elif status == "dynamic_inferred_usage":
+            finding["issue_type"] = "dynamic_inferred_usage"
+            findings.append(finding)
+        elif key in code_keys and not locales:
+            finding["issue_type"] = "missing_in_both"
+            findings.append(finding)
+        elif key in code_keys and "ar" not in locales:
+            finding["issue_type"] = "missing_ar"
+            findings.append(finding)
+        elif key in code_keys and "en" not in locales:
+            finding["issue_type"] = "missing_en"
+            findings.append(finding)
+            
+    # Add empty translations
     for key in empty_ar:
         findings.append({"key": key, "issue_type": "empty_ar", "locale": "ar", "message": "Arabic translation is empty."})
     for key in empty_en:
         findings.append({"key": key, "issue_type": "empty_en", "locale": "en", "message": "English translation is empty."})
+
+    # Add suspicious/manual review items (compatibility)
+    for item in needs_manual_review:
+        findings.append({
+            "key": item["key"],
+            "issue_type": "needs_manual_review",
+            "locale": item["locale"],
+            "message": "Manual review required.",
+            **{k: v for k, v in item.items() if k not in {"key", "issue_type", "locale"}}
+        })
+
 
     payload = {
         "ar_file": project_relative(ar_path, runtime),
@@ -399,6 +533,7 @@ def main():
             "used_keys": len(set(occurrences) & (set(ar) | set(en))),
             "confirmed_missing_keys": len(confirmed_missing_keys),
             "confirmed_unused_keys": len(confirmed_unused_keys),
+            "dynamic_inferred_usage": len(dynamic_inferred_usage),
             "needs_manual_review": len(needs_manual_review),
         },
         "static_breakdown": usage_data["static_breakdown"],

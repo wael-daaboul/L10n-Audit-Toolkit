@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from typing import Iterable
 from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -40,6 +41,11 @@ BUILTIN_USAGE_SPECS: dict[str, UsagePatternSpec] = {
     "react_i18n_t_dynamic": UsagePatternSpec("react_i18n_t_dynamic", r"""\bi18n\.t\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "react_i18next_dynamic", "dynamic"),
     "vue_t_function": UsagePatternSpec("vue_t_function", r"""\$t\s*\(\s*(['"])(?P<key>[^'"\r\n]+)\1""", "vue_i18n_static", "static"),
     "vue_t_function_dynamic": UsagePatternSpec("vue_t_function_dynamic", r"""\$t\s*\(\s*(?!['"])(?P<expr>[^)\r\n]+?)\s*(?:[,)])""", "vue_i18n_dynamic", "dynamic"),
+    # New patterns for Phase 4: Dynamic Inference
+    "dynamic_interpolation_tr": UsagePatternSpec("dynamic_interpolation_tr", r"""(['"])(?P<expr>[^'\"\r\n]*\$\{.*?\}[^'\"\r\n]*)\1\s*\.tr\b""", "dynamic_inference", "dynamic"),
+    "dynamic_concat_prefix_tr": UsagePatternSpec("dynamic_concat_prefix_tr", r"""(['"])(?P<prefix>[A-Za-z0-9_-]+)\1\s*\+\s*[A-Za-z_]\w*(?:\s*\.tr\b)?""", "dynamic_inference", "dynamic"),
+    "dynamic_concat_suffix_tr": UsagePatternSpec("dynamic_concat_suffix_tr", r"""[A-Za-z_]\w*\s*\+\s*(['"])(?P<suffix>[A-Za-z0-9_-]+)\1(?:\s*\.tr\b)?""", "dynamic_inference", "dynamic"),
+    "dynamic_concat_both_tr": UsagePatternSpec("dynamic_concat_both_tr", r"""(['"])(?P<prefix>[A-Za-z0-9_-]+)\1\s*\+\s*[A-Za-z_]\w*\s*\+\s*(['"])(?P<suffix>[A-Za-z0-9_-]+)\3(?:\s*\.tr\b)?""", "dynamic_inference", "dynamic"),
 }
 
 
@@ -106,6 +112,62 @@ def compile_usage_specs(patterns: tuple[str, ...] | list[str], include_dynamic: 
             source = pattern_from_template(name) if "KEY" in name else name
             spec = _build_custom_spec(name, source)
         compiled.append((spec, re.compile(spec.source, re.MULTILINE | re.DOTALL)))
+    return compiled
+
+
+def camel_to_snake(name: str) -> str:
+    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
+    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()
+
+
+def compile_accessor_specs(accessors: Iterable[str]) -> list[tuple[UsagePatternSpec, re.Pattern[str]]]:
+    compiled: list[tuple[UsagePatternSpec, re.Pattern[str]]] = []
+    for name in accessors:
+        if not name:
+            continue
+        # Pattern for ClassName.key or ClassName.key.tr
+        source = rf"\b{re.escape(name)}\.(?P<key>[A-Za-z0-9_]+)(?:\.tr)?\b"
+        spec = UsagePatternSpec(name=f"accessor_{name}", source=source, family="accessor_static", mode="static")
+        compiled.append((spec, re.compile(source, re.MULTILINE | re.DOTALL)))
+    
+    # Standard S.of(context).key pattern
+    s_source = r"\bS\.of\s*\([^)]+\)\.(?P<key>[A-Za-z0-9_]+)\b"
+    compiled.append((
+        UsagePatternSpec(name="accessor_S", source=s_source, family="accessor_static", mode="static"),
+        re.compile(s_source, re.MULTILINE | re.DOTALL)
+    ))
+
+    # Standard context.l10n.key pattern
+    l10n_source = r"\bcontext\.l10n\.(?P<key>[A-Za-z0-9_]+)\b"
+    compiled.append((
+        UsagePatternSpec(name="accessor_l10n", source=l10n_source, family="accessor_static", mode="static"),
+        re.compile(l10n_source, re.MULTILINE | re.DOTALL)
+    ))
+
+    return compiled
+
+
+def compile_config_specs(fields: Iterable[str]) -> list[tuple[UsagePatternSpec, re.Pattern[str]]]:
+    compiled: list[tuple[UsagePatternSpec, re.Pattern[str]]] = []
+    for name in fields:
+        if not name:
+            continue
+        # Pattern for "fieldName": "key" or fieldName: "key"
+        source = rf"['\"]?{re.escape(name)}['\"]?\s*:\s*(['\"])(?P<key>[^'\"\r\n]+)\1"
+        spec = UsagePatternSpec(name=f"config_{name}", source=source, family="config_static", mode="static")
+        compiled.append((spec, re.compile(source, re.MULTILINE | re.DOTALL)))
+    return compiled
+
+
+def compile_wrapper_specs(wrappers: Iterable[str]) -> list[tuple[UsagePatternSpec, re.Pattern[str]]]:
+    compiled: list[tuple[UsagePatternSpec, re.Pattern[str]]] = []
+    for name in wrappers:
+        if not name:
+            continue
+        # Pattern for fn("key")
+        source = rf"\b{re.escape(name)}\s*\(\s*(['\"])(?P<key>[^'\"\r\n]+)\1"
+        spec = UsagePatternSpec(name=f"wrapper_{name}", source=source, family="wrapper_static", mode="static")
+        compiled.append((spec, re.compile(source, re.MULTILINE | re.DOTALL)))
     return compiled
 
 
@@ -234,6 +296,9 @@ def scan_code_usage(
     profile: str | None = None,
     locale_format: str | None = None,
     locale_keys: set[str] | None = None,
+    wrappers: Iterable[str] = (),
+    accessors: Iterable[str] = (),
+    config_fields: Iterable[str] = (),
 ) -> dict[str, object]:
     static_occurrences: dict[str, list[tuple[Path, int, str]]] = defaultdict(list)
     static_raw_keys: dict[str, set[str]] = defaultdict(set)
@@ -254,6 +319,14 @@ def scan_code_usage(
     suspicious_usages: list[dict[str, object]] = []
     seen_files: set[Path] = set()
     compiled_specs = compile_usage_specs(patterns)
+    compiled_specs.extend(compile_wrapper_specs(wrappers))
+    compiled_specs.extend(compile_accessor_specs(accessors))
+    compiled_specs.extend(compile_config_specs(config_fields))
+    
+    # Always include Phase 4 dynamic patterns for inference
+    for p in ["dynamic_interpolation_tr", "dynamic_concat_prefix_tr", "dynamic_concat_suffix_tr", "dynamic_concat_both_tr"]:
+        spec = BUILTIN_USAGE_SPECS[p]
+        compiled_specs.append((spec, re.compile(spec.source, re.MULTILINE | re.DOTALL)))
 
     for code_dir in code_dirs:
         if not code_dir.exists():
@@ -277,7 +350,20 @@ def scan_code_usage(
                     if spec.mode == "static":
                         raw_key = str(match.group("key")).strip()
                         normalized_key = normalize_usage_key(raw_key, spec.family, profile, locale_format, locale_keys)
-                        static_occurrences[normalized_key].append((file_path, line_number, snippet))
+                        
+                        # Handle accessor mapping (camelCase to snake_case)
+                        if spec.family == "accessor_static" and locale_keys:
+                            if normalized_key not in locale_keys:
+                                snake_key = camel_to_snake(normalized_key)
+                                if snake_key in locale_keys:
+                                    normalized_key = snake_key
+
+                        static_occurrences[normalized_key].append({
+                            "file": file_path,
+                            "line": line_number,
+                            "text": snippet,
+                            "family": spec.family,
+                        })
                         static_raw_keys[normalized_key].add(raw_key)
                         usage_contexts[normalized_key].add(metadata["usage_location"])
                         usage_metadata[normalized_key]["ui_surfaces"].add(metadata["ui_surface"])
@@ -300,8 +386,14 @@ def scan_code_usage(
                             "sentence_shape": metadata["sentence_shape"],
                         }
                         if spec.mode == "dynamic":
-                            expr = str(match.groupdict().get("expr", "")).strip()
-                            if not expr:
+                            groupdict = match.groupdict()
+                            expr = str(groupdict.get("expr") or groupdict.get("prefix", "") + " + var + " + groupdict.get("suffix", "")).strip()
+                            if groupdict.get("prefix") and not groupdict.get("suffix"):
+                                expr = groupdict["prefix"] + " + var"
+                            elif groupdict.get("suffix") and not groupdict.get("prefix"):
+                                expr = "var + " + groupdict["suffix"]
+                                
+                            if not expr or expr == "var + ":
                                 continue
                             if expr.startswith(("'", '"')):
                                 continue

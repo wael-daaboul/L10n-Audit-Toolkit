@@ -44,6 +44,9 @@ class AuditPaths:
     target_locales: tuple[str, ...]
     locale_paths: dict[str, Path]
     usage_patterns: tuple[str, ...]
+    usage_wrappers: tuple[str, ...]
+    usage_accessors: tuple[str, ...]
+    usage_config_fields: tuple[str, ...]
     allowed_extensions: tuple[str, ...]
     profile_notes: str
     profile_selection_mode: str
@@ -364,8 +367,11 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         source_locale=source_locale,
         target_locales=target_locales,
         locale_paths=locale_paths,
-        usage_patterns=tuple(str(item) for item in (config.get("usage_patterns") or profile.get("usage_patterns") or [])),
-        allowed_extensions=tuple(str(item) for item in (config.get("allowed_extensions") or profile.get("allowed_extensions") or [])),
+        usage_patterns=tuple(str(item) for item in (effective_config.get("usage_patterns") or profile.get("usage_patterns") or [])),
+        usage_wrappers=tuple(str(item) for item in (effective_config.get("usage_wrappers") or profile.get("usage_wrappers") or ["t", "translate", "i18n", "localize"])),
+        usage_accessors=tuple(str(item) for item in (effective_config.get("usage_accessors") or profile.get("usage_accessors") or ["LocaleKeys", "AppStrings", "TranslationKeys"])),
+        usage_config_fields=tuple(str(item) for item in (effective_config.get("usage_config_fields") or profile.get("usage_config_fields") or ["titleKey", "labelKey", "textKey", "subtitleKey", "translation_key", "messageKey"])),
+        allowed_extensions=tuple(str(item) for item in (effective_config.get("allowed_extensions") or profile.get("allowed_extensions") or [])),
         profile_notes=str(profile.get("notes") or ""),
         profile_selection_mode=profile_selection_mode,
         profile_score=profile_score,
