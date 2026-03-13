@@ -32,8 +32,20 @@ ISSUES BATCH:
 """
 
 def get_review_prompt(batch_issues, glossary_terms=None):
+    # Backward compatibility: if batch_issues is a string, treat as single source
+    if isinstance(batch_issues, str):
+        target_text = glossary_terms if isinstance(glossary_terms, str) else ""
+        batch_issues = [{
+            "key": "manual_review",
+            "source": batch_issues,
+            "current_translation": target_text,
+            "identified_issue": "General Quality Review"
+        }]
+        # If glossary_terms was target_text, reset it to None for the logic below
+        glossary_terms = None
+
     glossary_str = "{}"
-    if glossary_terms:
+    if isinstance(glossary_terms, dict):
         glossary_items = []
         for term, details in glossary_terms.items():
             translation = details.get("translation", "")
