@@ -8,6 +8,9 @@ version = "1.0.5"
 description = "Cross-framework localization audit and translation QA toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = [
+    "language-tool-python"
+]
 license = { file = "LICENSE" }
 authors = [
   { name = "Wael Daaboul" }

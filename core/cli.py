@@ -102,7 +102,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     for module, module_args in _stage_modules(args.stage):
         print(f"Running {module}...")
         curr_args = list(module_args)
-        if args.command == "run":
+        if args.command == "run" and module == "audits.ai_review":
             if getattr(args, "ai_enabled", False):
                 curr_args.append("--ai-enabled")
             if getattr(args, "ai_api_key", None):

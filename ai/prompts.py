@@ -1,32 +1,50 @@
 import json
 
 REVIEW_PROMPT = """
-You are an expert localization quality assurance (L10n QA) engine.
-Your task is to review a translation and suggest a better version if applicable.
+You are an expert localization quality assurance (L10n QA) engine and Auto-Fixer.
+Your task is to fix translations based on identified issues and project rules.
 
 RULES:
-1. Only suggest a change if it significantly improves quality, naturalness, or accuracy.
-2. YOU MUST MAINTAIN ALL PLACEHOLDERS (e.g., {{name}}, %s, %(count)d).
-3. YOU MUST MAINTAIN HTML TAGS.
-4. YOU MUST MAINTAIN NEWLINE CHARACTERS (\\n).
-5. DO NOT change the meaning unless it is clearly wrong.
-6. Provide your response strictly in the following JSON format:
+1. You will receive a JSON array of translation issues.
+2. You must return a JSON object containing a "fixes" array with the exact same length. Each object in the array should contain the 'key', the fixed 'suggestion', and a short 'reason' for your change.
+3. YOU MUST MAINTAIN ALL PLACEHOLDERS (e.g., {{name}}, %s, %(count)d).
+4. YOU MUST MAINTAIN HTML TAGS.
+5. YOU MUST MAINTAIN NEWLINE CHARACTERS (\\n).
+6. Respect the provided GLOSSARY. If a term is in the glossary, use it.
+7. Return valid JSON only. Your response must be parseable as a JSON object.
+
+Return format:
 {{
-    "suggestion": "The improved translation or original if no change needed",
-    "reason": "Short reason for the change in English, or empty string if no change"
+  "fixes": [
+    {{
+      "key": "example_key",
+      "suggestion": "The improved translation",
+      "reason": "Short reason for the change"
+    }}
+  ]
 }}
 
-CONTEXT:
-Source Language: {source_lang}
-Target Language: {target_lang}
-Source Text: "{source_text}"
-Current Translation: "{target_text}"
+GLOSSARY:
+{glossary}
+
+ISSUES BATCH:
+{issues_json}
 """
 
-def get_review_prompt(source_text, target_text, source_lang="en", target_lang="ar"):
+def get_review_prompt(batch_issues, glossary_terms=None):
+    glossary_str = "{}"
+    if glossary_terms:
+        glossary_items = []
+        for term, details in glossary_terms.items():
+            translation = details.get("translation", "")
+            notes = details.get("notes", "")
+            glossary_items.append(f"- {term} -> {translation} ({notes})")
+        if glossary_items:
+            glossary_str = "\\n".join(glossary_items)
+            
+    issues_json = json.dumps(batch_issues, ensure_ascii=False, indent=2)
+    
     return REVIEW_PROMPT.format(
-        source_text=source_text,
-        target_text=target_text,
-        source_lang=source_lang,
-        target_lang=target_lang
+        glossary=glossary_str,
+        issues_json=issues_json
     )
