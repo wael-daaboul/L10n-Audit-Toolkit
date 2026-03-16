@@ -596,3 +596,60 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run the main localization audit (l10n_audit_pro) and return :class:`AuditIssue` list."""
+    import logging
+    from l10n_audit.models import issue_from_dict
+
+    logger = logging.getLogger("l10n_audit.l10n_audit_pro")
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+
+    usage_data = scan_code_usage(
+        runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
+        profile=runtime.project_profile, locale_format=runtime.locale_format,
+        locale_keys=set(en_data) | set(ar_data),
+    )
+
+    all_keys_en = set(en_data)
+    all_keys_ar = set(ar_data)
+    detected_keys = set(usage_data.get("static_keys", set()))
+    en_values = {k: str(v) for k, v in en_data.items() if isinstance(v, str)}
+    ar_values = {k: str(v) for k, v in ar_data.items() if isinstance(v, str)}
+
+    findings: list[dict] = []
+
+    # Missing keys
+    for key in sorted(all_keys_en - all_keys_ar):
+        findings.append({"key": key, "issue_type": "in_en_not_ar", "severity": "high",
+                         "message": f"Key '{key}' is in EN but missing in AR.", "source": "localization"})
+    for key in sorted(all_keys_ar - all_keys_en):
+        findings.append({"key": key, "issue_type": "in_ar_not_en", "severity": "high",
+                         "message": f"Key '{key}' is in AR but missing in EN.", "source": "localization"})
+
+    # Empty translations
+    for key, value in en_values.items():
+        if not value.strip():
+            findings.append({"key": key, "issue_type": "empty_en", "severity": "medium",
+                             "message": "English translation is empty.", "source": "localization"})
+    for key, value in ar_values.items():
+        if not value.strip():
+            findings.append({"key": key, "issue_type": "empty_ar", "severity": "medium",
+                             "message": "Arabic translation is empty.", "source": "localization"})
+
+    # Confirmed missing / unused keys from usage data
+    for key in usage_data.get("confirmed_missing_keys", []):
+        findings.append({"key": key, "issue_type": "missing_key", "severity": "high",
+                         "message": f"Key '{key}' is used in code but missing from locale files.", "source": "localization"})
+    for key in usage_data.get("confirmed_unused_keys", []):
+        findings.append({"key": key, "issue_type": "confirmed_unused_key", "severity": "low",
+                         "message": f"Key '{key}' is in locale files but not detected in code.", "source": "localization"})
+
+    logger.info("l10n_audit_pro: %d findings", len(findings))
+    return [issue_from_dict(f) for f in findings]

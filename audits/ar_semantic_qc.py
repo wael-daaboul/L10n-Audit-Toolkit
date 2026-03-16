@@ -239,3 +239,68 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run AR semantic QC and return a list of :class:`AuditIssue`."""
+    import logging
+    from l10n_audit.models import issue_from_dict
+    from core.context_evaluator import (
+        build_context_bundle, build_language_tool_python_signals,
+        load_en_languagetool_signals, merge_linguistic_signals,
+    )
+
+    logger = logging.getLogger("l10n_audit.ar_semantic_qc")
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    usage_data = scan_code_usage(
+        runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
+        profile=runtime.project_profile, locale_format=runtime.locale_format,
+        locale_keys=set(en_data) | set(ar_data),
+    )
+    usage_contexts = usage_data.get("usage_contexts", {})
+    usage_metadata = usage_data.get("usage_metadata", {})
+    lt_signals = merge_linguistic_signals(
+        load_en_languagetool_signals(runtime.results_dir),
+        build_language_tool_python_signals(ar_data, runtime),
+    )
+
+    rows: list[dict] = []
+    for key, ar_value in ar_data.items():
+        en_value = en_data.get(key)
+        if not isinstance(en_value, str) or not isinstance(ar_value, str):
+            continue
+        if not en_value.strip() or not ar_value.strip():
+            continue
+        bundle = build_context_bundle(key, en_value, ar_value,
+            usage_locations=list(usage_contexts.get(key, [])),
+            usage_metadata=usage_metadata.get(key),
+            linguistic_signals=lt_signals.get(key),
+        )
+        rows.extend(detect_semantic_findings(key, en_value, ar_value, bundle))
+    rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"]))
+
+    if options.write_reports:
+        from collections import Counter
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "ar_semantic_qc"
+        payload = {"summary": {"keys_scanned": len(ar_data), "findings": len(rows),
+                               "issue_types": dict(sorted(Counter(r["issue_type"] for r in rows).items()))},
+                   "findings": rows}
+        fieldnames = ["key","issue_type","severity","message","old","candidate_value","fix_mode",
+                      "suggestion_confidence","audit_source","context_type","ui_surface","text_role",
+                      "action_hint","audience_hint","context_flags","semantic_risk","lt_signals","review_reason"]
+        try:
+            write_json(payload, out_dir / "ar_semantic_qc_report.json")
+            write_csv(rows, fieldnames, out_dir / "ar_semantic_qc_report.csv")
+            write_simple_xlsx(rows, fieldnames, out_dir / "ar_semantic_qc_report.xlsx", sheet_name="AR Semantic QC")
+        except Exception as exc:
+            logger.warning("Failed to write AR semantic QC reports: %s", exc)
+
+    normalised = [{**r, "source": "ar_semantic_qc", "issue_type": r.get("issue_type", "ar_semantic")} for r in rows]
+    logger.info("AR semantic QC: %d issues", len(normalised))
+    return [issue_from_dict(r) for r in normalised]

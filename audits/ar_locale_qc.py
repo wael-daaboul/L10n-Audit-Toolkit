@@ -870,3 +870,81 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run AR locale QC and return a list of :class:`AuditIssue`."""
+    import logging
+    from l10n_audit.models import issue_from_dict
+    from core.context_evaluator import (
+        build_language_tool_python_signals, load_en_languagetool_signals, merge_linguistic_signals,
+    )
+
+    logger = logging.getLogger("l10n_audit.ar_locale_qc")
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    glossary = load_json_dict(runtime.glossary_file) if runtime.glossary_file.exists() else {}
+    rule_toggles = load_rule_toggles(runtime.config_dir / "config.json")
+    term_rules, global_forbidden = load_glossary_rules(glossary)
+    from core.usage_scanner import scan_code_usage
+    usage_data = scan_code_usage(
+        runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
+        profile=runtime.project_profile, locale_format=runtime.locale_format,
+        locale_keys=set(en_data) | set(ar_data),
+    )
+    usage_contexts = usage_data.get("usage_contexts", {})
+    usage_metadata = usage_data.get("usage_metadata", {})
+    lt_signals = merge_linguistic_signals(
+        load_en_languagetool_signals(runtime.results_dir),
+        build_language_tool_python_signals(ar_data, runtime),
+    )
+
+    from core.context_evaluator import build_context_bundle
+    rows: list[dict] = []
+    for key, value in ar_data.items():
+        if not isinstance(value, str):
+            continue
+        text = value
+        en_text = str(en_data.get(key, ""))
+        context_bundle = build_context_bundle(key, en_text, text,
+            usage_locations=list(usage_contexts.get(key, [])),
+            usage_metadata=usage_metadata.get(key),
+            linguistic_signals=lt_signals.get(key),
+        )
+        rows.extend(detect_empty_or_weak_issues(key, text))
+        rows.extend(detect_spacing_issues(key, text))
+        rows.extend(detect_punctuation_issues(key, text, rule_toggles))
+        rows.extend(detect_terminology_issues(key, en_text, text, term_rules, global_forbidden, context_bundle))
+        rows.extend(detect_mixed_script_issues(key, text))
+        if rule_toggles.get("enable_suspicious_literal_translation", True):
+            rows.extend(detect_literal_translation_issues(key, text, context_bundle))
+        rows.extend(detect_style_issues(key, text, rule_toggles))
+        rows.extend(detect_sentence_semantic_issues(key, en_text, text, context_bundle))
+    rows.extend(detect_duplicate_and_inconsistency_issues(en_data, ar_data, rule_toggles))
+    rows = dedupe_findings(rows)
+    rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"], item["old"]))
+
+    if options.write_reports:
+        from collections import Counter
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "ar_locale_qc"
+        fieldnames = ["key","issue_type","severity","message","old","new","related","audit_source","fix_mode",
+                      "context_type","ui_surface","text_role","action_hint","audience_hint","context_flags",
+                      "semantic_risk","lt_signals","review_reason"]
+        payload = {"summary": {"keys_scanned": len(ar_data), "findings": len(rows),
+                               "issue_types": dict(sorted(Counter(r["issue_type"] for r in rows).items()))},
+                   "findings": rows}
+        try:
+            write_json(payload, out_dir / "ar_locale_qc_report.json")
+            write_csv(rows, fieldnames, out_dir / "ar_locale_qc_report.csv")
+            write_simple_xlsx(rows, fieldnames, out_dir / "ar_locale_qc_report.xlsx", sheet_name="AR Locale QC")
+        except Exception as exc:
+            logger.warning("Failed to write AR locale QC reports: %s", exc)
+
+    normalised = [{**r, "source": "ar_locale_qc", "issue_type": r.get("issue_type", "ar_qc")} for r in rows]
+    logger.info("AR locale QC: %d issues", len(normalised))
+    return [issue_from_dict(r) for r in normalised]

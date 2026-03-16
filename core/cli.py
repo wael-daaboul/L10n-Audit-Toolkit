@@ -16,6 +16,10 @@ from core.workspace import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Legacy subprocess-based dispatch (kept as fallback)
+# ---------------------------------------------------------------------------
+
 def _run_module(module: str, args: list[str], config_path: Path) -> None:
     env = os.environ.copy()
     env["L10N_AUDIT_CONFIG"] = str(config_path)
@@ -52,6 +56,10 @@ def _stage_modules(stage: str) -> list[tuple[str, list[str]]]:
     }
     return mapping[stage]
 
+
+# ---------------------------------------------------------------------------
+# Command implementations
+# ---------------------------------------------------------------------------
 
 def cmd_init(args: argparse.Namespace) -> int:
     project_root = find_project_root(Path(args.path or Path.cwd()))
@@ -94,25 +102,75 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Run an audit stage.
+
+    Attempts to use the in-process engine via :func:`l10n_audit.run_audit` for
+    speed and structured output.  Falls back to the legacy subprocess dispatch
+    if the ``l10n_audit`` package is not importable.
+
+    All CLI flags and exit codes are preserved: returns 0 on successful
+    completion regardless of how many issues were found (matching the original
+    CLI contract). Only returns non-zero on actual errors / crashes.
+    """
     project_root = find_project_root(Path(args.path or Path.cwd()))
     config_path = workspace_config_path(project_root)
     if not config_path.exists():
         init_workspace(project_root, force=False)
-    config_path = workspace_config_path(project_root)
-    for module, module_args in _stage_modules(args.stage):
-        print(f"Running {module}...")
-        curr_args = list(module_args)
-        if args.command == "run" and module == "audits.ai_review":
-            if getattr(args, "ai_enabled", False):
-                curr_args.append("--ai-enabled")
-            if getattr(args, "ai_api_key", None):
-                curr_args.extend(["--ai-api-key", args.ai_api_key])
-            if getattr(args, "ai_api_base", None):
-                curr_args.extend(["--ai-api-base", args.ai_api_base])
-            if getattr(args, "ai_model", None):
-                curr_args.extend(["--ai-model", args.ai_model])
-        _run_module(module, curr_args, config_path)
-    return 0
+
+    stage = args.stage
+
+    try:
+        import l10n_audit
+        from l10n_audit.api import _stage_module_names  # progress labels
+
+        for label in _stage_module_names(stage):
+            print(f"Running {label}...")
+
+        result = l10n_audit.run_audit(
+            project_root,
+            stage=stage,
+            ai_enabled=getattr(args, "ai_enabled", False),
+            ai_api_key=getattr(args, "ai_api_key", None),
+            ai_model=getattr(args, "ai_model", None),
+            ai_api_base=getattr(args, "ai_api_base", None),
+            write_reports=True,
+        )
+
+        if not result.success:
+            print(f"Audit failed: {result.error_message}", file=sys.stderr)
+            return 1
+
+        summary = result.summary
+        print(f"\nAudit complete — stage: {stage}")
+        print(f"   Total issues     : {summary.total_issues}")
+        print(f"   Missing keys     : {summary.missing_keys}")
+        print(f"   Unused keys      : {summary.unused_keys}")
+        print(f"   Empty transl.    : {summary.empty_translations}")
+        print(f"   Placeholder err  : {summary.placeholder_errors}")
+        print(f"   Terminology      : {summary.terminology_errors}")
+        print(f"   AR QC issues     : {summary.ar_qc_issues}")
+        if result.reports:
+            print(f"   Reports          : {len(result.reports)} file(s)")
+        if result.duration_ms:
+            print(f"   Duration         : {result.duration_ms} ms")
+        return 0
+
+    except ImportError:
+        # Fallback: legacy subprocess dispatch
+        for module, module_args in _stage_modules(stage):
+            print(f"Running {module}...")
+            curr_args = list(module_args)
+            if module == "audits.ai_review":
+                if getattr(args, "ai_enabled", False):
+                    curr_args.append("--ai-enabled")
+                if getattr(args, "ai_api_key", None):
+                    curr_args.extend(["--ai-api-key", args.ai_api_key])
+                if getattr(args, "ai_api_base", None):
+                    curr_args.extend(["--ai-api-base", args.ai_api_base])
+                if getattr(args, "ai_model", None):
+                    curr_args.extend(["--ai-model", args.ai_model])
+            _run_module(module, curr_args, config_path)
+        return 0
 
 
 def cmd_update(args: argparse.Namespace) -> int:
@@ -142,6 +200,10 @@ def cmd_self_update(_args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Parser construction
+# ---------------------------------------------------------------------------
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="l10n-audit")
     parser.add_argument("--version", action="version", version=f"l10n-audit-toolkit {toolkit_version()}")
@@ -157,7 +219,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run audits using the local workspace config")
     run_parser.add_argument("--path", default=".")
-    run_parser.add_argument("--stage", default="full", choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix", "ai-review"])
+    run_parser.add_argument(
+        "--stage", default="full",
+        choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix", "ai-review"],
+    )
     run_parser.add_argument("--ai-enabled", action="store_true", help="Enable AI review features (opt-in)")
     run_parser.add_argument("--ai-api-key", help="API Key for AI provider")
     run_parser.add_argument("--ai-api-base", help="Custom API Base URL (OpenAI-compatible)")

@@ -324,3 +324,94 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
+    """Aggregate per-tool reports and write the final dashboard and review queue.
+
+    This calls the same logic as :func:`main` but without argparse.
+    Returns a list of :class:`~l10n_audit.models.ReportArtifact` for the
+    generated files.
+    """
+    import logging
+    from l10n_audit.models import ReportArtifact
+    from core.audit_report_utils import load_all_report_issues  # type: ignore[import]
+
+    logger = logging.getLogger("l10n_audit.report_aggregator")
+    results_dir = options.effective_output_dir(runtime.results_dir)
+
+    artifacts: list[ReportArtifact] = []
+
+    try:
+        reports, issues, missing = load_all_report_issues(results_dir)
+        summary = summarize_issues(issues)
+        safe_fixes = safe_fix_counts(issues)
+        review_rows = build_review_queue(issues, runtime)
+        source_status = build_source_status(reports, issues)
+        markdown = render_markdown(issues, summary, safe_fixes, review_rows, source_status, missing)
+
+        include_sources = sorted(reports.keys())
+        payload = {
+            "summary": {
+                **summary,
+                "critical_issues": sum(1 for issue in issues if str(issue.get("severity")) in {"critical", "high"}),
+                "safe_fixes_available": safe_fixes["available"],
+                "review_required_issues": len(review_rows),
+            },
+            "missing_reports": missing,
+            "included_sources": include_sources,
+            "priority_order": priority_order(issues),
+            "recommendations": recommendations(summary, safe_fixes, review_rows),
+            "source_status": source_status,
+            "review_queue": review_rows,
+            "issues": issues,
+        }
+
+        final_dir = results_dir / "final"
+        review_dir = results_dir / "review"
+        normalized_dir = results_dir / "normalized"
+
+        final_dir.mkdir(parents=True, exist_ok=True)
+        review_dir.mkdir(parents=True, exist_ok=True)
+        normalized_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write files
+        md_file = final_dir / "final_audit_report.md"
+        json_file = final_dir / "final_audit_report.json"
+        aggr_file = normalized_dir / "aggregated_issues.json"
+        review_json = review_dir / "review_queue.json"
+        review_xlsx = review_dir / "review_queue.xlsx"
+
+        md_file.write_text(markdown, encoding="utf-8")
+        (final_dir / "final_audit_report_en.md").write_text(markdown, encoding="utf-8")
+        (final_dir / "final_audit_report_ar.md").write_text(markdown, encoding="utf-8")
+        write_unified_json(json_file, payload)
+        write_unified_json(aggr_file, {"included_sources": include_sources, "issues": issues})
+        write_unified_json(review_json, {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
+
+        artifacts.extend([
+            ReportArtifact(name="Final Report (Markdown)", path=str(md_file), format="markdown", category="summary"),
+            ReportArtifact(name="Final Report (JSON)", path=str(json_file), format="json", category="summary"),
+            ReportArtifact(name="Review Queue (JSON)", path=str(review_json), format="json", category="review"),
+        ])
+
+        try:
+            write_simple_xlsx(review_rows, REVIEW_QUEUE_COLUMNS, review_xlsx, sheet_name="Review Queue")
+            artifacts.append(ReportArtifact(name="Review Queue (Excel)", path=str(review_xlsx), format="xlsx", category="review"))
+        except Exception as xlsx_exc:
+            logger.warning("Could not write review XLSX: %s", xlsx_exc)
+
+        logger.info("Report aggregator: %d issues aggregated, %d in review queue", len(issues), len(review_rows))
+    except Exception as exc:
+        logger.warning("Report aggregation failed: %s", exc)
+
+    return artifacts

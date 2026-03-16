@@ -27,7 +27,7 @@ def toolkit_version() -> str:
     try:
         return metadata.version("l10n-audit-toolkit")
     except metadata.PackageNotFoundError:
-        return "0.1.0"
+        return "1.2.0"
 
 
 def workspace_dir(project_root: Path) -> Path:

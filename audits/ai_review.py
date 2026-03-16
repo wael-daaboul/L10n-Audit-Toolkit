@@ -154,3 +154,96 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options, *, ai_provider=None) -> list:
+    """Run AI review stage and return a list of :class:`AuditIssue`.
+
+    Parameters
+    ----------
+    ai_provider:
+        Optional :class:`~l10n_audit.core.ai_protocol.AIProvider`.
+        Defaults to the production HTTP provider.
+    """
+    import os
+    from l10n_audit.models import issue_from_dict
+
+    if not options.ai_enabled:
+        return []
+
+    from l10n_audit.core.validators import validate_ai_config
+    ai_config = validate_ai_config(
+        ai_enabled=True,
+        ai_api_key=options.ai_api_key or os.getenv(os.getenv("AI_API_KEY_ENV", "OPENAI_API_KEY")),
+        ai_model=options.ai_model,
+        ai_api_base=options.ai_api_base,
+    )
+
+    if ai_provider is None:
+        from l10n_audit.core.ai_http_provider import HttpAIProvider
+        ai_provider = HttpAIProvider()
+
+    # Load existing issues to review
+    all_issues = load_issues(runtime)
+    if not all_issues:
+        return []
+
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+
+    # Build batch
+    flawed_keys: dict = {}
+    for issue in all_issues:
+        k = issue.get("key")
+        if not k:
+            continue
+        src = str(en_data.get(k, ""))
+        target = str(ar_data.get(k, ""))
+        if not src or not target:
+            continue
+        desc = issue.get("message") or issue.get("description") or issue.get("issue_type") or "Unknown issue"
+        if k in flawed_keys:
+            flawed_keys[k]["identified_issue"] += f" | {desc}"
+        else:
+            flawed_keys[k] = {"key": k, "source": src, "current_translation": target, "identified_issue": desc}
+
+    batch_items = list(flawed_keys.values())
+    if not batch_items:
+        return []
+
+    # Load glossary
+    glossary_terms: dict = {}
+    try:
+        if getattr(runtime, "config_dir", None) and (runtime.config_dir / "glossary.json").exists():
+            import json as _json
+            glossary_data = _json.loads((runtime.config_dir / "glossary.json").read_text(encoding="utf-8"))
+            for t in glossary_data.get("terms", []):
+                if t.get("term_en") and t.get("approved_ar"):
+                    glossary_terms[t["term_en"]] = {"translation": t["approved_ar"], "notes": t.get("definition", "")}
+    except Exception:
+        pass
+
+    # Process in batches using the injected AI provider
+    CHUNK_SIZE = 20
+    chunks = [batch_items[i:i + CHUNK_SIZE] for i in range(0, len(batch_items), CHUNK_SIZE)]
+    all_fixes: list[dict] = []
+    for chunk in chunks:
+        try:
+            fixes = ai_provider.review_batch(chunk, ai_config)
+            all_fixes.extend(fixes)
+        except Exception as exc:
+            logging.warning("AI review batch failed: %s", exc)
+
+    if options.write_reports:
+        out_path = options.effective_output_dir(runtime.results_dir) / "ai_review_report.json"
+        try:
+            write_json({"findings": all_fixes}, out_path)
+        except Exception as exc:
+            logging.warning("Failed to write AI review report: %s", exc)
+
+    normalised = [{**f, "issue_type": "ai_suggestion", "source": "ai_review"} for f in all_fixes]
+    return [issue_from_dict(f) for f in normalised]

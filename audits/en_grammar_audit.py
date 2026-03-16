@@ -163,3 +163,43 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run EN grammar audit and return a list of :class:`AuditIssue`."""
+    import logging
+    from l10n_audit.models import issue_from_dict
+
+    logger = logging.getLogger("l10n_audit.grammar")
+    data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    text_by_key = [(key, value.strip()) for key, value in data.items() if isinstance(value, str) and value.strip()]
+
+    rows: list[dict] = []
+    for key, text in text_by_key:
+        rows.extend(build_custom_findings(key, text))
+
+    if text_by_key:
+        _engine, lt_rows, _note = build_languagetool_findings(text_by_key, runtime)
+        rows.extend(lt_rows)
+    rows = dedupe_rows(rows)
+    rows.sort(key=lambda item: (str(item["key"]), str(item.get("issue_type", ""))))
+
+    if options.write_reports:
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "grammar"
+        fieldnames = ["key", "issue_type", "rule_id", "message", "old", "new", "replacements", "context", "offset", "error_length"]
+        payload = {"summary": {"keys_scanned": len(text_by_key), "findings": len(rows)}, "findings": rows}
+        try:
+            write_json(payload, out_dir / "grammar_audit_report.json")
+            write_csv(rows, fieldnames, out_dir / "grammar_audit_report.csv")
+            write_simple_xlsx(rows, fieldnames, out_dir / "grammar_audit_report.xlsx", sheet_name="Grammar Audit")
+        except Exception as exc:
+            logger.warning("Failed to write grammar audit reports: %s", exc)
+
+    normalised = [{**r, "source": "grammar", "issue_type": r.get("issue_type", "grammar")} for r in rows]
+    logger.info("Grammar audit: %d issues", len(normalised))
+    return [issue_from_dict(r) for r in normalised]

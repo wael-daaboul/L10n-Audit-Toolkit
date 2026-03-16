@@ -489,3 +489,45 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run ICU message audit and return a list of :class:`AuditIssue`."""
+    import logging
+    from l10n_audit.models import issue_from_dict
+
+    logger = logging.getLogger("l10n_audit.icu")
+    config = load_icu_config(runtime.config_dir / "config.json")
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+
+    findings: list[dict] = []
+    if config.get("enabled", True):
+        for key in sorted(set(en_data) | set(ar_data)):
+            en_value = en_data.get(key, "")
+            ar_value = ar_data.get(key, "")
+            if not isinstance(en_value, str) or not isinstance(ar_value, str):
+                continue
+            findings.extend(find_icu_issues_for_key(key, en_value, ar_value, config))
+    findings = dedupe_findings(findings)
+    findings.sort(key=lambda item: (item["severity"], item["key"], item["issue_type"], item["message"]))
+
+    if options.write_reports:
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "icu_message_audit"
+        payload = {"summary": {"keys_scanned": len(set(en_data) | set(ar_data)), "findings": len(findings)}, "findings": findings}
+        fieldnames = ["key", "issue_type", "severity", "message", "old", "new", "related", "audit_source", "fix_mode"]
+        try:
+            write_json(payload, out_dir / "icu_message_audit_report.json")
+            write_csv(findings, fieldnames, out_dir / "icu_message_audit_report.csv")
+            write_simple_xlsx(findings, fieldnames, out_dir / "icu_message_audit_report.xlsx", sheet_name="ICU Audit")
+        except Exception as exc:
+            logger.warning("Failed to write ICU audit reports: %s", exc)
+
+    normalised = [{**f, "source": "icu_message_audit"} for f in findings]
+    logger.info("ICU message audit: %d issues", len(normalised))
+    return [issue_from_dict(f) for f in normalised]

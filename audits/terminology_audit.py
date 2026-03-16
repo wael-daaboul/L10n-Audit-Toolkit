@@ -226,3 +226,109 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run terminology audit and return a list of :class:`AuditIssue`."""
+    import logging
+    import re
+    from l10n_audit.models import issue_from_dict
+    from core.context_evaluator import (
+        build_context_bundle, build_language_tool_python_signals,
+        evaluate_candidate_change, load_en_languagetool_signals, merge_linguistic_signals,
+    )
+
+    logger = logging.getLogger("l10n_audit.terminology")
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+    glossary = load_json_dict(runtime.glossary_file) if runtime.glossary_file.exists() else {}
+    usage_data = scan_code_usage(
+        runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
+        profile=runtime.project_profile, locale_format=runtime.locale_format,
+        locale_keys=set(en_data) | set(ar_data),
+    )
+    usage_contexts = usage_data.get("usage_contexts", {})
+    usage_metadata = usage_data.get("usage_metadata", {})
+    lt_signals = merge_linguistic_signals(
+        load_en_languagetool_signals(runtime.results_dir),
+        build_language_tool_python_signals(ar_data, runtime),
+    )
+
+    glossary_terms = []
+    for term in glossary.get("terms", []):
+        if isinstance(term, dict) and term.get("term_en") and term.get("approved_ar"):
+            glossary_terms.append({"term_en": str(term["term_en"]), "approved_ar": str(term["approved_ar"]),
+                                   "forbidden_ar": [str(i) for i in term.get("forbidden_ar", []) if i],
+                                   "pattern": compile_term_pattern(str(term["term_en"]))})
+    global_forbidden = []
+    rules = glossary.get("rules", {})
+    if isinstance(rules, dict):
+        for item in rules.get("forbidden_terms", []):
+            if isinstance(item, dict) and item.get("forbidden_ar") and item.get("use_instead"):
+                global_forbidden.append((str(item["forbidden_ar"]), str(item["use_instead"])))
+
+    violations: list[dict] = []
+    for key, en_value in en_data.items():
+        ar_value = ar_data.get(key, "")
+        if not isinstance(en_value, str) or not isinstance(ar_value, str):
+            continue
+        en_text, ar_text = en_value.strip(), ar_value.strip()
+        if not en_text or not ar_text:
+            continue
+        context_bundle = build_context_bundle(key, en_text, ar_text,
+            usage_locations=list(usage_contexts.get(key, [])),
+            usage_metadata=usage_metadata.get(key), linguistic_signals=lt_signals.get(key))
+        for forbidden, approved in global_forbidden:
+            if forbidden in ar_text:
+                candidate = ar_text.replace(forbidden, approved)
+                decision = evaluate_candidate_change(context_bundle, candidate)
+                violations.append(make_violation(key,
+                    "context_sensitive_term_conflict" if decision["review_required"] else "forbidden_term",
+                    f"Arabic translation uses forbidden term '{forbidden}'.",
+                    en_text, ar_text, expected="" if decision["review_required"] else approved, found=forbidden,
+                    severity="medium" if decision["review_required"] else "high",
+                    context_bundle={**context_bundle, "semantic_risk": decision["semantic_risk"],
+                                    "context_sensitive_term_flags": decision["context_flags"]},
+                    review_reason=str(decision["review_reason"])))
+        for term in glossary_terms:
+            if not term["pattern"].search(en_text):
+                continue
+            approved_ar = term["approved_ar"]
+            for forbidden in term["forbidden_ar"]:
+                if forbidden in ar_text:
+                    decision = evaluate_candidate_change(context_bundle, ar_text.replace(forbidden, approved_ar))
+                    violations.append(make_violation(key,
+                        "context_sensitive_term_conflict" if decision["review_required"] else "hard_violation",
+                        f"Arabic uses forbidden term for '{term['term_en']}'.",
+                        en_text, ar_text, expected="" if decision["review_required"] else approved_ar, found=forbidden,
+                        term=term["term_en"], severity="medium",
+                        context_bundle={**context_bundle, "semantic_risk": decision["semantic_risk"],
+                                        "context_sensitive_term_flags": decision["context_flags"]},
+                        review_reason=str(decision["review_reason"])))
+
+    unique: list[dict] = []
+    seen: set = set()
+    for v in violations:
+        sig = (v["key"], v["violation_type"], v["expected_ar"], v["found_ar"])
+        if sig not in seen:
+            seen.add(sig)
+            unique.append(v)
+    unique.sort(key=lambda item: (item["violation_type"], item["key"]))
+
+    if options.write_reports:
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "terminology"
+        payload = {"summary": {"findings": len(unique)}, "violations": unique}
+        try:
+            write_json(payload, out_dir / "terminology_violations.json")
+        except Exception as exc:
+            logger.warning("Failed to write terminology reports: %s", exc)
+
+    normalised = [{**v, "source": "terminology", "issue_type": "terminology_violation",
+                   "message": v.get("message", ""), "severity": v.get("severity", "high")} for v in unique]
+    logger.info("Terminology audit: %d violations", len(normalised))
+    return [issue_from_dict(r) for r in normalised]

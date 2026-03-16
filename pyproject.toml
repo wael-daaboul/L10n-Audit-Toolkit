@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "l10n-audit-toolkit"
-version = "1.1.0"
+version = "1.2.0"
 description = "Cross-framework localization audit and translation QA toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -47,4 +47,4 @@ include-package-data = true
 "core.resources" = ["*.json"]
 
 [tool.setuptools.packages.find]
-include = ["ai*", "audits*", "bin*", "core*", "fixes*", "reports*"]
+include = ["l10n_audit*", "ai*", "audits*", "bin*", "core*", "fixes*", "reports*", "http_api*"]

@@ -111,6 +111,24 @@ Here are the main commands you will use daily:
 - `l10n-audit run --stage <STAGE>` - Runs specific or all audit modules (e.g., `fast`, `full`, `autofix`).
 - `l10n-audit update` - Fetches the latest global rules and dictionaries to your local workspace.
 
+## 🐍 Python API
+
+The L10n Audit Toolkit now offers an official Python API for integration into web platforms and CI scripts:
+
+```python
+from l10n_audit import init_workspace, run_audit
+
+# Initialize a new workspace
+init_workspace("/path/to/project", force=False)
+
+# Run an audit stage
+result = run_audit("/path/to/project", stage="fast")
+
+print(f"Audit Result: {result.summary.total_issues} issues found.")
+for report in result.reports:
+    print(f"Generated report: {report.name} at {report.path}")
+```
+
 ### 🤖 AI-Powered Review
 
 You can enhance your audits with AI (e.g., OpenAI, OpenRouter) to check context, tone, and grammar:

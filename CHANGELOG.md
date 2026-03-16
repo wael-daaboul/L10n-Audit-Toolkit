@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.2.0
+
+**Major Architectural Refactor and Official Python API**
+
+- **CLI-to-Library Transformation**: Extracted the core audit logic from the CLI into a standalone Python package (`l10n_audit`).
+- **Official Python API**: Added `l10n_audit.run_audit()`, `init_workspace()`, and `doctor_workspace()` for programmatic use.
+- **In-Process Engine**: Audits now run directly in the Python process (no `subprocess` overhead).
+- **Structured Data Models**: Introduced `AuditResult`, `AuditIssue`, and `AuditSummary` dataclasses with stable JSON/Dict serialization.
+- **Machine-Readable Codes**: Added stable `code` identifiers to all issues (e.g., `MISSING_KEY`, `TERMINOLOGY_VIOLATION`).
+- **AI Provider Interface**: Cleanly decoupled AI review logic with an injectable `AIProvider` protocol.
+- **Reference HTTP API**: Added a FastAPI-based reference implementation in `http_api/`.
+- **Packaging Improvements**: Switched to `pyproject.toml` for modern builds (builds both `sdist` and `wheel`).
+- **CI/CD Enhancements**: Updated GitHub Actions to use modular builds and automated release flows.
+
 ## v1.0
 
 Initial public release of L10n Audit Toolkit.

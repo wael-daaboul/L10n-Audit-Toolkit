@@ -224,3 +224,57 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run the placeholder audit and return a list of :class:`AuditIssue`."""
+    import logging
+    from l10n_audit.models import issue_from_dict
+
+    logger = logging.getLogger("l10n_audit.placeholders")
+
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(
+        runtime.ar_file, runtime,
+        runtime.target_locales[0] if runtime.target_locales else "ar",
+    )
+
+    findings: list[dict] = []
+    for key in sorted(set(en_data) | set(ar_data)):
+        en_value = en_data.get(key, "")
+        ar_value = ar_data.get(key, "")
+        if not isinstance(en_value, str) or not isinstance(ar_value, str):
+            continue
+        findings.extend(compare_placeholders(key, en_value, ar_value))
+
+    findings.sort(key=lambda item: (item["severity"], item["key"], item["issue_type"]))
+
+    if options.write_reports:
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "placeholders"
+        fieldnames = ["key", "issue_type", "severity", "message", "en_placeholders", "ar_placeholders", "suggestion"]
+        payload = {
+            "summary": {
+                "keys_scanned": len(set(en_data) | set(ar_data)),
+                "findings": len(findings),
+            },
+            "findings": findings,
+        }
+        try:
+            write_json(payload, out_dir / "placeholder_audit_report.json")
+            write_csv(findings, fieldnames, out_dir / "placeholder_audit_report.csv")
+            write_simple_xlsx(findings, fieldnames, out_dir / "placeholder_audit_report.xlsx", sheet_name="Placeholder Audit")
+        except Exception as exc:
+            logger.warning("Failed to write placeholder audit reports: %s", exc)
+
+    # Normalise to standard field names for issue_from_dict
+    normalised = [
+        {**f, "issue_type": "placeholder_mismatch", "source": "placeholders"}
+        for f in findings
+    ]
+    logger.info("Placeholder audit: %d issues", len(normalised))
+    return [issue_from_dict(f) for f in normalised]

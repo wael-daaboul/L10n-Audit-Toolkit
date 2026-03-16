@@ -248,3 +248,85 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options) -> list:
+    """Run the EN locale QC audit and return a list of :class:`AuditIssue`."""
+    import logging
+    import re
+    from l10n_audit.models import issue_from_dict
+
+    logger = logging.getLogger("l10n_audit.en_locale_qc")
+
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(
+        runtime.ar_file, runtime,
+        runtime.target_locales[0] if runtime.target_locales else "ar",
+    )
+
+    rows: list[dict] = []
+    duplicates: dict = {}
+    case_variants: dict = {}
+    from collections import defaultdict
+    dup_map: defaultdict = defaultdict(list)
+    var_map: defaultdict = defaultdict(set)
+
+    for key, value in en_data.items():
+        if isinstance(value, str):
+            text = value
+            trimmed = text.strip()
+            if not is_likely_technical_text(text) and "<" not in text and ">" not in text:
+                rows.extend(apply_rules(key, text))
+            if text != trimmed:
+                rows.append(make_finding(key, "whitespace", "Leading or trailing whitespace.", text, trimmed))
+            if "  " in text and not is_risky_for_whitespace_normalization(text):
+                rows.append(make_finding(key, "spacing", "Contains repeated internal spaces.", text, re.sub(r" {2,}", " ", text)))
+            capitalization = detect_capitalization_issue(key, text)
+            if capitalization:
+                rows.append(capitalization)
+            if trimmed and len(trimmed) >= 5:
+                dup_map[trimmed.casefold()].append(key)
+                var_map[trimmed.casefold()].add(trimmed)
+            en_phs = sorted(extract_placeholders(text))
+            ar_phs = sorted(extract_placeholders(str(ar_data.get(key, ""))))
+            if en_phs != ar_phs:
+                rows.append(make_finding(key, "placeholder_mismatch", "English and Arabic placeholders differ.",
+                                         ", ".join(en_phs) or "(none)", ", ".join(ar_phs) or "(none)", related="ar.json"))
+        rows.extend(key_name_issues(key))
+
+    for normalized, keys in dup_map.items():
+        unique_keys = sorted(set(keys))
+        if len(unique_keys) > 1:
+            example_value = next(iter(var_map[normalized]))
+            rows.append(make_finding(unique_keys[0], "duplicate_value",
+                                     f"Same English translation reused by multiple keys: {', '.join(unique_keys)}",
+                                     example_value, related=", ".join(unique_keys[1:]), severity="info"))
+
+    rows = dedupe_rows(rows)
+    rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"]))
+
+    if options.write_reports:
+        from collections import Counter
+        from core.audit_runtime import write_csv, write_json, write_simple_xlsx as _write_xlsx
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        out_dir = results_dir / "per_tool" / "locale_qc"
+        fieldnames = ["key", "issue_type", "severity", "message", "old", "new", "related"]
+        payload = {
+            "summary": {"keys_scanned": len(en_data), "findings": len(rows),
+                        "issue_types": dict(sorted(Counter(r["issue_type"] for r in rows).items()))},
+            "findings": rows,
+        }
+        try:
+            write_json(payload, out_dir / "en_locale_qc_report.json")
+            write_csv(rows, fieldnames, out_dir / "en_locale_qc_report.csv")
+            _write_xlsx(rows, fieldnames, out_dir / "en_locale_qc_report.xlsx", sheet_name="EN Locale QC")
+        except Exception as exc:
+            logger.warning("Failed to write EN locale QC reports: %s", exc)
+
+    normalised = [{**r, "source": "locale_qc"} for r in rows]
+    logger.info("EN locale QC: %d issues", len(normalised))
+    return [issue_from_dict(r) for r in normalised]

@@ -25,8 +25,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build
 
-      - name: Build source distribution
-        run: python -m build --sdist
+      - name: Build package
+        run: python -m build --sdist --wheel
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
