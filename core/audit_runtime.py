@@ -850,3 +850,61 @@ def parse_placeholders(text: str) -> list[dict[str, object]]:
 
     items.sort(key=lambda item: int(item["start"]))
     return items
+
+
+def mask_placeholders(text: str) -> tuple[str, list[str]]:
+    """Replace all detected placeholders with unique positional tokens.
+
+    This preserves variables like {name}, :id, or %s from being corrupted
+    by regex-based locale cleanup rules (e.g. Arabic spacing rules).
+
+    Returns
+    -------
+    tuple[str, list[str]]
+        (masked_text, list_of_original_placeholders)
+    """
+    placeholders = parse_placeholders(text)
+    if not placeholders:
+        return text, []
+
+    # Get original placeholders in sequential order (ascending start)
+    sequential = sorted(placeholders, key=lambda x: int(x["start"]))
+    original_placeholders = [str(p["raw"]) for p in sequential]
+
+    # Replace from front to back? No, back to front is safer for index stability
+    # if we use slices, but we need to know WHICH placeholder we are replacing.
+    # Map each placeholder to its original sequential index.
+    indexed_placeholders = []
+    for i, p in enumerate(sequential):
+        indexed_placeholders.append((i, p))
+
+    # Sort by start descending
+    indexed_placeholders.sort(key=lambda x: int(x[1]["start"]), reverse=True)
+
+    masked = text
+    for i, p in indexed_placeholders:
+        start, end = int(p["start"]), int(p["end"])
+        token = f"[[PH_{i}]]"
+        masked = masked[:start] + token + masked[end:]
+
+    return masked, original_placeholders
+
+
+def unmask_placeholders(masked_text: str, placeholders: list[str]) -> str:
+    """Restore original placeholders into a previously masked string.
+
+    Parameters
+    ----------
+    masked_text:
+        String containing [[PH_0]], [[PH_1]] tokens.
+    placeholders:
+        Original strings to restore in index order.
+    """
+    result = masked_text
+    # Replace tokens in reverse order if they contain each other?
+    # Not likely with [[PH_%d]], but let's be safe.
+    # Actually, we should replace from largest index to smallest to avoid
+    # replacing [[PH_10]] with [[PH_1]] part.
+    for i in range(len(placeholders) - 1, -1, -1):
+        result = result.replace(f"[[PH_{i}]]", placeholders[i])
+    return result

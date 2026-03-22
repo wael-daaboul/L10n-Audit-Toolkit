@@ -1,0 +1,5 @@
+key,issue_type,severity,message,old,new,related,audit_source,fix_mode,context_type,ui_surface,text_role,action_hint,audience_hint,context_flags,semantic_risk,lt_signals,review_reason
+update,mixed_script,medium,Arabic string contains raw Latin words that may be untranslated.,تم التحديث : {{count}},,count,ar_locale_qc,review_required,,,,,,,low,{},
+welcome,mixed_script,medium,Arabic string contains raw Latin words that may be untranslated.,مرحباً {name} ، كيف حالك ؟,,name,ar_locale_qc,review_required,,,,,,,low,{},
+update,punctuation_spacing,low,Remove the space before Arabic punctuation for cleaner UI text.,تم التحديث : {{count}},تم التحديث: {{count}},,ar_locale_qc,auto_safe,,,,,,,low,{},
+welcome,punctuation_spacing,low,Remove the space before Arabic punctuation for cleaner UI text.,مرحباً {name} ، كيف حالك ؟,مرحباً {name}، كيف حالك؟,,ar_locale_qc,auto_safe,,,,,,,low,{},

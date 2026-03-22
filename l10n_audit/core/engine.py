@@ -120,7 +120,17 @@ def _dispatch_stage(
                 if result:
                     issues.extend(result)
             except Exception as exc:
-                logger.warning("Stage sub-step failed (%s): %s", fn.__name__ if hasattr(fn, '__name__') else repr(fn), exc)
+                logger.warning("Stage sub-step failed: %s", exc)
+                issues.append(
+                    AuditIssue(
+                        key="ENGINE_FAILURE",
+                        code="ENGINE_ERROR",
+                        issue_type="engine_error",
+                        severity="error",
+                        message=f"Audit stage sub-step failed: {exc}",
+                        audit_source="engine_dispatcher",
+                    )
+                )
 
     def _collect_reports(*fns):
         for fn in fns:

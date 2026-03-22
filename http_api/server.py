@@ -26,6 +26,7 @@ try:
     from fastapi import FastAPI, HTTPException, Body
     from fastapi.responses import JSONResponse
     from pydantic import BaseModel, Field
+    from starlette.concurrency import run_in_threadpool
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "FastAPI and uvicorn are required to run the HTTP API server.\n"
@@ -43,7 +44,7 @@ import l10n_audit
 app = FastAPI(
     title="L10n Audit Toolkit API",
     description="HTTP reference API for the L10n Audit Toolkit.",
-    version="1.0.0",
+    version="1.2.1",
 )
 
 
@@ -78,7 +79,7 @@ class InitRequest(BaseModel):
 @app.get("/health", tags=["Health"])
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.2.1"}
 
 
 @app.post("/audit/run", tags=["Audit"])
@@ -88,7 +89,9 @@ async def run_audit(body: RunAuditRequest) -> Any:
     This endpoint mirrors :func:`l10n_audit.run_audit`.
     """
     try:
-        result = l10n_audit.run_audit(
+        # Run the heavy audit engine in a threadpool to keep the event loop alive
+        result = await run_in_threadpool(
+            l10n_audit.run_audit,
             body.project_path,
             stage=body.stage,
             ai_enabled=body.ai_enabled,

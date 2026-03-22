@@ -70,6 +70,7 @@ IssueCode = Literal[
     "AI_SUGGESTION",
     "NEEDS_MANUAL_REVIEW",
     "DYNAMIC_INFERRED_USAGE",
+    "ENGINE_ERROR",
     "UNKNOWN",
 ]
 

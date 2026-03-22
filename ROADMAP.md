@@ -9,6 +9,9 @@ The project is usable today for repository-based localization QA on the supporte
 - Add Angular i18n support
 - Add Android XML string resource support
 - Add iOS `.strings` and `.stringsdict` support
+- [DONE] Arabic Placeholder & Number Protection: Enhanced robust masking in `ar_locale_qc`.
+- [DONE] Non-blocking API: Improved `server.py` with threadpool execution.
+- [DONE] Graceful Engine Failures: Added `ENGINE_ERROR` logging for individual module failures.
 - Expand profile templates for more real-world project layouts
 - Improve support for multi-locale projects beyond the default source/target pairing
 

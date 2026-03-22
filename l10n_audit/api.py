@@ -70,6 +70,26 @@ def _stage_module_names(stage: str) -> list[str]:
     return mapping.get(stage, [])
 
 
+def check_prerequisites() -> None:
+    """Check if system prerequisites (like Java) are installed.
+
+    Raises
+    ------
+    RuntimeError
+        If Java is not found, with instructions for the user.
+    """
+    import subprocess
+    try:
+        # Check for Java presence
+        subprocess.run(["java", "-version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError(
+            "Java is required for grammar and style checks (LanguageTool).\n"
+            "Please ensure Java (JRE 8 or higher) is installed and available in your PATH.\n"
+            "You can download it from: https://www.java.com/"
+        )
+
+
 # ---------------------------------------------------------------------------
 # run_audit
 # ---------------------------------------------------------------------------
@@ -128,6 +148,9 @@ def run_audit(
     AIConfigError
         If AI is enabled but the API key is missing.
     """
+    check_prerequisites()
+    _cleanup_old_results(project_path)
+
     from l10n_audit.core.validators import (
         validate_ai_config,
         validate_project_path,
@@ -152,8 +175,11 @@ def run_audit(
         )
 
         # Load runtime environment
-        from core.audit_runtime import load_runtime
-        runtime = load_runtime_from_path(path)
+        from core.audit_runtime import load_runtime, AuditRuntimeError
+        try:
+            runtime = load_runtime_from_path(path)
+        except AuditRuntimeError as exc:
+            raise InvalidProjectError(f"Invalid project configuration: {exc}") from exc
         result.profile = getattr(runtime, "project_profile", "")
 
         options = AuditOptions(
@@ -365,6 +391,24 @@ def doctor_workspace(project_path: str | Path) -> dict[str, Any]:
         "warnings": warnings,
         "errors": errors,
     }
+
+
+def _cleanup_old_results(project_path: str | Path):
+    """Clean up previous audit results to prevent data pollution."""
+    import shutil
+    path = Path(project_path) / "Results"
+    if not path.exists():
+        return
+        
+    # We only clean specific sub-directories to be safe
+    for sub in ["per_tool", "final", "normalized", "fixes"]:
+        target = path / sub
+        if target.exists() and target.is_dir():
+            try:
+                shutil.rmtree(target)
+            except Exception:
+                pass
+        target.mkdir(parents=True, exist_ok=True)
 
 
 def _infer_framework(profile: str) -> str:

@@ -394,9 +394,12 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         md_file.write_text(markdown, encoding="utf-8")
         (final_dir / "final_audit_report_en.md").write_text(markdown, encoding="utf-8")
         (final_dir / "final_audit_report_ar.md").write_text(markdown, encoding="utf-8")
-        write_unified_json(json_file, payload)
-        write_unified_json(aggr_file, {"included_sources": include_sources, "issues": issues})
-        write_unified_json(review_json, {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
+        try:
+            write_unified_json(json_file, payload)
+            write_unified_json(aggr_file, {"included_sources": include_sources, "issues": issues})
+            write_unified_json(review_json, {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
+        except Exception as json_exc:
+            logger.error("Failed to write unified JSON reports: %s", json_exc)
 
         artifacts.extend([
             ReportArtifact(name="Final Report (Markdown)", path=str(md_file), format="markdown", category="summary"),

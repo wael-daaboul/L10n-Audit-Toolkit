@@ -1,16 +1,16 @@
-# Python bytecode and caches
+# --- Python bytecode and caches ---
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 
-# Virtual environments
+# --- Virtual environments ---
 .venv/
 venv/
 env/
 ENV/
 
-# Test and type-check caches
+# --- Test and type-check caches ---
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -18,26 +18,38 @@ ENV/
 .coverage.*
 htmlcov/
 
-# Build and packaging artifacts
+# --- Build and packaging artifacts ---
 build/
 dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
 
-# Editor and OS files
+# --- Editor and OS files ---
 .DS_Store
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Generated reports and audit outputs
+# --- Generated reports and audit outputs ---
 Results/*
 !Results/.gitkeep
 reports_output/
 *.log
 
-# Bundled tools and local dependencies
+# --- استبعاد ملفات أدوات التحليل الآلي (Repomix/Context) ---
+repomix*
+project-context.txt
+final-audit-toolkit.txt
+
+# --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
+# ملاحظة: تم استبعاد "مفاتيح" لأنه يحتوي على أدوات عمل خاصة بالمطور
+مفاتيح/
+internal_notes/
+.dev_scripts/
+
+# --- إعدادات الحالة والبيئة المحلية ---
 vendor/
-مفاتيح
+.l10n-audit/status.json
+.l10n-audit/version.json

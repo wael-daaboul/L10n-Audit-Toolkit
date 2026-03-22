@@ -1,0 +1,23 @@
+{
+  "config_version": 1,
+  "project_profile": "auto",
+  "source_locale": "en",
+  "target_locales": [
+    "ar"
+  ],
+  "project_root": "..",
+  "glossary_file": "glossary.json",
+  "results_dir": "Results",
+  "languagetool_dir": "vendor",
+  "ar_locale_qc": {
+    "enable_exclamation_style": true,
+    "enable_long_ui_string": true,
+    "enable_similar_phrase_variation": true,
+    "enable_suspicious_literal_translation": true
+  },
+  "icu_message_audit": {
+    "enabled": true,
+    "strict_branch_matching": true,
+    "enable_selectordinal": true
+  }
+}

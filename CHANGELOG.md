@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.1
+**Arabic Protection, API Stability, and Reliability**
+
+- **Local API Stability**: Implemented non-blocking `run_audit` in `server.py` using `run_in_threadpool` for better UI responsiveness.
+- **Arabic Placeholder Protection**: Enhanced `ar_locale_qc` with a robust masking system to prevent accidental corruption of variables and numbers during text cleanup.
+- **Graceful Error Handling**: Added independent `try-except` wrappers around audit modules to ensure a single diagnostic failure doesn't halt the entire process.
+- **Auto-Cleanup**: Automated cleaning of `Results/` temporary directories before each run to prevent data pollution.
+- **Improved Validation**: Added explicit `InvalidProjectError` raising for better API integration and error reporting.
+- **Documentation**: Added Arabic usage guide ([USAGE_AR.md](USAGE_AR.md)) and Local HTTP API documentation.
+
 ## v1.2.0
 
 **Major Architectural Refactor and Official Python API**

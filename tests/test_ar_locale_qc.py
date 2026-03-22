@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from conftest import load_json, run_module
@@ -135,3 +136,48 @@ def test_ar_locale_qc_flags_sentence_shape_and_meaning_loss(tmp_path: Path, tool
     finding = next(item for item in payload["findings"] if item["issue_type"] == "possible_meaning_loss")
     assert finding["fix_mode"] == "review_required"
     assert finding["text_role"] == "message"
+
+
+def test_ar_locale_qc_protects_placeholders_and_numbers(tmp_path: Path, tools_dir: Path) -> None:
+    en_file = tmp_path / "en.json"
+    ar_file = tmp_path / "ar.json"
+    glossary_file = tmp_path / "glossary.json"
+    out_json = tmp_path / "ar_qc_protection.json"
+
+    # 1. Arabic punctuation spacing around placeholders
+    # 2. English number format preservation (1,000)
+    # 3. Multiple placeholders
+    data = {
+        "welcome": "مرحباً {name} ، كيف حالك ؟",
+        "price": "السعر هو 1,000 ريال",
+        "update": "تم التحديث : {{count}}",
+    }
+    en_file.write_text('{"welcome":"Welcome {name}, how are you?", "price":"Price is 1,000", "update":"Updated: {{count}}"}', encoding="utf-8")
+    ar_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    glossary_file.write_text('{"terms":[],"rules":{"forbidden_terms":[]}}', encoding="utf-8")
+
+    run_module(
+        "audits.ar_locale_qc",
+        [
+            "--en", str(en_file),
+            "--input", str(ar_file),
+            "--glossary", str(glossary_file),
+            "--out-json", str(out_json),
+        ],
+        cwd=tools_dir,
+    )
+
+    payload = load_json(out_json)
+    findings = payload["findings"]
+    
+    # "welcome" should have punctuation fixed but {name} preserved
+    welcome_f = next(f for f in findings if f["key"] == "welcome" and f["issue_type"] == "punctuation_spacing")
+    assert welcome_f["new"] == "مرحباً {name}، كيف حالك؟"
+    
+    # "price" should NOT have punctuation findings for the number
+    price_findings = [f for f in findings if f["key"] == "price" and f["issue_type"] == "english_punctuation"]
+    assert len(price_findings) == 0
+    
+    # "update" should have punctuation fixed but {{count}} preserved
+    update_f = next(f for f in findings if f["key"] == "update" and f["issue_type"] == "punctuation_spacing")
+    assert update_f["new"] == "تم التحديث: {{count}}"

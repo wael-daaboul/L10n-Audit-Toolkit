@@ -10,6 +10,9 @@ L10n Audit Toolkit is a Python-based localization QA toolkit for auditing transl
 📚 **Documentation:**
 👉 <https://wael-daaboul.github.io/L10n-Audit-Toolkit/>
 
+🇸🇦 **الدليل العربي:**
+للاطلاع على دليل الأوامر باللغة العربية، راجع [USAGE_AR.md](USAGE_AR.md).
+
 ```bash
 pipx install l10n-audit-toolkit
 ```
@@ -110,6 +113,11 @@ Here are the main commands you will use daily:
 - `l10n-audit init` - Discovers your project and creates the `.l10n-audit/` workspace.
 - `l10n-audit run --stage <STAGE>` - Runs specific or all audit modules (e.g., `fast`, `full`, `autofix`).
 - `l10n-audit update` - Fetches the latest global rules and dictionaries to your local workspace.
+- `l10n-audit self-update` - Guidance for upgrading your toolkit installation via `pipx`.
+
+## 🌐 Local HTTP API (Non-blocking)
+
+The L10n Audit Toolkit now includes a local FastAPI server (v1.2.1) for integration with web dashboards. The API is non-blocking and handles long-running audits gracefully using a background threadpool.
 
 ## 🐍 Python API
 
@@ -139,6 +147,18 @@ l10n-audit run --stage ai-review \
   --ai-api-base "https://openrouter.ai/api/v1" \
   --ai-model "openai/gpt-4o-mini"
 ```
+
+### 🌐 Local HTTP API (New in v1.2.1)
+
+The toolkit now includes a reference FastAPI implementation for integration with other tools:
+
+```bash
+cd http_api
+pip install -r requirements.txt
+uvicorn server:app --reload
+```
+
+Then visit `http://localhost:8000/docs` to see the automated Swagger documentation.
 
 > **Note:** For deep technical details and developer scripts, check the `docs/` folder.
 

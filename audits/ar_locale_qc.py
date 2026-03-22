@@ -54,7 +54,9 @@ from core.audit_runtime import (
     load_json_dict,
     load_locale_mapping,
     load_runtime,
+    mask_placeholders,
     parse_placeholders,
+    unmask_placeholders,
     write_csv,
     write_json,
     write_simple_xlsx,
@@ -270,8 +272,12 @@ def load_glossary_rules(glossary: dict[str, object]) -> tuple[list[dict[str, obj
 
 def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
-    trimmed = text.strip()
-    if trimmed != text:
+    
+    # Mask placeholders to protect them from spacing rules
+    masked_text, placeholders = mask_placeholders(text)
+    
+    trimmed = masked_text.strip()
+    if trimmed != masked_text:
         findings.append(
             make_finding(
                 key,
@@ -279,12 +285,12 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
                 "low",
                 "Remove leading or trailing whitespace from this Arabic string.",
                 text,
-                trimmed,
+                unmask_placeholders(trimmed, placeholders),
                 fix_mode="auto_safe",
             )
         )
 
-    if REPEATED_SPACE_RE.search(text) and not is_risky_for_whitespace_normalization(text):
+    if REPEATED_SPACE_RE.search(masked_text) and not is_risky_for_whitespace_normalization(text):
         findings.append(
             make_finding(
                 key,
@@ -292,12 +298,12 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
                 "low",
                 "Normalize repeated internal spaces in this Arabic string.",
                 text,
-                REPEATED_SPACE_RE.sub(" ", text),
+                unmask_placeholders(REPEATED_SPACE_RE.sub(" ", masked_text), placeholders),
                 fix_mode="auto_safe",
             )
         )
 
-    if SPACE_BEFORE_AR_PUNCT_RE.search(text):
+    if SPACE_BEFORE_AR_PUNCT_RE.search(masked_text):
         findings.append(
             make_finding(
                 key,
@@ -305,13 +311,13 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
                 "low",
                 "Remove the space before Arabic punctuation for cleaner UI text.",
                 text,
-                SPACE_BEFORE_AR_PUNCT_RE.sub(r"\1", text),
+                unmask_placeholders(SPACE_BEFORE_AR_PUNCT_RE.sub(r"\1", masked_text), placeholders),
                 fix_mode="auto_safe",
             )
         )
 
-    if SPACE_AFTER_OPENING_BRACKET_RE.search(text) or SPACE_BEFORE_CLOSING_BRACKET_RE.search(text):
-        updated = SPACE_AFTER_OPENING_BRACKET_RE.sub(r"\1", text)
+    if SPACE_AFTER_OPENING_BRACKET_RE.search(masked_text) or SPACE_BEFORE_CLOSING_BRACKET_RE.search(masked_text):
+        updated = SPACE_AFTER_OPENING_BRACKET_RE.sub(r"\1", masked_text)
         updated = SPACE_BEFORE_CLOSING_BRACKET_RE.sub(r"\1", updated)
         findings.append(
             make_finding(
@@ -320,13 +326,13 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
                 "low",
                 "Normalize spacing around brackets for cleaner UI formatting.",
                 text,
-                updated,
+                unmask_placeholders(updated, placeholders),
                 fix_mode="auto_safe",
             )
         )
 
-    slash_match = SLASH_SPACING_RE.search(text)
-    if slash_match and " / " in text:
+    slash_match = SLASH_SPACING_RE.search(masked_text)
+    if slash_match and " / " in masked_text:
         findings.append(
             make_finding(
                 key,
@@ -334,7 +340,7 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
                 "low",
                 "Normalize spacing around the slash separator.",
                 text,
-                SLASH_SPACING_RE.sub("/", text),
+                unmask_placeholders(SLASH_SPACING_RE.sub("/", masked_text), placeholders),
                 fix_mode="auto_safe",
             )
         )
@@ -343,48 +349,69 @@ def detect_spacing_issues(key: str, text: str) -> list[dict[str, str]]:
 
 def detect_punctuation_issues(key: str, text: str, toggles: dict[str, bool]) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
-    if any((is_likely_technical_text(text), has_html_or_xml(text), has_icu_syntax(text), bool(parse_placeholders(text)))):
+    if any((is_likely_technical_text(text), has_html_or_xml(text), has_icu_syntax(text))):
         return findings
 
-    replacements = {",": "،", ";": "؛", "?": "؟"}
-    english_punct_found = [char for char in replacements if char in text]
-    if contains_arabic(text) and english_punct_found:
-        updated = text
+    # Mask placeholders to protect them from punctuation changes
+    masked_text, placeholders = mask_placeholders(text)
+
+    # 1. Specific: Protect English number format (decimals/thousands)
+    # We use a pattern that avoids swapping commas/dots between digits.
+    # We do this by applying general replacements with word/digit boundaries.
+    
+    replacements = {";": "؛", "?": "؟"}
+    english_punct_found = [char for char in [",", ";", "?", "."] if char in masked_text]
+    
+    if contains_arabic(masked_text) and english_punct_found:
+        updated = masked_text
         replaced_pairs: list[str] = []
+        
+        # Arabic comma replacement (ensure it's not between digits)
+        if "," in updated:
+            new_val = re.sub(r"(?<!\d),(?!\d)", "،", updated)
+            if new_val != updated:
+                updated = new_val
+                replaced_pairs.append(", -> ،")
+        
         for source, target in replacements.items():
             if source in updated:
                 updated = updated.replace(source, target)
-                replaced_pairs.append(f"{source}->{target}")
-        findings.append(
-            make_finding(
-                key,
-                "english_punctuation",
-                "low",
-                "Arabic text uses English punctuation. Review whether Arabic punctuation is preferred here.",
-                text,
-                updated,
-                related=", ".join(replaced_pairs),
-                fix_mode="auto_safe",
-            )
-        )
-
-    for english_punct, arabic_punct in MIXED_PUNCTUATION_PAIRS:
-        if english_punct in text and arabic_punct in text:
+                replaced_pairs.append(f"{source} -> {target}")
+        
+        if updated != masked_text:
             findings.append(
                 make_finding(
-                key,
-                "mixed_punctuation",
-                "medium",
-                "This string mixes Arabic and English punctuation. Review punctuation style consistency.",
-                text,
-                related=f"{english_punct} and {arabic_punct}",
+                    key,
+                    "english_punctuation",
+                    "low",
+                    "Arabic text uses English punctuation. Review whether Arabic punctuation is preferred here.",
+                    text,
+                    unmask_placeholders(updated, placeholders),
+                    related=", ".join(replaced_pairs),
+                    fix_mode="auto_safe",
+                )
+            )
+
+    for english_punct, arabic_punct in MIXED_PUNCTUATION_PAIRS:
+        if english_punct in masked_text and arabic_punct in masked_text:
+            # Check if comma is part of a number
+            if english_punct == "," and re.search(r"\d,\d", masked_text):
+                continue
+            findings.append(
+                make_finding(
+                    key,
+                    "mixed_punctuation",
+                    "medium",
+                    "This string mixes Arabic and English punctuation. Review punctuation style consistency.",
+                    text,
+                    related=f"{english_punct} and {arabic_punct}",
                 )
             )
             break
 
-    repeated = REPEATED_PUNCTUATION_RE.search(text)
+    repeated = REPEATED_PUNCTUATION_RE.search(masked_text)
     if repeated:
-        collapsed = REPEATED_PUNCTUATION_RE.sub(r"\1", text)
+        collapsed = REPEATED_PUNCTUATION_RE.sub(r"\1", masked_text)
         findings.append(
             make_finding(
                 key,
@@ -392,20 +419,19 @@ def detect_punctuation_issues(key: str, text: str, toggles: dict[str, bool]) -> 
                 "medium",
                 "Repeated punctuation looks noisy in UI text. Review tone and punctuation count.",
                 text,
-                collapsed,
+                unmask_placeholders(collapsed, placeholders),
                 fix_mode="review_required",
             )
         )
 
-    # This rule was intentionally tightened because flagging every exclamation mark
-    # created high noise for otherwise acceptable short celebratory strings.
-    stripped = text.strip()
+    # Exclamations rule
+    stripped = masked_text.strip()
     short_emphatic = (
         "!" in stripped
         and len(stripped) <= 12
         and any(token in stripped for token in SHORT_EXCLAMATION_TRIGGER_TOKENS)
     )
-    if toggles.get("enable_exclamation_style", True) and ("!!" in text or short_emphatic):
+    if toggles.get("enable_exclamation_style", True) and ("!!" in masked_text or short_emphatic):
         findings.append(
             make_finding(
                 key,
