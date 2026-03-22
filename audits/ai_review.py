@@ -160,6 +160,15 @@ if __name__ == "__main__":
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
 
+def chunk_issues(issues, batch_size=50):
+    """Split issues into smaller chunks for batch processing."""
+    for i in range(0, len(issues), batch_size):
+        yield issues[i:i + batch_size]
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
 def run_stage(runtime, options, *, ai_provider=None) -> list:
     """Run AI review stage and return a list of :class:`AuditIssue`.
 
@@ -167,25 +176,32 @@ def run_stage(runtime, options, *, ai_provider=None) -> list:
     ----------
     ai_provider:
         Optional :class:`~l10n_audit.core.ai_protocol.AIProvider`.
-        Defaults to the production HTTP provider.
+        Defaults to the production LiteLLM provider.
     """
     import os
+    import time
     from l10n_audit.models import issue_from_dict
+    from l10n_audit.exceptions import AIConfigError
 
-    if not options.ai_enabled:
-        return []
+    if not options.ai_review.enabled:
+        # Explicitly requested ai-review stage but ai_review.enabled is False
+        raise AIConfigError(
+            "AI review requested but not enabled. Use --ai-enabled or set it in config."
+        )
 
     from l10n_audit.core.validators import validate_ai_config
     ai_config = validate_ai_config(
         ai_enabled=True,
-        ai_api_key=options.ai_api_key or os.getenv(os.getenv("AI_API_KEY_ENV", "OPENAI_API_KEY")),
-        ai_model=options.ai_model,
-        ai_api_base=options.ai_api_base,
+        ai_api_key=None, # Not explicitly passed here, validator can fetch from env
+        ai_api_key_env=options.ai_review.api_key_env,
+        ai_model=options.ai_review.model,
+        ai_api_base=None, # Fetched from env or platform default
+        ai_provider=options.ai_review.provider,
     )
 
     if ai_provider is None:
-        from l10n_audit.core.ai_http_provider import HttpAIProvider
-        ai_provider = HttpAIProvider()
+        from l10n_audit.core.ai_factory import get_ai_provider
+        ai_provider = get_ai_provider(options.ai_review.provider)
 
     # Load existing issues to review
     all_issues = load_issues(runtime)
@@ -228,18 +244,24 @@ def run_stage(runtime, options, *, ai_provider=None) -> list:
         pass
 
     # Process in batches using the injected AI provider
-    CHUNK_SIZE = 20
-    chunks = [batch_items[i:i + CHUNK_SIZE] for i in range(0, len(batch_items), CHUNK_SIZE)]
     all_fixes: list[dict] = []
-    for chunk in chunks:
+    batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
+    
+    for i, batch in enumerate(batches):
         try:
-            fixes = ai_provider.review_batch(chunk, ai_config)
+            fixes = ai_provider.review_batch(batch, ai_config)
             all_fixes.extend(fixes)
+            
+            # Anti-rate-limit sleep between batches (except the last one)
+            if i < len(batches) - 1:
+                time.sleep(2)
         except Exception as exc:
-            logging.warning("AI review batch failed: %s", exc)
+            logging.warning("AI review batch %d failed: %s", i + 1, exc)
 
     if options.write_reports:
-        out_path = options.effective_output_dir(runtime.results_dir) / "ai_review_report.json"
+        out_dir = options.effective_output_dir(runtime.results_dir) / "per_tool" / "ai_review"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / "ai_review_report.json"
         try:
             write_json({"findings": all_fixes}, out_path)
         except Exception as exc:

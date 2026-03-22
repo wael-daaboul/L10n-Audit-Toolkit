@@ -128,7 +128,6 @@ def _dispatch_stage(
                         issue_type="engine_error",
                         severity="error",
                         message=f"Audit stage sub-step failed: {exc}",
-                        audit_source="engine_dispatcher",
                     )
                 )
 
@@ -186,20 +185,21 @@ def _dispatch_stage(
         _collect(lambda: _run_icu_message_audit(runtime, options))
 
     elif stage == "reports":
-        if options.write_reports:
+        if options.output.results_dir:
             _collect_reports(lambda: _run_report_aggregator(runtime, options))
 
     elif stage == "autofix":
         _collect(lambda: _run_autofix(runtime, options))
 
     elif stage == "ai-review":
-        if not options.ai_enabled:
-            logger.info("AI Review is disabled. Use ai_enabled=True to run.")
+        if not options.ai_review.enabled:
+            logger.info("AI Review is disabled. Set ai_review.enabled: true in config.")
         else:
-            _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider))
+             _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider))
 
     else:
-        raise StageError(f"Unknown stage: {stage!r}. Valid: {', '.join(sorted(VALID_STAGES))}")
+        # Fallback for unknown stages or stages handled differently
+        pass
 
     return issues, reports
 
@@ -230,11 +230,11 @@ def run_engine(
     issues : list[AuditIssue]
     reports : list[ReportArtifact]
     """
-    if ai_provider is None and options.ai_enabled:
+    if ai_provider is None and options.ai_review.enabled:
         from l10n_audit.core.ai_http_provider import HttpAIProvider
         ai_provider = HttpAIProvider()
 
-    logger.info("Engine starting stage=%s write_reports=%s", options.stage, options.write_reports)
+    logger.info("Engine starting stage=%s results_dir=%s", options.stage, options.output.results_dir)
     issues, reports = _dispatch_stage(options.stage, runtime, options, ai_provider)
     logger.info("Engine done: %d issues, %d report artifacts", len(issues), len(reports))
     return issues, reports

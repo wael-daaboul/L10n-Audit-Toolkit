@@ -9,25 +9,7 @@ from typing import Any
 
 from core.languagetool_manager import create_language_tool_session
 
-EN_RISK_TERMS = {
-    "admin",
-    "administration",
-    "manager",
-    "customer",
-    "rider",
-    "driver",
-    "captain",
-    "delivery man",
-    "operator",
-    "team",
-    "department",
-    "office",
-    "support",
-}
-EN_PERSON_TERMS = {"manager", "customer", "rider", "driver", "captain", "delivery man", "operator"}
-EN_ENTITY_TERMS = {"admin", "administration", "team", "department", "office", "support"}
-AR_PERSON_TERMS = {"المدير", "المشرف", "العميل", "الراكب", "السائق", "الكابتن", "المندوب", "الموظف"}
-AR_ENTITY_TERMS = {"الإدارة", "الدعم", "الفريق", "القسم", "المكتب", "النظام"}
+
 SENTENCE_END_RE = re.compile(r"[.!?؟]$")
 WORD_RE = re.compile(r"[A-Za-z\u0600-\u06FF0-9]+")
 
@@ -215,27 +197,33 @@ def merge_linguistic_signals(*signal_sets: dict[str, dict[str, Any]]) -> dict[st
     return dict(merged)
 
 
-def english_term_flags(en_value: str) -> list[str]:
+def english_term_flags(en_value: str, role_identifiers: list[str] | None = None, entity_whitelist_en: list[str] | None = None) -> list[str]:
     lowered = en_value.casefold()
     flags = []
-    for term in sorted(EN_RISK_TERMS):
+    combined = sorted(set((role_identifiers or []) + (entity_whitelist_en or [])))
+    for term in combined:
         if term in lowered:
             flags.append(f"en:{term}")
     return flags
 
 
-def arabic_role_flags(ar_value: str) -> list[str]:
+def arabic_role_flags(ar_value: str, role_identifiers: list[str] | None = None, entity_whitelist_ar: list[str] | None = None) -> list[str]:
     flags = []
-    for term in sorted(AR_PERSON_TERMS):
+    for term in sorted(role_identifiers or []):
         if term in ar_value:
             flags.append(f"ar_person:{term}")
-    for term in sorted(AR_ENTITY_TERMS):
+    for term in sorted(entity_whitelist_ar or []):
         if term in ar_value:
             flags.append(f"ar_entity:{term}")
     return flags
 
 
-def evaluate_candidate_change(bundle: dict[str, Any], candidate_text: str) -> dict[str, Any]:
+def evaluate_candidate_change(
+    bundle: dict[str, Any], 
+    candidate_text: str,
+    role_identifiers: list[str] | None = None,
+    entity_whitelist: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
     flags = list(bundle.get("context_sensitive_term_flags", []))
     semantic_risk = "low"
     review_reasons: list[str] = []
@@ -253,12 +241,17 @@ def evaluate_candidate_change(bundle: dict[str, Any], candidate_text: str) -> di
         review_reasons.append("Possible role/entity ambiguity detected in the English and Arabic pair.")
 
     en_lower = en_value.casefold()
-    candidate_person = any(term in candidate_text for term in AR_PERSON_TERMS)
-    current_entity = any(term in ar_value for term in AR_ENTITY_TERMS)
-    if ("admin" in en_lower or "administration" in en_lower or "department" in en_lower) and candidate_person and current_entity:
+    # Check if candidate mentions a person role when the source mentioned an entity/admin term
+    candidate_person = any(term in candidate_text for term in (role_identifiers or []))
+    ar_entity = (entity_whitelist or {}).get("ar", [])
+    en_entity = (entity_whitelist or {}).get("en", [])
+    current_entity = any(term in ar_value for term in ar_entity)
+    source_is_entity = any(term in en_lower for term in en_entity)
+    
+    if source_is_entity and candidate_person and current_entity:
         semantic_risk = "high"
         flags.append("role_entity_misalignment")
-        review_reasons.append("Candidate changes an administrative or department reference into a person role.")
+        review_reasons.append("Candidate changes an administrative/entity reference into a person role.")
 
     if (is_sentence_like(en_value) or inferred_text_type in {"helper_text", "subtitle", "dialog_body", "notification_body"}) and is_short_label(candidate_text):
         semantic_risk = "high"
@@ -301,12 +294,18 @@ def build_context_bundle(
     usage_locations: list[str] | None = None,
     usage_metadata: dict[str, Any] | None = None,
     linguistic_signals: dict[str, Any] | None = None,
+    role_identifiers: list[str] | None = None,
+    entity_whitelist: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     usage_locations = sorted(set(usage_locations or []))
     usage_metadata = usage_metadata or {}
     inferred_text_type = infer_text_type(key, en_value, usage_locations)
     key_tokens = split_key_tokens(key)
-    risk_flags = english_term_flags(en_value) + arabic_role_flags(ar_value)
+    
+    entity_en = (entity_whitelist or {}).get("en", [])
+    entity_ar = (entity_whitelist or {}).get("ar", [])
+    
+    risk_flags = english_term_flags(en_value, role_identifiers, entity_en) + arabic_role_flags(ar_value, role_identifiers, entity_ar)
     risk_flags.extend(action_mismatch_flags(en_value, ar_value))
     ui_surface = _dominant_hint(list(usage_metadata.get("ui_surfaces", [])), "generic")
     fallback_text_role = "body"

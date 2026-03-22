@@ -134,6 +134,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             ai_model=getattr(args, "ai_model", None),
             ai_api_base=getattr(args, "ai_api_base", None),
             write_reports=True,
+            apply_safe_fixes=getattr(args, "apply_safe_fixes", False),
+            results_retention_mode=getattr(args, "retention_mode", None),
+            results_retention_prefix=getattr(args, "retention_prefix", None),
         )
 
         if not result.success:
@@ -227,6 +230,9 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--ai-api-key", help="API Key for AI provider")
     run_parser.add_argument("--ai-api-base", help="Custom API Base URL (OpenAI-compatible)")
     run_parser.add_argument("--ai-model", help="AI Model to use")
+    run_parser.add_argument("--apply-safe-fixes", action="store_true", help="Automatically apply terminology fixes after audit.")
+    run_parser.add_argument("--retention-mode", choices=["archive", "overwrite"], help="How to handle previous Results/ (archive or overwrite)")
+    run_parser.add_argument("--retention-prefix", help="Prefix for archive folders (default: 'audit')")
     run_parser.set_defaults(func=cmd_run)
 
     doctor_parser = subparsers.add_parser("doctor", help="Inspect project and workspace discovery")

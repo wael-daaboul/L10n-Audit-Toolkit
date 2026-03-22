@@ -24,10 +24,9 @@ CURRENT_CONFIG_VERSION = 1
 
 
 def toolkit_version() -> str:
-    try:
-        return metadata.version("l10n-audit-toolkit")
-    except metadata.PackageNotFoundError:
-        return "1.2.0"
+    # Prioritize our internal source-of-truth VERSION during v1.2.2 rollout
+    from l10n_audit.models import VERSION
+    return VERSION
 
 
 def workspace_dir(project_root: Path) -> Path:
@@ -90,12 +89,52 @@ def detect_project_profile(project_root: Path, tools_dir: Path | None = None) ->
 def default_workspace_config(project_root: Path, profile_name: str) -> dict[str, Any]:
     return {
         "config_version": CURRENT_CONFIG_VERSION,
-        "project_profile": profile_name,
-        "source_locale": "en",
-        "target_locales": ["ar"],
+        "//_comment_version": "Configuration structure version / إصدار هيكل التكوين",
+        
+        "project_detection": {
+            "//_comment_auto": "Enable automatic framework discovery / تفعيل الاكتشاف التلقائي لإطار العمل",
+            "auto_detect": True,
+            "//_comment_force": "Override with a specific profile name / التجاوز باستخدام اسم ملف شخصي محدد",
+            "force_profile": profile_name if profile_name != "auto" else None
+        },
+        
+        "audit_rules": {
+            "//_comment_roles": "Key identifying roles (e.g., driver, admin) / أدوار مميزة (مثل: سائق، مسؤول)",
+            "role_identifiers": [],
+            "//_comment_latin": "Latin words allowed in Arabic text / كلمات لاتينية مسموح بها في النصوص العربية",
+            "latin_whitelist": [],
+            "//_comment_entity": "Specific entities to protect from rewriting / كيانات محددة تجب حمايتها من إعادة الكتابة",
+            "entity_whitelist": {"en": [], "ar": []},
+            "//_comment_fix": "Apply glossary fixes automatically / تطبيق إصلاحات القاموس تلقائياً",
+            "apply_safe_fixes": False
+        },
+        
+        "ai_review": {
+            "//_comment_enabled": "Enable LLM-based audit stage / تفعيل مرحلة التدقيق المعتمدة على الذكاء الاصطناعي",
+            "enabled": False,
+            "//_comment_provider": "AI provider (e.g., litellm) / مزود الذكاء الاصطناعي (مثل: litellm)",
+            "provider": "litellm",
+            "//_comment_model": "Model identifier / معرف النموذج",
+            "model": "gpt-4o-mini",
+            "//_comment_env": "Env var for API key / متغير البيئة لمفتاح واجهة البرمجيات",
+            "api_key_env": "OPENAI_API_KEY",
+            "//_comment_batch": "Number of keys per AI prompt / عدد المفاتيح في كل مطالبة ذكاء اصطناعي",
+            "batch_size": 20,
+            "//_comment_short": "Max words to skip semantic check / أقصى عدد كلمات لتجاوز الفحص الدلالي",
+            "short_label_threshold": 3
+        },
+        
+        "output": {
+            "//_comment_dir": "Results directory path / مسار دليل النتائج",
+            "results_dir": "Results",
+            "//_comment_mode": "Handling previous results (archive/overwrite) / التعامل مع النتائج السابقة (أرشيف/استبدال)",
+            "retention_mode": "overwrite",
+            "//_comment_prefix": "Archive folder prefix / بادئة مجلد الأرشيف",
+            "archive_name_prefix": "audit"
+        },
+        
         "project_root": "..",
         "glossary_file": WORKSPACE_GLOSSARY,
-        "results_dir": "Results",
         "languagetool_dir": "vendor",
         "ar_locale_qc": {
             "enable_exclamation_style": True,

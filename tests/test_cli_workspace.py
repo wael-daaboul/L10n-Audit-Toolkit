@@ -45,7 +45,7 @@ def test_cli_init_creates_workspace_for_flutter_project(tmp_path: Path, tools_di
 
     assert "Initialized workspace" in result.stdout
     config = json.loads((project_root / ".l10n-audit/config.json").read_text(encoding="utf-8"))
-    assert config["project_profile"] == "flutter_getx_json"
+    assert config["project_detection"]["force_profile"] == "flutter_getx_json"
     assert config["project_root"] == ".."
     assert (project_root / ".l10n-audit/glossary.json").exists()
 

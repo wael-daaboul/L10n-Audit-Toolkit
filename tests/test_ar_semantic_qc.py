@@ -1,3 +1,5 @@
+import json
+import pytest
 from pathlib import Path
 
 from conftest import load_json, run_module
@@ -35,13 +37,23 @@ def test_ar_semantic_qc_generates_review_candidate_for_missing_action(tmp_path: 
     assert finding["suggestion_confidence"] == "medium"
 
 
-def test_ar_semantic_qc_keeps_context_sensitive_role_pairs_review_only(tmp_path: Path, tools_dir: Path) -> None:
+def test_ar_semantic_qc_keeps_context_sensitive_role_pairs_review_only(tmp_path: Path, tools_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     en_file = tmp_path / "en.json"
     ar_file = tmp_path / "ar.json"
     out_json = tmp_path / "ar_semantic_context.json"
+    config_file = tmp_path / "test_config.json"
 
     en_file.write_text('{"add_vehicle_details":"Add vehicle details to send approval request to admin."}', encoding="utf-8")
     ar_file.write_text('{"add_vehicle_details":"أضف بيانات المركبة لإرسال طلب الموافقة إلى الإدارة."}', encoding="utf-8")
+    config_file.write_text(json.dumps({
+        "project_profile": "flutter_getx_json",
+        "project_root": str(tools_dir),
+        "entity_whitelist": {
+            "en": ["admin"],
+            "ar": ["الإدارة"]
+        }
+    }))
+    monkeypatch.setenv("L10N_AUDIT_CONFIG", str(config_file))
 
     run_module(
         "audits.ar_semantic_qc",

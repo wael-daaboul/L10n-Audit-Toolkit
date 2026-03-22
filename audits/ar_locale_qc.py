@@ -451,13 +451,15 @@ def detect_terminology_issues(
     term_rules: list[dict[str, object]],
     global_forbidden: list[tuple[str, str]],
     context_bundle: dict[str, object],
+    role_identifiers: list[str] | None = None,
+    entity_whitelist: dict[str, list[str]] | None = None,
 ) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
 
     for forbidden, approved in global_forbidden:
         if forbidden in ar_text:
             candidate = ar_text.replace(forbidden, approved)
-            decision = evaluate_candidate_change(context_bundle, candidate)
+            decision = evaluate_candidate_change(context_bundle, candidate, role_identifiers, entity_whitelist)
             blocked = decision["review_required"]
             findings.append(
                 make_finding(
@@ -487,7 +489,7 @@ def detect_terminology_issues(
                 if forbidden not in ar_text:
                     continue
                 candidate = ar_text.replace(forbidden, approved)
-                decision = evaluate_candidate_change(context_bundle, candidate)
+                decision = evaluate_candidate_change(context_bundle, candidate, role_identifiers, entity_whitelist)
                 findings.append(
                     make_finding(
                         key,
@@ -508,7 +510,7 @@ def detect_terminology_issues(
         if approved and approved in ar_text:
             for forbidden in forbidden_terms:
                 if forbidden in ar_text:
-                    decision = evaluate_candidate_change(context_bundle, ar_text.replace(forbidden, approved))
+                    decision = evaluate_candidate_change(context_bundle, ar_text.replace(forbidden, approved), role_identifiers, entity_whitelist)
                     findings.append(
                         make_finding(
                             key,
@@ -528,7 +530,7 @@ def detect_terminology_issues(
     return findings
 
 
-def detect_mixed_script_issues(key: str, text: str) -> list[dict[str, str]]:
+def detect_mixed_script_issues(key: str, text: str, extra_allowed_latin: set[str] | None = None) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     if not text.strip():
         return findings
@@ -545,7 +547,10 @@ def detect_mixed_script_issues(key: str, text: str) -> list[dict[str, str]]:
 
     latin_tokens = []
     for token in LATIN_TOKEN_RE.findall(sanitized):
-        if token.casefold() in ALLOWED_LATIN_TOKEN_FOLDS:
+        folded = token.casefold()
+        if folded in ALLOWED_LATIN_TOKEN_FOLDS:
+            continue
+        if extra_allowed_latin and folded in extra_allowed_latin:
             continue
         if re.fullmatch(r"[A-Z]{2,4}", token):
             continue
@@ -814,6 +819,7 @@ def main() -> None:
         profile=runtime.project_profile,
         locale_format=runtime.locale_format,
         locale_keys=set(en_data) | set(ar_data),
+        role_identifiers=list(runtime.role_identifiers),
     )
     usage_contexts = usage_data.get("usage_contexts", {})
     usage_metadata = usage_data.get("usage_metadata", {})
@@ -836,11 +842,13 @@ def main() -> None:
             usage_locations=list(usage_contexts.get(key, [])),
             usage_metadata=usage_metadata.get(key),
             linguistic_signals=lt_signals.get(key),
+            role_identifiers=list(runtime.role_identifiers),
+            entity_whitelist={k: list(v) for k, v in runtime.entity_whitelist.items()},
         )
         rows.extend(detect_empty_or_weak_issues(key, text))
         rows.extend(detect_spacing_issues(key, text))
         rows.extend(detect_punctuation_issues(key, text, rule_toggles))
-        rows.extend(detect_terminology_issues(key, en_text, text, term_rules, global_forbidden, context_bundle))
+        rows.extend(detect_terminology_issues(key, en_text, text, term_rules, global_forbidden, context_bundle, list(runtime.role_identifiers), {k: list(v) for k, v in runtime.entity_whitelist.items()}))
         rows.extend(detect_mixed_script_issues(key, text))
         if rule_toggles.get("enable_suspicious_literal_translation", True):
             rows.extend(detect_literal_translation_issues(key, text, context_bundle))
@@ -921,6 +929,7 @@ def run_stage(runtime, options) -> list:
         runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
         profile=runtime.project_profile, locale_format=runtime.locale_format,
         locale_keys=set(en_data) | set(ar_data),
+        role_identifiers=options.audit_rules.role_identifiers,
     )
     usage_contexts = usage_data.get("usage_contexts", {})
     usage_metadata = usage_data.get("usage_metadata", {})
@@ -931,6 +940,8 @@ def run_stage(runtime, options) -> list:
 
     from core.context_evaluator import build_context_bundle
     rows: list[dict] = []
+    extra_allowed_latin = {w.casefold() for w in options.audit_rules.latin_whitelist} if options.audit_rules.latin_whitelist else set()
+
     for key, value in ar_data.items():
         if not isinstance(value, str):
             continue
@@ -940,12 +951,14 @@ def run_stage(runtime, options) -> list:
             usage_locations=list(usage_contexts.get(key, [])),
             usage_metadata=usage_metadata.get(key),
             linguistic_signals=lt_signals.get(key),
+            role_identifiers=options.audit_rules.role_identifiers,
+            entity_whitelist=options.audit_rules.entity_whitelist,
         )
         rows.extend(detect_empty_or_weak_issues(key, text))
         rows.extend(detect_spacing_issues(key, text))
         rows.extend(detect_punctuation_issues(key, text, rule_toggles))
-        rows.extend(detect_terminology_issues(key, en_text, text, term_rules, global_forbidden, context_bundle))
-        rows.extend(detect_mixed_script_issues(key, text))
+        rows.extend(detect_terminology_issues(key, en_text, text, term_rules, global_forbidden, context_bundle, options.audit_rules.role_identifiers, options.audit_rules.entity_whitelist))
+        rows.extend(detect_mixed_script_issues(key, text, extra_allowed_latin))
         if rule_toggles.get("enable_suspicious_literal_translation", True):
             rows.extend(detect_literal_translation_issues(key, text, context_bundle))
         rows.extend(detect_style_issues(key, text, rule_toggles))

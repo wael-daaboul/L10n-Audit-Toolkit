@@ -18,6 +18,7 @@ REPORT_FILE_MAP = {
     "terminology": "per_tool/terminology/terminology_violations.json",
     "placeholders": "per_tool/placeholders/placeholder_audit_report.json",
     "icu_message_audit": "per_tool/icu_message_audit/icu_message_audit_report.json",
+    "ai_review": "per_tool/ai_review/ai_review_report.json",
 }
 
 SOURCE_GROUPS = {
@@ -305,6 +306,25 @@ def normalize_icu_message_audit(payload: dict[str, Any]) -> list[dict[str, Any]]
     return issues
 
 
+def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for row in payload.get("findings", []):
+        issues.append(
+            {
+                "source": "ai_review",
+                "group": "ai_suggestions",
+                "key": str(row.get("key", "")),
+                "issue_type": "ai_suggestion",
+                "severity": "info",
+                "message": str(row.get("identified_issue", "AI Review feedback")),
+                "locale": "ar",
+                "details": row,
+                "recommendation": "Review AI suggestions for accuracy and fit before applying to your final translation set.",
+            }
+        )
+    return issues
+
+
 NORMALIZERS = {
     "localization": normalize_localization,
     "locale_qc": normalize_locale_qc,
@@ -314,6 +334,7 @@ NORMALIZERS = {
     "terminology": normalize_terminology,
     "placeholders": normalize_placeholders,
     "icu_message_audit": normalize_icu_message_audit,
+    "ai_review": normalize_ai_review,
 }
 
 

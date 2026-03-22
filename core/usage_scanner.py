@@ -178,8 +178,8 @@ def matches_extension(path: Path, allowed_extensions: tuple[str, ...] | list[str
     return any(as_posix.endswith(extension) for extension in allowed_extensions)
 
 
-def infer_usage_location(file_path: Path, snippet: str) -> str:
-    return infer_usage_metadata(file_path, snippet)["usage_location"]
+def infer_usage_location(file_path: Path, snippet: str, role_identifiers: list[str] | None = None) -> str:
+    return infer_usage_metadata(file_path, snippet, role_identifiers=role_identifiers)["usage_location"]
 
 
 def _sentence_shape(snippet: str) -> str:
@@ -194,7 +194,7 @@ def _sentence_shape(snippet: str) -> str:
     return "phrase"
 
 
-def infer_usage_metadata(file_path: Path, snippet: str) -> dict[str, str]:
+def infer_usage_metadata(file_path: Path, snippet: str, role_identifiers: list[str] | None = None) -> dict[str, str]:
     haystack = f"{file_path.name} {snippet}".lower()
     usage_location = "unknown"
     if any(token in haystack for token in ("snackbar", "flushbar", "scaffoldmessenger")):
@@ -249,7 +249,7 @@ def infer_usage_metadata(file_path: Path, snippet: str) -> dict[str, str]:
         action_hint = "status"
 
     audience_hint = "general"
-    if any(token in haystack for token in ("driver", "captain", "rider", "customer", "admin", "manager", "user", "passenger")):
+    if role_identifiers and any(token in haystack for token in role_identifiers):
         audience_hint = "role_specific"
 
     return {
@@ -299,6 +299,7 @@ def scan_code_usage(
     wrappers: Iterable[str] = (),
     accessors: Iterable[str] = (),
     config_fields: Iterable[str] = (),
+    role_identifiers: list[str] | None = None,
 ) -> dict[str, object]:
     static_occurrences: dict[str, list[tuple[Path, int, str]]] = defaultdict(list)
     static_raw_keys: dict[str, set[str]] = defaultdict(set)
@@ -346,7 +347,7 @@ def scan_code_usage(
                 for match in pattern.finditer(content):
                     line_number = _line_number(starts, match.start())
                     snippet = content[starts[line_number - 1]: content.find("\n", match.start()) if "\n" in content[match.start():] else len(content)].strip()
-                    metadata = infer_usage_metadata(file_path, snippet)
+                    metadata = infer_usage_metadata(file_path, snippet, role_identifiers=role_identifiers)
                     if spec.mode == "static":
                         raw_key = str(match.group("key")).strip()
                         normalized_key = normalize_usage_key(raw_key, spec.family, profile, locale_format, locale_keys)

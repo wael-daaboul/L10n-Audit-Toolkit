@@ -1,4 +1,5 @@
 import json
+import pytest
 from pathlib import Path
 
 from conftest import load_json, run_module
@@ -26,11 +27,12 @@ def test_ar_locale_qc_detects_targeted_issues(tmp_path: Path, fixtures_dir: Path
     assert "long_ui_string" in issue_types
 
 
-def test_ar_locale_qc_blocks_context_sensitive_admin_rewrite(tmp_path: Path, tools_dir: Path) -> None:
+def test_ar_locale_qc_blocks_context_sensitive_admin_rewrite(tmp_path: Path, tools_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     en_file = tmp_path / "en.json"
     ar_file = tmp_path / "ar.json"
     glossary_file = tmp_path / "glossary.json"
     out_json = tmp_path / "ar_qc_context.json"
+    config_file = tmp_path / "test_config.json"
 
     en_file.write_text('{"add_vehicle_details":"Add vehicle details to send approval request to admin."}', encoding="utf-8")
     ar_file.write_text('{"add_vehicle_details":"أضف بيانات المركبة لإرسال طلب الموافقة إلى الإدارة."}', encoding="utf-8")
@@ -38,6 +40,16 @@ def test_ar_locale_qc_blocks_context_sensitive_admin_rewrite(tmp_path: Path, too
         '{"terms":[{"term_en":"admin","approved_ar":"المدير","forbidden_ar":["الإدارة"]}],"rules":{"forbidden_terms":[]}}',
         encoding="utf-8",
     )
+    config_file.write_text(json.dumps({
+        "project_profile": "flutter_getx_json",
+        "project_root": str(tools_dir),
+        "role_identifiers": ["admin", "المدير"],
+        "entity_whitelist": {
+            "en": ["admin"],
+            "ar": ["الإدارة"]
+        }
+    }))
+    monkeypatch.setenv("L10N_AUDIT_CONFIG", str(config_file))
 
     run_module(
         "audits.ar_locale_qc",

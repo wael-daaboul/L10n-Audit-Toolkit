@@ -11,7 +11,7 @@ import shutil
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Literal, Sequence
 from xml.sax.saxutils import escape as xml_escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -52,6 +52,9 @@ class AuditPaths:
     profile_selection_mode: str
     profile_score: int
     profile_reasons: tuple[str, ...]
+    role_identifiers: tuple[str, ...]
+    entity_whitelist: dict[str, tuple[str, ...]]
+    latin_whitelist: tuple[str, ...]
 
 
 def _resolve_config_path(base_dir: Path, raw_value: str | None, fallback: Path) -> Path:
@@ -260,6 +263,18 @@ def _resolve_code_dirs(project_root: Path, config: dict[str, object], profile: d
         code_dirs = (project_root / "lib",)
     return code_dirs[0], code_dirs
 
+def _get_nested(config: dict[str, Any], path: str, default: Any = None) -> Any:
+    """Read a nested config value (e.g. 'output.results_dir') with flat fallback."""
+    parts = path.split(".")
+    curr = config
+    for p in parts:
+        if isinstance(curr, dict) and p in curr:
+            curr = curr[p]
+        else:
+            # Fallback to the leaf name if it exists at the root (backward compat)
+            return config.get(parts[-1], default)
+    return curr
+
 
 def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
     tools_dir = detect_tools_dir(script_path)
@@ -271,11 +286,15 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
     runtime_config_dir = config_path.parent
     config_root_base = runtime_config_dir if override_config else tools_dir
     path_base_dir = runtime_config_dir if override_config else tools_dir
-    config: dict[str, object] = {}
+    
+    config: dict[str, Any] = {}
     if config_path.exists():
         config = json.loads(config_path.read_text(encoding="utf-8"))
+    
     profiles = _load_project_profiles(default_config_dir)
-    configured_profile = str(config.get("project_profile") or "auto").strip() or "auto"
+    
+    # Preference: project_detection.force_profile -> project_profile
+    configured_profile = str(_get_nested(config, "project_detection.force_profile") or config.get("project_profile") or "auto").strip() or "auto"
     configured_root = str(config.get("project_root") or "")
 
     if configured_profile != "auto":
@@ -290,8 +309,13 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         ranked_candidates: tuple[object, ...] = ()
     else:
         best_candidate, ranked_candidates = autodetect_profile(config_root_base, configured_root, profiles)
+        
+        # Check if project_detection.auto_detect is False
+        if _get_nested(config, "project_detection.auto_detect", True) is False and validate:
+             raise AuditRuntimeError("Manual project detection required: 'auto_detect' is disabled and no 'force_profile' set.")
+
         second_candidate = ranked_candidates[1] if len(ranked_candidates) > 1 else None
-        if best_candidate.score < LOW_CONFIDENCE_THRESHOLD:
+        if best_candidate.score < LOW_CONFIDENCE_THRESHOLD and validate:
             details = "; ".join(
                 f"{candidate.profile_name}={candidate.score} ({', '.join(candidate.reasons[:3]) or 'no signals'})"
                 for candidate in ranked_candidates[:3]
@@ -301,7 +325,7 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
                 "Set 'project_profile' manually in config/config.json. "
                 f"Candidates: {details}"
             )
-        if second_candidate and best_candidate.score - second_candidate.score < AMBIGUITY_MARGIN:
+        if second_candidate and best_candidate.score - second_candidate.score < AMBIGUITY_MARGIN and validate:
             details = "; ".join(
                 f"{candidate.profile_name}={candidate.score} ({', '.join(candidate.reasons[:3]) or 'no signals'})"
                 for candidate in ranked_candidates[:3]
@@ -367,15 +391,24 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         source_locale=source_locale,
         target_locales=target_locales,
         locale_paths=locale_paths,
-        usage_patterns=tuple(str(item) for item in (effective_config.get("usage_patterns") or profile.get("usage_patterns") or [])),
-        usage_wrappers=tuple(str(item) for item in (effective_config.get("usage_wrappers") or profile.get("usage_wrappers") or ["t", "translate", "i18n", "localize"])),
-        usage_accessors=tuple(str(item) for item in (effective_config.get("usage_accessors") or profile.get("usage_accessors") or ["LocaleKeys", "AppStrings", "TranslationKeys"])),
-        usage_config_fields=tuple(str(item) for item in (effective_config.get("usage_config_fields") or profile.get("usage_config_fields") or ["titleKey", "labelKey", "textKey", "subtitleKey", "translation_key", "messageKey"])),
-        allowed_extensions=tuple(str(item) for item in (effective_config.get("allowed_extensions") or profile.get("allowed_extensions") or [])),
+        usage_patterns=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.usage_patterns", profile.get("usage_patterns") or []))),
+        usage_wrappers=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.usage_wrappers", profile.get("usage_wrappers") or ["t", "translate", "i18n", "localize"]))),
+        usage_accessors=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.usage_accessors", profile.get("usage_accessors") or ["LocaleKeys", "AppStrings", "TranslationKeys"]))),
+        usage_config_fields=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.usage_config_fields", profile.get("usage_config_fields") or ["titleKey", "labelKey", "textKey", "subtitleKey", "translation_key", "messageKey"]))),
+        allowed_extensions=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.allowed_extensions", profile.get("allowed_extensions") or []))),
         profile_notes=str(profile.get("notes") or ""),
         profile_selection_mode=profile_selection_mode,
         profile_score=profile_score,
         profile_reasons=profile_reasons,
+        role_identifiers=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.domain_roles") or _get_nested(effective_config, "audit_rules.role_identifiers") or [])),
+        entity_whitelist={
+            lang: tuple(str(item) for item in terms)
+            for lang, terms in (
+                _get_nested(effective_config, "audit_rules.entity_whitelist") or {"en": [], "ar": []}
+            ).items()
+            if isinstance(terms, (list, tuple))
+        },
+        latin_whitelist=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.latin_whitelist") or [])),
     )
     if validate:
         validate_runtime(runtime)

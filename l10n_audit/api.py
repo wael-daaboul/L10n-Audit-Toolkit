@@ -23,15 +23,21 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from l10n_audit.exceptions import AuditError, InvalidProjectError
 from l10n_audit.models import (
+    AIReview,
+    AuditIssue,
     AuditOptions,
     AuditResult,
+    AuditRules,
     AuditSummary,
+    OutputOptions,
+    ProjectDetection,
     ReportArtifact,
 )
+from l10n_audit.core.results_manager import manage_previous_results
 
 logger = logging.getLogger("l10n_audit.api")
 
@@ -102,9 +108,14 @@ def run_audit(
     ai_api_key: str | None = None,
     ai_model: str | None = None,
     ai_api_base: str | None = None,
+    ai_provider: str = "litellm",
+    ai_api_key_env: str | None = None,
     write_reports: bool = True,
     output_dir: str | Path | None = None,
-    ai_provider=None,
+    ai_provider_override: Any = None,
+    apply_safe_fixes: bool = False,
+    results_retention_mode: Literal["archive", "overwrite"] | None = None,
+    results_retention_prefix: str | None = None,
 ) -> AuditResult:
     """Run an audit stage on *project_path* and return structured results.
 
@@ -118,18 +129,22 @@ def run_audit(
         ``ar-qc``, ``ar-semantic``, ``icu``, ``reports``, ``autofix``,
         ``ai-review``.
     ai_enabled:
-        Enable the AI review step (requires *ai_api_key*).
+        Enable the AI review step (requires API key).
     ai_api_key:
-        OpenAI-compatible API key.
+        Direct API key. If not provided, will look for *ai_api_key_env*.
     ai_model:
         Model identifier, e.g. ``"gpt-4o-mini"``.
     ai_api_base:
-        Override the API base URL (default: ``https://api.openai.com/v1``).
+        Override the API base URL.
+    ai_provider:
+        The provider type (default: ``"litellm"``).
+    ai_api_key_env:
+        The environment variable name to read the API key from.
     write_reports:
         Write per-tool JSON/CSV/XLSX report files to disk.
     output_dir:
         Override the output directory.  Defaults to ``<project>/.l10n-audit/Results``.
-    ai_provider:
+    ai_provider_override:
         Optional :class:`~l10n_audit.core.ai_protocol.AIProvider` implementation.
         Inject a :class:`~l10n_audit.core.mock_ai_provider.MockAIProvider` in tests
         to prevent any network calls.
@@ -149,7 +164,6 @@ def run_audit(
         If AI is enabled but the API key is missing.
     """
     check_prerequisites()
-    _cleanup_old_results(project_path)
 
     from l10n_audit.core.validators import (
         validate_ai_config,
@@ -172,6 +186,8 @@ def run_audit(
             ai_api_key=ai_api_key,
             ai_model=ai_model,
             ai_api_base=ai_api_base,
+            ai_provider=ai_provider,
+            ai_api_key_env=ai_api_key_env,
         )
 
         # Load runtime environment
@@ -184,15 +200,53 @@ def run_audit(
 
         options = AuditOptions(
             stage=stage,
-            ai_enabled=ai_enabled,
-            ai_api_key=ai_api_key,
-            ai_model=ai_model,
-            ai_api_base=ai_api_base,
-            write_reports=write_reports,
-            output_dir=output_dir,
+            project_detection=ProjectDetection(
+                auto_detect=True,
+                force_profile=getattr(runtime, "project_profile", ""),
+            ),
+            audit_rules=AuditRules(
+                role_identifiers=list(runtime.role_identifiers),
+                entity_whitelist={k: list(v) for k, v in runtime.entity_whitelist.items()},
+                apply_safe_fixes=apply_safe_fixes,
+                latin_whitelist=list(getattr(runtime, "latin_whitelist", [])),
+            ),
+            ai_review=AIReview(
+                enabled=ai_enabled,
+                provider=ai_provider or "litellm",
+                model=ai_model or "gpt-4o-mini",
+                api_key_env=ai_api_key_env or "OPENAI_API_KEY",
+            ),
+            output=OutputOptions(
+                results_dir=output_dir or runtime.results_dir,
+                retention_mode=results_retention_mode or "overwrite",
+                archive_name_prefix=results_retention_prefix or "audit",
+            )
         )
 
-        issues, reports = run_engine(runtime, options, ai_provider=ai_provider)
+        # Step 2: Results Retention Management
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        manage_previous_results(results_dir, options)
+
+        issues, reports = run_engine(runtime, options, ai_provider=ai_provider_override)
+
+        # Phase 4: Glossary Auto-Fixer
+        if apply_safe_fixes:
+            try:
+                from core.glossary_engine import load_glossary_rules
+                from fixes.apply_glossary_fixes import apply_glossary_to_data
+                from core.locale_exporters import export_locale_mapping
+                
+                rules = load_glossary_rules(runtime.glossary_file)
+                if rules:
+                    # Fix AR file
+                    from core.audit_runtime import load_locale_mapping
+                    ar_data = load_locale_mapping(runtime.ar_file, runtime, "ar")
+                    updated_ar, count_ar = apply_glossary_to_data(ar_data, rules)
+                    if count_ar > 0:
+                        export_locale_mapping(updated_ar, "json", runtime.ar_file)
+                        logger.info("Automatically applied %d glossary fixes to %s", count_ar, runtime.ar_file)
+            except Exception as exc:
+                logger.warning("Glossary auto-fix failed: %s", exc)
 
         result.issues = issues
         result.reports = reports
@@ -235,7 +289,7 @@ def load_runtime_from_path(project_path: Path):
     old_cwd = os.getcwd()
     try:
         os.chdir(project_path)
-        runtime = load_runtime(str(project_path / ".l10n-audit" / "cli.py"), validate=False)
+        runtime = load_runtime(str(project_path / ".l10n-audit" / "cli.py"), validate=True)
     finally:
         os.chdir(old_cwd)
     return runtime
@@ -393,22 +447,7 @@ def doctor_workspace(project_path: str | Path) -> dict[str, Any]:
     }
 
 
-def _cleanup_old_results(project_path: str | Path):
-    """Clean up previous audit results to prevent data pollution."""
-    import shutil
-    path = Path(project_path) / "Results"
-    if not path.exists():
-        return
-        
-    # We only clean specific sub-directories to be safe
-    for sub in ["per_tool", "final", "normalized", "fixes"]:
-        target = path / sub
-        if target.exists() and target.is_dir():
-            try:
-                shutil.rmtree(target)
-            except Exception:
-                pass
-        target.mkdir(parents=True, exist_ok=True)
+
 
 
 def _infer_framework(profile: str) -> str:

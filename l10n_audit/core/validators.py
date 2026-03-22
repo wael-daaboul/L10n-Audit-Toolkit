@@ -7,6 +7,7 @@ on failure so callers can handle errors at the right abstraction level.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from l10n_audit.exceptions import AIConfigError, InvalidProjectError, StageError
 from l10n_audit.models import VALID_STAGES
@@ -61,10 +62,12 @@ def validate_stage(stage: str) -> str:
 def validate_ai_config(
     *,
     ai_enabled: bool,
-    ai_api_key: str | None,
-    ai_model: str | None,
-    ai_api_base: str | None,
-) -> dict[str, str]:
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
+    ai_api_base: str | None = None,
+    ai_provider: str = "litellm",
+    ai_api_key_env: str | None = None,
+) -> dict[str, Any]:
     """Validate AI configuration and return a sanitised config dict.
 
     When *ai_enabled* is ``False`` this is a no-op (returns ``{}``).
@@ -72,26 +75,40 @@ def validate_ai_config(
     Returns
     -------
     dict
-        ``{"api_key": ..., "api_base": ..., "model": ...}`` when AI is enabled.
+        AI configuration parameters including resolved API key.
 
     Raises
     ------
     AIConfigError
-        If AI is enabled but no API key is provided.
+        If AI is enabled but no API key can be resolved.
     """
     if not ai_enabled:
         return {}
 
-    if not ai_api_key:
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    # Resolve API Key
+    # 1. Direct pass
+    # 2. Custom env var name
+    # 3. Default (OPENAI_API_KEY)
+    resolved_key = ai_api_key
+    if not resolved_key:
+        env_var_name = ai_api_key_env or "OPENAI_API_KEY"
+        resolved_key = os.getenv(env_var_name)
+
+    if not resolved_key:
         raise AIConfigError(
-            "AI Review is enabled but no API key was provided. "
-            "Pass ai_api_key or set the OPENAI_API_KEY environment variable."
+            f"AI Review triggered but no API key resolved. "
+            f"Pass ai_api_key or set {'custom env ' + ai_api_key_env if ai_api_key_env else 'OPENAI_API_KEY'}."
         )
 
     return {
-        "api_key": ai_api_key,
-        "api_base": (ai_api_base or "https://api.openai.com/v1").rstrip("/"),
+        "api_key": resolved_key,
+        "api_base": ai_api_base.rstrip("/") if ai_api_base else None,
         "model": ai_model or "gpt-4o-mini",
+        "provider": ai_provider,
     }
 
 

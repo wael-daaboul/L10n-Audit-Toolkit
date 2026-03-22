@@ -15,9 +15,13 @@ def test_context_bundle_blocks_sentence_collapse_into_entity_label() -> None:
             "sentence_shapes": ["sentence_like"],
         },
         linguistic_signals={"lt_grammar_flags": 1, "lt_style_flags": 0, "lt_literalness_support": False, "sources": ["languagetool"]},
+        role_identifiers=["المدير"],
+        entity_whitelist={"en": ["admin"], "ar": ["الإدارة"]},
     )
 
-    decision = evaluate_candidate_change(bundle, "المدير")
+    decision = evaluate_candidate_change(
+        bundle, "المدير", role_identifiers=["المدير"], entity_whitelist={"en": ["admin"], "ar": ["الإدارة"]}
+    )
 
     assert bundle["inferred_text_type"] == "helper_text"
     assert bundle["ui_surface"] == "form"
@@ -53,9 +57,13 @@ def test_languagetool_signals_support_but_do_not_override_semantic_guard() -> No
             "sentence_shapes": ["sentence_like"],
         },
         linguistic_signals={"lt_grammar_flags": 3, "lt_style_flags": 2, "lt_literalness_support": True, "sources": ["languagetool", "language_tool_python"]},
+        role_identifiers=["المدير"],
+        entity_whitelist={"en": ["administration"], "ar": ["الإدارة"]},
     )
 
-    decision = evaluate_candidate_change(bundle, "المدير")
+    decision = evaluate_candidate_change(
+        bundle, "المدير", role_identifiers=["المدير"], entity_whitelist={"en": ["administration"], "ar": ["الإدارة"]}
+    )
 
     assert bundle["linguistic_signals"]["lt_grammar_flags"] == 3
     assert bundle["linguistic_signals"]["lt_literalness_support"] is True

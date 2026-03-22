@@ -129,27 +129,41 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         if item["classification"] == "auto_safe"
     }
 
-    rows: list[dict[str, str]] = []
-    seen: set[tuple[str, str, str, str]] = set()
+    rows_by_key: dict[tuple[str, str], dict[str, str]] = {}
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    
     for issue in issues:
+        if str(issue.get("severity", "")).lower() == "info":
+            continue
+            
         locale = review_locale(issue)
         key = str(issue.get("key", ""))
         issue_type = str(issue.get("issue_type", ""))
         current_value = old_value_for_issue(issue, en_data, ar_data)
         suggested_fix = suggested_fix_for_issue(issue, en_data, ar_data)
-        signature = (key, locale, issue_type, suggested_fix)
-        if signature in auto_safe or signature in seen:
-            continue
-        seen.add(signature)
-        provenance = {
-            "source": str(issue.get("source", "")),
-            "issue_type": issue_type,
-            "severity": str(issue.get("severity", "")),
-            "message": str(issue.get("message", "")),
-        }
-        rows.append(
-            {
+        message = str(issue.get("message", ""))
+        source = str(issue.get("source", ""))
+        severity = str(issue.get("severity", ""))
+        
+        row_key = (key, locale)
+        if row_key in rows_by_key:
+            existing = rows_by_key[row_key]
+            # Merge unique issue types
+            if issue_type not in existing["issue_type"].split(" | "):
+                existing["issue_type"] += f" | {issue_type}"
+            # Merge unique notes
+            if message not in existing["notes"].split(" | "):
+                existing["notes"] += f" | {message}"
+            # Merge provenance
+            prov_segment = f"{source}|{issue_type}|{severity}"
+            if prov_segment not in existing["provenance"].split(" || "):
+                existing["provenance"] += f" || {prov_segment}"
+            # Prefer non-empty suggested fix
+            if not existing["suggested_fix"] and suggested_fix:
+                existing["suggested_fix"] = suggested_fix
+                existing["suggested_hash"] = compute_text_hash(suggested_fix)
+        else:
+            rows_by_key[row_key] = {
                 "key": key,
                 "locale": locale,
                 "old_value": current_value,
@@ -157,7 +171,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "suggested_fix": suggested_fix,
                 "approved_new": "",
                 "status": "pending",
-                "notes": str(issue.get("message", "")),
+                "notes": message,
                 "context_type": str((issue.get("details", {}) or {}).get("context_type", "")),
                 "context_flags": str((issue.get("details", {}) or {}).get("context_flags", "")),
                 "semantic_risk": str((issue.get("details", {}) or {}).get("semantic_risk", "")),
@@ -168,9 +182,13 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "suggested_hash": compute_text_hash(suggested_fix),
                 "plan_id": compute_plan_id(key, locale, issue_type, current_value, suggested_fix),
                 "generated_at": generated_at,
-                "provenance": f"{provenance['source']}|{provenance['issue_type']}|{provenance['severity']}",
+                "provenance": f"{source}|{issue_type}|{severity}",
             }
-        )
+
+    rows = list(rows_by_key.values())
+    # Filter out auto-safe from review queue if they match exactly
+    # (Though grouping by key might change how auto_safe works, 
+    # the user goal is grouping by key for the review queue).
 
     rows.sort(key=lambda row: (row["locale"], row["key"], row["issue_type"]))
     return rows
@@ -196,7 +214,11 @@ def render_markdown(
     missing: list[str],
 ) -> str:
     critical_count = sum(1 for issue in issues if str(issue.get("severity")) in {"critical", "high"})
-    actionable = [issue for issue in issues if str(issue.get("source")) not in HIDDEN_WHEN_EMPTY or source_status.get(str(issue.get("source"))) != "passed"]
+    actionable = [
+        issue for issue in issues 
+        if (str(issue.get("source")) not in HIDDEN_WHEN_EMPTY or source_status.get(str(issue.get("source"))) != "passed")
+        and str(issue.get("severity", "")).lower() != "info"
+    ]
     top_review = sorted(
         actionable,
         key=lambda issue: (
@@ -348,11 +370,14 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
 
     logger = logging.getLogger("l10n_audit.report_aggregator")
     results_dir = options.effective_output_dir(runtime.results_dir)
+    include_sources = kwargs.get("sources")
+    if isinstance(include_sources, str):
+        include_sources = {s.strip() for s in include_sources.split(",") if s.strip()}
 
     artifacts: list[ReportArtifact] = []
 
     try:
-        reports, issues, missing = load_all_report_issues(results_dir)
+        reports, issues, missing = load_all_report_issues(results_dir, include_sources=include_sources)
         summary = summarize_issues(issues)
         safe_fixes = safe_fix_counts(issues)
         review_rows = build_review_queue(issues, runtime)

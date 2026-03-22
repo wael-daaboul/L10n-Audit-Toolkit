@@ -153,7 +153,7 @@ def test_autodetect_fails_when_ambiguous(tmp_path: Path) -> None:
     _write(project_root / "src/pages/index.ts", "export default 1;")
 
     with pytest.raises(AuditRuntimeError, match="ambiguous|confidence"):
-        load_runtime(tools_dir, validate=False)
+        load_runtime(tools_dir, validate=True)
 
 
 def test_manual_flutter_profile_validates_legacy_json_paths(tmp_path: Path) -> None:

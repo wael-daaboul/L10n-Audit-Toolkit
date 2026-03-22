@@ -88,7 +88,7 @@ def build_semantic_candidate(en_text: str, ar_text: str, bundle: dict[str, objec
     return candidate, "medium"
 
 
-def detect_semantic_findings(key: str, en_text: str, ar_text: str, bundle: dict[str, object]) -> list[dict[str, str]]:
+def detect_semantic_findings(key: str, en_text: str, ar_text: str, bundle: dict[str, object], short_label_threshold: int = 3, glossary_approved_pairs: set[tuple[str, str]] | None = None) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     english_shape = str(bundle.get("english_sentence_shape", ""))
     arabic_shape = str(bundle.get("arabic_sentence_shape", ""))
@@ -124,8 +124,11 @@ def detect_semantic_findings(key: str, en_text: str, ar_text: str, bundle: dict[
             )
         )
 
+    # 1. Configurable word count threshold for "possible_meaning_loss"
+    ar_word_count = len(ar_text.strip().split())
+    
     missing_actions = [flag.split(":", 1)[1] for flag in semantic_flags if flag.startswith("missing_action:")]
-    if missing_actions:
+    if missing_actions and ar_word_count >= short_label_threshold:
         findings.append(
             make_finding(
                 key,
@@ -134,12 +137,20 @@ def detect_semantic_findings(key: str, en_text: str, ar_text: str, bundle: dict[
                 f"Arabic text may be missing action meaning from the English sentence: {', '.join(sorted(set(missing_actions)))}.",
                 ar_text,
                 candidate_value=candidate_value,
-                suggestion_confidence=confidence,
+                suggestion_confidence="medium" if confidence == "medium" else "low",
                 context_bundle=bundle,
             )
         )
 
-    if bundle.get("has_context_sensitive_terms") and any(flag.startswith(("en:", "ar_person:", "ar_entity:")) for flag in semantic_flags):
+    # 2. Glossary Integration to reduce noise in context-sensitive ambiguity
+    is_glossary_approved = False
+    if glossary_approved_pairs:
+        # Check case-folded source matching
+        pair = (en_text.strip().casefold(), ar_text.strip())
+        if pair in glossary_approved_pairs:
+            is_glossary_approved = True
+
+    if not is_glossary_approved and bundle.get("has_context_sensitive_terms") and any(flag.startswith(("en:", "ar_person:", "ar_entity:")) for flag in semantic_flags):
         findings.append(
             make_finding(
                 key,
@@ -147,6 +158,7 @@ def detect_semantic_findings(key: str, en_text: str, ar_text: str, bundle: dict[
                 "info",
                 "This English/Arabic pair contains role or entity ambiguity. Keep semantic rewrites in manual review.",
                 ar_text,
+                candidate_value="", # Disable robotic fix
                 context_bundle=bundle,
             )
         )
@@ -172,6 +184,7 @@ def main() -> None:
         profile=runtime.project_profile,
         locale_format=runtime.locale_format,
         locale_keys=set(en_data) | set(ar_data),
+        role_identifiers=list(runtime.role_identifiers),
     )
     usage_contexts = usage_data.get("usage_contexts", {})
     usage_metadata = usage_data.get("usage_metadata", {})
@@ -194,8 +207,13 @@ def main() -> None:
             usage_locations=list(usage_contexts.get(key, [])),
             usage_metadata=usage_metadata.get(key),
             linguistic_signals=lt_signals.get(key),
+            role_identifiers=list(runtime.role_identifiers),
+            entity_whitelist={k: list(v) for k, v in runtime.entity_whitelist.items()},
         )
-        rows.extend(detect_semantic_findings(key, en_value, ar_value, bundle))
+        rows.extend(detect_semantic_findings(
+            key, en_value, ar_value, bundle,
+            short_label_threshold=getattr(args, "short_label_threshold", 3)
+        ))
 
     rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"]))
     payload = {
@@ -261,6 +279,7 @@ def run_stage(runtime, options) -> list:
         runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
         profile=runtime.project_profile, locale_format=runtime.locale_format,
         locale_keys=set(en_data) | set(ar_data),
+        role_identifiers=options.audit_rules.role_identifiers,
     )
     usage_contexts = usage_data.get("usage_contexts", {})
     usage_metadata = usage_data.get("usage_metadata", {})
@@ -268,6 +287,22 @@ def run_stage(runtime, options) -> list:
         load_en_languagetool_signals(runtime.results_dir),
         build_language_tool_python_signals(ar_data, runtime),
     )
+
+    # 1. Prepare glossary-based semantic whitelist
+    glossary_approved_pairs: set[tuple[str, str]] = set()
+    try:
+        glossary_path = runtime.glossary_file
+        if glossary_path.exists():
+            from core.audit_runtime import load_json_dict
+            glossary = load_json_dict(glossary_path)
+            for term in glossary.get("terms", []):
+                if isinstance(term, dict):
+                    en = str(term.get("term_en", "")).strip().casefold()
+                    ar = str(term.get("approved_ar", "")).strip()
+                    if en and ar:
+                        glossary_approved_pairs.add((en, ar))
+    except Exception:
+        pass
 
     rows: list[dict] = []
     for key, ar_value in ar_data.items():
@@ -280,8 +315,14 @@ def run_stage(runtime, options) -> list:
             usage_locations=list(usage_contexts.get(key, [])),
             usage_metadata=usage_metadata.get(key),
             linguistic_signals=lt_signals.get(key),
+            role_identifiers=options.audit_rules.role_identifiers,
+            entity_whitelist=options.audit_rules.entity_whitelist,
         )
-        rows.extend(detect_semantic_findings(key, en_value, ar_value, bundle))
+        rows.extend(detect_semantic_findings(
+            key, en_value, ar_value, bundle, 
+            short_label_threshold=options.ai_review.short_label_threshold,
+            glossary_approved_pairs=glossary_approved_pairs
+        ))
     rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"]))
 
     if options.write_reports:

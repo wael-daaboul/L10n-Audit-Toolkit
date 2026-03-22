@@ -285,33 +285,176 @@ class ReportArtifact:
 
 
 # ---------------------------------------------------------------------------
-# AuditOptions
+# ResultsRetention
 # ---------------------------------------------------------------------------
 
 @dataclass
-class AuditOptions:
-    """Options controlling a single :func:`run_audit` invocation."""
+class ResultsRetention:
+    """Configures how historical audit results are handled in the Results/ directory."""
 
-    stage: str = "full"
-    ai_enabled: bool = False
-    ai_api_key: str | None = None
-    ai_model: str | None = None
-    ai_api_base: str | None = None
-    write_reports: bool = True
-    output_dir: str | Path | None = None
+    mode: Literal["archive", "overwrite"] = "overwrite"
+    """Whether to move old results to an archive folder or just overwrite them."""
 
-    def effective_output_dir(self, default: Path) -> Path:
-        if self.output_dir:
-            return Path(self.output_dir)
-        return default
+    archive_name_prefix: str = "audit"
+    """Prefix for archive directories, e.g. "audit_v1"."""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+# ---------------------------------------------------------------------------
+# AuditOptions
+# ---------------------------------------------------------------------------
+
+VERSION = "1.2.2"
+
+
+@dataclass
+class ProjectDetection:
+    """Settings controlling how the project profile is discovered / إعدادات اكتشاف نوع المشروع"""
+    auto_detect: bool = True  # Enable automatic project discovery / تفعيل اكتشاف المشروع تلقائياً
+    force_profile: str | None = None  # Force a specific profile (e.g. 'flutter') / فرض ملف تعريف محدد للمشروع
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AuditRules:
+    """Terminology and semantic rules for the audit engine / قواعد المصطلحات والمعاني لمحرك التدقيق"""
+    role_identifiers: list[str] = field(default_factory=list)  # Domain-specific roles (e.g. 'admin') / أدوار النظام (مثل 'المسؤول')
+    latin_whitelist: list[str] = field(default_factory=list)  # Latin terms allowed in Arabic text / كلمات لاتينية مسموح بها في النص العربي
+    entity_whitelist: dict[str, list[str]] = field(default_factory=lambda: {"en": [], "ar": []})  # Protected entities / الكيانات المحمية
+    apply_safe_fixes: bool = False  # Automatically apply glossary replacements / تطبيق تصحيحات القاموس تلقائياً
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class AIReview:
+    """Configuration for LLM-powered review stages / إعدادات مرحلة المراجعة بالذكاء الاصطناعي"""
+    enabled: bool = False  # Enable/disable AI review / تفعيل أو تعطيل مراجعة الذكاء الاصطناعي
+    provider: str = "litellm"  # AI provider name (openai, deepseek, etc) / مزود خدمة الذكاء الاصطناعي
+    model: str | None = None  # Model identifier (e.g. 'gpt-4o-mini') / اسم نموذج الذكاء الاصطناعي
+    api_key_env: str | None = None  # Env var for API key / اسم متغير البيئة لمفتاح API
+    batch_size: int = 20  # Number of keys per AI request / عدد المفاتيح في كل طلب للذكاء الاصطناعي
+    short_label_threshold: int = 3  # Min words for context evaluation / الحد الأدنى للكلمات لتقييم السياق
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class OutputOptions:
+    """Settings for results storage and report generation / إعدادات تخزين النتائج وإنشاء التقارير"""
+    results_dir: str | Path | None = None  # Custom results directory / مجلد مخصص للنتائج
+    retention_mode: Literal["archive", "overwrite"] = "overwrite"  # Action for old results / ماذا نفعل للنتائج القديمة
+    archive_name_prefix: str = "audit"  # Prefix for archive files / بادئة أسماء ملفات الأرشيف
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        if d.get("output_dir") is not None:
-            d["output_dir"] = str(d["output_dir"])
-        # Never serialise API key
-        d.pop("ai_api_key", None)
+        if d.get("results_dir") is not None:
+            d["results_dir"] = str(d["results_dir"])
         return d
+
+
+@dataclass
+class AuditOptions:
+    """Unified configuration for a single l10n-audit run / الإعدادات الموحدة لعملية التدقيق"""
+
+    stage: str = "full"  # Audit stage to run (full|fast|terminology|...) / مرحلة التدقيق المطلوب تشغيلها
+    write_reports: bool = True  # Generate file output (JSON/CSV/XLSX) / إنشاء ملفات التقارير
+    
+    project_detection: ProjectDetection = field(default_factory=ProjectDetection)
+    audit_rules: AuditRules = field(default_factory=AuditRules)
+    ai_review: AIReview = field(default_factory=AIReview)
+    output: OutputOptions = field(default_factory=OutputOptions)
+
+    # Internal injection for testing
+    ai_provider_override: Any | None = None
+
+    def effective_output_dir(self, runtime_results_dir: Path) -> Path:
+        """Determines the final results directory by checking output options."""
+        if self.output.results_dir:
+            return Path(self.output.results_dir)
+        return runtime_results_dir
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stage": self.stage,
+            "project_detection": self.project_detection.to_dict(),
+            "audit_rules": self.audit_rules.to_dict(),
+            "ai_review": self.ai_review.to_dict(),
+            "output": self.output.to_dict(),
+        }
+
+    def default_config_json(self) -> str:
+        """Returns a hyper-detailed prettified JSON string of all defaults with vertical bilingual comments."""
+        data = {
+            "//_comment_stage_en": "Control depth. [full: heavy grammar + AI + term + QC, fast: term + QC, terminology: glossary only, grammar: linguistics only].",
+            "//_comment_stage_ar": "التحكم في العمق. [full: تدقيق لغوي + ذكاء اصطناعي + مصطلحات + جودة، fast: مصطلحات وجودة، terminology: القاموس فقط، grammar: لغويات فقط].",
+            "stage": self.stage,
+
+            "project_detection": {
+                "//_comment_auto_detect_en": "Automatic discovery. [true: scans for .arb, .php, or i18n markers, false: ignores scanning].",
+                "//_comment_auto_detect_ar": "الاكتشاف التلقائي. [true: يبحث عن ملفات .arb أو .php أو علامات i18n، false: يتجاهل الفحص].",
+                "auto_detect": self.project_detection.auto_detect,
+
+                "//_comment_force_profile_en": "Manual profile override. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings].",
+                "//_comment_force_profile_ar": "تخصيص يدوي لنوع المشروع. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings].",
+                "force_profile": self.project_detection.force_profile
+            },
+
+            "audit_rules": {
+                "//_comment_role_identifiers_en": "Reserved persona terms (e.g. 'captain', 'rider') protected from mixed-script/semantic flags.",
+                "//_comment_role_identifiers_ar": "أسماء الأدوار المحجوزة (مثل 'captain' أو 'rider') والتي يجب حمايتها من تحذيرات اللغة أو المعنى.",
+                "role_identifiers": self.audit_rules.role_identifiers,
+
+                "//_comment_latin_whitelist_en": "Technical terms/brands allowed in Arabic text without mixed-script warnings.",
+                "//_comment_latin_whitelist_ar": "المصطلحات التقنية أو الأسماء التجارية المسموح بها داخل النصوص العربية.",
+                "latin_whitelist": self.audit_rules.latin_whitelist,
+
+                "//_comment_entity_whitelist_en": "Protected global terms to prevent inappropriate literal translation suggestions.",
+                "//_comment_entity_whitelist_ar": "المصطلحات العالمية المحمية لمنع اقتراح ترجمات حرفية غير مناسبة.",
+                "entity_whitelist": self.audit_rules.entity_whitelist,
+
+                "//_comment_apply_safe_fixes_en": "Auto-Fixer. [true: replaces forbidden_terms in files, false: report only]. Recommendation: Use true for terminology standardized projects.",
+                "//_comment_apply_safe_fixes_ar": "المصلح الآلي. [true: يستبدل الكلمات المحظورة في ملفاتك، false: تقرير فقط]. ينصح بـ true لتوحيد المصطلحات.",
+                "apply_safe_fixes": self.audit_rules.apply_safe_fixes
+            },
+
+            "ai_review": {
+                "//_comment_enabled_en": "Semantic Analysis. [true: uses LLM for deep verification, false: heuristics only]. Highly recommended for precision audit stages.",
+                "//_comment_enabled_ar": "مراجعة معنوية. [true: يفعل التحقق العميق عبر نماذج اللغة، false: خوارزميات سريعة فقط]. ينصح به للدقة العالية.",
+                "enabled": self.ai_review.enabled,
+
+                "//_comment_provider_en": "Provider: [openai: high quality, deepseek: cost-effective excellence, litellm: universal support]. Use litellm for maximum flexibility.",
+                "//_comment_provider_ar": "مزود الخدمة: [openai: جودة عالية، deepseek: أداء ممتاز وتكلفة منخفضة، litellm: دعم شامل]. ينصح بـ litellm للمرونة.",
+                "provider": self.ai_review.provider,
+
+                "//_comment_model_en": "Model: [gpt-4o-mini: recommended price/perf, deepseek-chat: logic expert]. Use 'mini' models for common audit tasks.",
+                "//_comment_model_ar": "النموذج: [gpt-4o-mini: ينصح به للسعر والأداء، deepseek-chat: خبير للمنطق]. استخدم نماذج 'mini' للمهام الاعتيادية.",
+                "model": self.ai_review.model or "gpt-4o-mini",
+
+                "api_key_env": self.ai_review.api_key_env or "OPENAI_API_KEY",
+                "batch_size": self.ai_review.batch_size,
+                "short_label_threshold": self.ai_review.short_label_threshold
+            },
+
+            "output": {
+                "//_comment_results_dir_en": "Target directory for logs and reports. Keep as 'Results' for standard integration.",
+                "//_comment_results_dir_ar": "المجلد المستهدف للسجلات والتقارير. اتركه 'Results' للتكامل القياسي.",
+                "results_dir": self.output.results_dir or "Results",
+
+                "//_comment_retention_mode_en": "History: [overwrite: deletes previous run, archive: moves to _archives/]. Recommendation: Use 'archive' for CI/CD audit trails.",
+                "//_comment_retention_mode_ar": "إدارة السجلات: [overwrite: يحذف السجل السابق، archive: أرشفة السجل السابق]. ينصح بـ 'archive' لتتبع تاريخ التدقيق.",
+                "retention_mode": self.output.retention_mode,
+
+                "archive_name_prefix": self.output.archive_name_prefix or "audit"
+            }
+        }
+        return json.dumps(data, indent=2, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------

@@ -1,314 +1,94 @@
-# L10n Audit Toolkit
+# 🌍 L10n Audit Toolkit (v1.2.2)
 
-L10n Audit Toolkit is a Python-based localization QA toolkit for auditing translation files, validating runtime-sensitive strings, and producing safe localization review workflows for multilingual applications.
+[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Tests](https://img.shields.io/badge/Tests-139%20Passed-brightgreen.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Status: Active](https://img.shields.io/badge/status-active-success)
-![Release](https://img.shields.io/github/v/release/wael-daaboul/L10n-Audit-Toolkit)
+The **L10n Audit Toolkit** is a professional-grade, project-agnostic localization QA and translation audit engine. Designed for modern engineering teams, it provides automated linguistic validation, semantic risk assessment, and smart auto-fixing for complex, multi-framework applications.
 
-📚 **Documentation:**
-👉 <https://wael-daaboul.github.io/L10n-Audit-Toolkit/>
+---
 
-🇸🇦 **الدليل العربي:**
-للاطلاع على دليل الأوامر باللغة العربية، راجع [USAGE_AR.md](USAGE_AR.md).
+## 🏗️ Version 1.2.2: Universal Architecture
 
+Starting with **v1.2.2**, the toolkit has transitioned to a **Universal, Data-Driven Architecture**. The core engine is now completely decoupled from specific project domains or frameworks.
+
+> [!IMPORTANT]
+> All audit logic, terminology rules, and entity protections are now dynamically driven by your local configuration. This means the tool works flawlessly for medical apps, banking platforms, ridesharing services, or games without any code changes.
+
+---
+
+## 🚀 Quick Start & Configuration
+
+The toolkit uses a **Self-Documenting Configuration** system with vertical, bilingual (Arabic/English) annotations to eliminate any ambiguity.
+
+### 1. Initialize Your Workspace
+Run the following command in your project root to generate the necessary directory structure:
 ```bash
-pipx install l10n-audit-toolkit
+l10n-audit init
 ```
 
-## Overview
-
-L10n Audit Toolkit helps engineering and localization teams catch issues before translations ship to production. It combines code usage scanning, locale-file validation, placeholder validation, terminology audit, glossary enforcement, and translation QA reporting in a single repository-oriented workflow.
-
-The project is designed for teams that need repeatable localization audits for i18n and l10n pipelines without rewriting their application structure. It supports JSON locale files and Laravel PHP translation files, generates machine-readable and spreadsheet reports, and keeps risky changes in a review queue instead of auto-applying them.
-
-## Problem It Solves
-
-Modern multilingual applications often fail in production because translation QA is fragmented across manual review, ad hoc scripts, and framework-specific checks. Common issues include:
-
-- missing or unused translation keys
-- placeholder mismatch detection failures
-- glossary drift and terminology inconsistency
-- ICU message mistakes
-- unsafe formatting cleanup
-- review workflows that are hard to trace or apply safely
-
-L10n Audit Toolkit addresses those problems with a structured localization audit pipeline and explicit safe-fix boundaries.
-
-## Key Features
-
-- Localization audit workflow for repository-based translation QA
-- Static translation usage scanning across supported frameworks
-- Placeholder validation for common runtime interpolation styles
-- Terminology audit and glossary enforcement
-- English and Arabic locale quality checks
-- ICU message validation
-- Safe localization fixes with a review-required path for risky changes
-- Review queue generation in XLSX for human approval
-- Final locale export in the original supported format
-- JSON, CSV, XLSX, and Markdown outputs for CI or manual review
-
-## Supported Frameworks and Formats
-
-Built-in project profiles currently cover:
-
-- Flutter with GetX JSON localization
-- Laravel JSON localization
-- Laravel PHP localization
-- React with i18next JSON
-- Vue with `vue-i18n` JSON
-
-Current locale format support:
-
-- JSON locale files
-- Laravel PHP translation files that use static parseable return arrays such as `return [...]` and `return array(...)`
-
-## What The Toolkit Detects
-
-The toolkit can report issues such as:
-
-- missing translations
-- unused keys
-- placeholder mismatch detection problems
-- renamed or reordered placeholders
-- terminology violations
-- glossary enforcement failures
-- ICU syntax and branch mismatches
-- English locale wording and grammar issues
-- Arabic locale spacing, punctuation, and context-sensitive review findings
-- Arabic semantic review suggestions for sentence-level meaning loss
-- risky review items that require explicit human approval
-
-## 🚀 Quick Start
-
-The L10n Audit Toolkit now comes with a powerful CLI. To get started in your localization project:
-
-1. **Initialize Workspace:**
-
-   ```bash
-   l10n-audit init
-   ```
-
-2. **Verify Setup:**
-
-   ```bash
-   l10n-audit doctor
-   ```
-
-3. **Run a Fast Audit:**
-
-   ```bash
-   l10n-audit run --stage fast
-   ```
-
-Primary outputs are written under `Results/`.
-
-## 💻 CLI Commands
-
-Here are the main commands you will use daily:
-
-- `l10n-audit --help` - Shows help, usage instructions, and available arguments.
-- `l10n-audit --version` - Displays the current installed version of the toolkit.
-- `l10n-audit init` - Discovers your project and creates the `.l10n-audit/` workspace.
-- `l10n-audit run --stage <STAGE>` - Runs specific or all audit modules (e.g., `fast`, `full`, `autofix`).
-- `l10n-audit update` - Fetches the latest global rules and dictionaries to your local workspace.
-- `l10n-audit self-update` - Guidance for upgrading your toolkit installation via `pipx`.
-
-## 🌐 Local HTTP API (Non-blocking)
-
-The L10n Audit Toolkit now includes a local FastAPI server (v1.2.1) for integration with web dashboards. The API is non-blocking and handles long-running audits gracefully using a background threadpool.
-
-## 🐍 Python API
-
-The L10n Audit Toolkit now offers an official Python API for integration into web platforms and CI scripts:
-
-```python
-from l10n_audit import init_workspace, run_audit
-
-# Initialize a new workspace
-init_workspace("/path/to/project", force=False)
-
-# Run an audit stage
-result = run_audit("/path/to/project", stage="fast")
-
-print(f"Audit Result: {result.summary.total_issues} issues found.")
-for report in result.reports:
-    print(f"Generated report: {report.name} at {report.path}")
-```
-
-### 🤖 AI-Powered Review
-
-You can enhance your audits with AI (e.g., OpenAI, OpenRouter) to check context, tone, and grammar:
-
+### 2. Configure Your Audit
+Copy the provided template and customize it to your project's needs:
 ```bash
-l10n-audit run --stage ai-review \
-  --ai-enabled \
-  --ai-api-base "https://openrouter.ai/api/v1" \
-  --ai-model "openai/gpt-4o-mini"
+cp config.json.example config.json
 ```
 
-### 🌐 Local HTTP API (New in v1.2.1)
+### 3. Namespace Overview
+Your `config.json` is organized into four logical namespaces:
 
-The toolkit now includes a reference FastAPI implementation for integration with other tools:
+| Namespace | Responsibility | Primary Settings |
+| :--- | :--- | :--- |
+| **`project_detection`** | Framework discovery | `auto_detect`, `force_profile` |
+| **`audit_rules`** | Linguistic precision | `role_identifiers`, `latin_whitelist`, `apply_safe_fixes` |
+| **`ai_review`** | Semantic intelligence | `enabled`, `provider`, `model`, `api_key_env` |
+| **`output`** | Results management | `results_dir`, `retention_mode` |
 
-```bash
-cd http_api
-pip install -r requirements.txt
-uvicorn server:app --reload
-```
+---
 
-Then visit `http://localhost:8000/docs` to see the automated Swagger documentation.
+## 💎 Core Features
 
-> **Note:** For deep technical details and developer scripts, check the `docs/` folder.
+### 🧠 Smart AI Semantic Review
+V1.2.2 integrates **LiteLLM** to provide deep semantic validation of identified issues. This eliminates false positives by understanding the intent and context of your translations.
+- **Provider Agnostic**: Supports OpenAI, DeepSeek, Anthropic, and local models.
+- **Cost Optimization**: Use `low-cost 'mini' models` (e.g., `gpt-4o-mini`, `deepseek-chat`) and tune the `short_label_threshold` to skip trivial labels like "OK" or "Save".
+- **Secure Integration**: Never hardcode keys; use `api_key_env` to point to your system's environment variables.
 
-If you are using the repository checkout directly rather than an installed launcher, you can still run:
+### 🛠️ The Smart Auto-Fixer (`--apply-safe-fixes`)
+Standardize your terminology automatically. If enabled, the tool will read `glossary.json` and replace `forbidden_terms` with their approved equivalents directly in your locale files.
+- **Whole-Word Matching**: Prevents accidental substring replacements.
+- **RTL/LTR Aware**: Maintains script integrity during replacement.
 
-```bash
-./bin/run_all_audits.sh --stage fast
-```
+### 📁 Results Archiving & Retention
+Maintain full audit traceability across your project's history.
+- **`overwrite`**: Default mode. Replaces the last audit's `Results` directory.
+- **`archive`**: Moves previous results to a timestamped `_archives/` folder before starting a new run. Perfect for CI/CD audit trails.
 
-## Installation
+---
 
-Use the bootstrap script for the fastest setup:
+## ⌨️ CLI Command Reference
 
-```bash
-./bootstrap.sh
-```
+Execute audits with precision using the standardized CLI interface.
 
-Manual setup:
+| Command | Description |
+| :--- | :--- |
+| `l10n-audit --version` | Verify installation (should show **1.2.2**) |
+| `l10n-audit run --stage fast` | Perform terminology and QC checks only |
+| `l10n-audit run --stage full` | Run the complete audit suite (Grammar, AI, Terminology, QC) |
+| `l10n-audit run --apply-safe-fixes` | Audit and automatically apply terminology corrections |
+| `l10n-audit doctor` | Diagnose workspace and framework discovery issues |
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-optional.txt
-python -m pip install -r requirements-dev.txt
-```
+---
 
-Detailed environment setup is documented in [INSTALL.md](INSTALL.md) and [docs/quickstart.md](docs/quickstart.md).
+## 📝 Technical Notes for Power Users
 
-The repository ships with a neutral example glossary at `docs/terminology/glossary.json`. Replace it or point `glossary_file` to your own JSON glossary.
+- **Brand Protection**: Use the `latin_whitelist` in `audit_rules` to prevent the engine from flagging your brand name or technical terms (e.g., "DeepSeek", "API") as 'mixed-script' errors in Arabic text.
+- **Context Preservation**: Defining `role_identifiers` (e.g., `['admin', 'captain']`) ensures the AI and heuristic engines understand your app's specific persona contexts.
+- **Performance**: Batch sizes can be adjusted via `ai_review.batch_size` (default: 20) to balance between execution speed and API rate limits.
 
-## Running Audits
+---
 
-Run the full localization audit pipeline:
+## 🤝 Contributing & Support
+For issues, architectural questions, or feature requests, please refer to the internal documentation or contact the **Advanced Agentic Coding** team.
 
-```bash
-l10n-audit run --stage full
-```
-
-Useful stage-specific commands:
-
-```bash
-l10n-audit run --stage ai-review --ai-enabled
-l10n-audit run --stage ai-review --ai-enabled --ai-model gpt-4o-mini --ai-api-base https://api.openai.com/v1
-l10n-audit doctor
-l10n-audit update --check
-```
-
-To refresh local workspace templates from GitHub or a direct archive URL:
-
-```bash
-l10n-audit init --from-github --channel stable --repo https://github.com/your-org/l10n-audit-toolkit
-l10n-audit update --from-github --channel main --repo https://github.com/your-org/l10n-audit-toolkit
-```
-
-You can also pass a direct `.zip` archive URL or `file://...zip` path during testing.
-
-You can also run the basic localization usage audit directly:
-
-```bash
-./bin/l10n_audit.sh
-```
-
-## Safe Fixes and Review Workflow
-
-The toolkit separates deterministic changes from human-reviewed changes.
-
-1. Run audits and generate reports.
-2. Review `Results/final/final_audit_report.md`.
-3. Open `Results/review/review_queue.xlsx`.
-4. Fill `approved_new` for reviewed rows and set `status` to `approved`.
-5. Apply approved fixes with:
-
-```bash
-python -m fixes.apply_review_fixes
-```
-
-6. Use the final locale output from `Results/final_locale/`.
-
-Safe auto-fix planning is available with:
-
-```bash
-./bin/run_all_audits.sh --stage autofix
-```
-
-The review and fix workflow is documented in [HOW_TO_USE.md](HOW_TO_USE.md) and [docs/review_workflow.md](docs/review_workflow.md).
-
-## Example CLI Usage
-
-```bash
-./bin/run_all_audits.sh --stage full
-python -m audits.placeholder_audit
-python -m audits.terminology_audit
-python -m fixes.apply_safe_fixes
-python -m fixes.apply_review_fixes
-python -m pytest
-```
-
-## Example Outputs
-
-Common outputs include:
-
-- `Results/per_tool/`: raw per-audit findings
-- `Results/normalized/`: normalized machine-readable findings
-- `Results/review/review_queue.xlsx`: review queue for human approval
-- `Results/fixes/fix_plan.json`: safe fix plan
-- `Results/fixes/safe_fixes_applied_report.json`: auto-fix summary
-- `Results/final/final_audit_report.md`: aggregated dashboard
-- `Results/final_locale/ar.final.json`: final reviewed locale
-
-See [docs/output_reports.md](docs/output_reports.md) for report details.
-
-## Repository Structure
-
-- `audits/`: audit modules for localization, placeholder, terminology, ICU, and locale QA checks
-- `core/`: shared runtime, loaders, exporters, scanners, and validation helpers
-- `fixes/`: safe-fix and reviewed-fix application logic
-- `reports/`: report aggregation and final dashboard generation
-- `schemas/`: JSON schemas for config and generated artifacts
-- `config/`: toolkit configuration and project profiles
-- `bin/`: shell entry points for common workflows
-- `examples/`: framework-oriented sample layouts and usage notes
-- `docs/`: reference documentation for workflows and outputs
-- `tests/`: regression coverage for audits, exports, reports, and fix safety
-
-Detailed directory roles are documented in [docs/overview.md](docs/overview.md).
-
-## Documentation
-
-- [INSTALL.md](INSTALL.md): environment and dependency setup
-- [HOW_TO_USE.md](HOW_TO_USE.md): workflow-oriented usage guide
-- [docs/quickstart.md](docs/quickstart.md): shortest path to first successful run
-- [docs/audit_modules.md](docs/audit_modules.md): audit module reference
-- [docs/review_workflow.md](docs/review_workflow.md): fix plan and review queue behavior
-- [docs/ai_usage.md](docs/ai_usage.md): AI-assisted translation review and CLI options
-- [docs/output_reports.md](docs/output_reports.md): generated outputs and report formats
-- [docs/configuration.md](docs/configuration.md): detailed configuration schema and profiles
-- [docs/ci_cd_integration.md](docs/ci_cd_integration.md): GitHub Actions and GitLab CI setups
-- [docs/terminology_guide.md](docs/terminology_guide.md): formatting your custom glossary.json
-- [examples/README.md](examples/README.md): supported example layouts
-
-## Contributing
-
-Contributions that improve localization audit quality, translation validation, framework coverage, or documentation are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
-
-## Security
-
-Please report vulnerabilities privately. See [SECURITY.md](SECURITY.md).
-
-## License
-
-This repository is released under the MIT License. See [LICENSE](LICENSE).
+---
+*Generated by Antigravity AI for L10n-Audit v1.2.2*
