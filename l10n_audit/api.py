@@ -104,16 +104,16 @@ def run_audit(
     project_path: str | Path,
     *,
     stage: str = "full",
-    ai_enabled: bool = False,
+    ai_enabled: bool | None = None,
     ai_api_key: str | None = None,
     ai_model: str | None = None,
     ai_api_base: str | None = None,
-    ai_provider: str = "litellm",
+    ai_provider: str | None = None,
     ai_api_key_env: str | None = None,
     write_reports: bool = True,
     output_dir: str | Path | None = None,
     ai_provider_override: Any = None,
-    apply_safe_fixes: bool = False,
+    apply_safe_fixes: bool | None = None,
     results_retention_mode: Literal["archive", "overwrite"] | None = None,
     results_retention_prefix: str | None = None,
 ) -> AuditResult:
@@ -181,14 +181,6 @@ def run_audit(
     try:
         path = validate_project_path(project_path)
         validate_stage(stage)
-        validate_ai_config(
-            ai_enabled=ai_enabled,
-            ai_api_key=ai_api_key,
-            ai_model=ai_model,
-            ai_api_base=ai_api_base,
-            ai_provider=ai_provider,
-            ai_api_key_env=ai_api_key_env,
-        )
 
         # Load runtime environment
         from core.audit_runtime import load_runtime, AuditRuntimeError
@@ -196,7 +188,21 @@ def run_audit(
             runtime = load_runtime_from_path(path)
         except AuditRuntimeError as exc:
             raise InvalidProjectError(f"Invalid project configuration: {exc}") from exc
+        
         result.profile = getattr(runtime, "project_profile", "")
+
+        # Merge arguments with runtime config for v1.2.2 namespaced structure
+        effective_ai_enabled = ai_enabled if ai_enabled is not None else runtime.ai_review["enabled"]
+        effective_apply_safe_fixes = apply_safe_fixes if apply_safe_fixes is not None else runtime.output["apply_safe_fixes"]
+        
+        validate_ai_config(
+            ai_enabled=effective_ai_enabled,
+            ai_api_key=ai_api_key,
+            ai_model=ai_model,
+            ai_api_base=ai_api_base,
+            ai_provider=ai_provider or runtime.ai_review["provider"],
+            ai_api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
+        )
 
         options = AuditOptions(
             stage=stage,
@@ -207,19 +213,21 @@ def run_audit(
             audit_rules=AuditRules(
                 role_identifiers=list(runtime.role_identifiers),
                 entity_whitelist={k: list(v) for k, v in runtime.entity_whitelist.items()},
-                apply_safe_fixes=apply_safe_fixes,
+                apply_safe_fixes=effective_apply_safe_fixes,
                 latin_whitelist=list(getattr(runtime, "latin_whitelist", [])),
             ),
             ai_review=AIReview(
-                enabled=ai_enabled,
-                provider=ai_provider or "litellm",
-                model=ai_model or "gpt-4o-mini",
-                api_key_env=ai_api_key_env or "OPENAI_API_KEY",
+                enabled=effective_ai_enabled,
+                provider=ai_provider or runtime.ai_review["provider"],
+                model=ai_model or runtime.ai_review["model"],
+                api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
+                batch_size=runtime.ai_review["batch_size"],
+                short_label_threshold=runtime.ai_review["short_label_threshold"],
             ),
             output=OutputOptions(
                 results_dir=output_dir or runtime.results_dir,
-                retention_mode=results_retention_mode or "overwrite",
-                archive_name_prefix=results_retention_prefix or "audit",
+                retention_mode=results_retention_mode or runtime.output["retention_mode"],
+                archive_name_prefix=results_retention_prefix or runtime.output["archive_name_prefix"],
             )
         )
 

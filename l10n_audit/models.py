@@ -306,7 +306,7 @@ class ResultsRetention:
 # AuditOptions
 # ---------------------------------------------------------------------------
 
-VERSION = "1.2.2"
+VERSION = "1.2.3"
 
 
 @dataclass
@@ -392,6 +392,7 @@ class AuditOptions:
     def default_config_json(self) -> str:
         """Returns a hyper-detailed prettified JSON string of all defaults with vertical bilingual comments."""
         data = {
+            "config_version": 2,
             "//_comment_stage_en": "Control depth. [full: heavy grammar + AI + term + QC, fast: term + QC, terminology: glossary only, grammar: linguistics only].",
             "//_comment_stage_ar": "التحكم في العمق. [full: تدقيق لغوي + ذكاء اصطناعي + مصطلحات + جودة، fast: مصطلحات وجودة، terminology: القاموس فقط، grammar: لغويات فقط].",
             "stage": self.stage,
@@ -437,8 +438,16 @@ class AuditOptions:
                 "//_comment_model_ar": "النموذج: [gpt-4o-mini: ينصح به للسعر والأداء، deepseek-chat: خبير للمنطق]. استخدم نماذج 'mini' للمهام الاعتيادية.",
                 "model": self.ai_review.model or "gpt-4o-mini",
 
+                "//_comment_api_key_env_en": "Variable name for your API key.",
+                "//_comment_api_key_env_ar": "اسم متغير البيئة لمفتاح الـ API الخاص بك.",
                 "api_key_env": self.ai_review.api_key_env or "OPENAI_API_KEY",
+
+                "//_comment_batch_size_en": "Processing batch size (default 20).",
+                "//_comment_batch_size_ar": "حجم دفعة المعالجة (الافتراضي 20).",
                 "batch_size": self.ai_review.batch_size,
+
+                "//_comment_short_label_threshold_en": "Min words for AI review.",
+                "//_comment_short_label_threshold_ar": "الحد أدنى للكلمات لمراجعة الذكاء الاصطناعي.",
                 "short_label_threshold": self.ai_review.short_label_threshold
             },
 
@@ -451,6 +460,8 @@ class AuditOptions:
                 "//_comment_retention_mode_ar": "إدارة السجلات: [overwrite: يحذف السجل السابق، archive: أرشفة السجل السابق]. ينصح بـ 'archive' لتتبع تاريخ التدقيق.",
                 "retention_mode": self.output.retention_mode,
 
+                "//_comment_archive_name_prefix_en": "Archive prefix.",
+                "//_comment_archive_name_prefix_ar": "بادئة الأرشيف.",
                 "archive_name_prefix": self.output.archive_name_prefix or "audit"
             }
         }

@@ -55,6 +55,8 @@ class AuditPaths:
     role_identifiers: tuple[str, ...]
     entity_whitelist: dict[str, tuple[str, ...]]
     latin_whitelist: tuple[str, ...]
+    ai_review: dict[str, Any]
+    output: dict[str, Any]
 
 
 def _resolve_config_path(base_dir: Path, raw_value: str | None, fallback: Path) -> Path:
@@ -341,27 +343,32 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         profile_score = best_candidate.score
         profile_reasons = best_candidate.reasons
 
-    source_locale = str(effective_config.get("source_locale") or profile.get("source_locale") or "en")
-    raw_targets = effective_config.get("target_locales") or profile.get("target_locales") or ["ar"]
+    source_locale = str(_get_nested(effective_config, "source_locale") or profile.get("source_locale") or "en")
+    raw_targets = _get_nested(effective_config, "target_locales") or profile.get("target_locales") or ["ar"]
     if isinstance(raw_targets, list):
         target_locales = tuple(str(item) for item in raw_targets)
     else:
         target_locales = ("ar",)
-    locale_format = str(profile.get("locale_format") or effective_config.get("locale_format") or "json")
+    
+    locale_format = str(profile.get("locale_format") or _get_nested(effective_config, "locale_format") or "json")
     en_file, locale_paths, locales_dir = _resolve_locale_paths(project_root, effective_config, profile, locale_format, source_locale, target_locales)
-    ar_file = locale_paths.get(target_locales[0], _resolve_config_path(project_root, str(effective_config.get("ar_file") or ""), project_root / "assets" / "language" / "ar.json"))
+    ar_file = locale_paths.get(target_locales[0], _resolve_config_path(project_root, str(_get_nested(effective_config, "ar_file") or ""), project_root / "assets" / "language" / "ar.json"))
+    
     code_dir, code_dirs = _resolve_code_dirs(project_root, effective_config, profile)
+    
     glossary_file = _resolve_config_path(
         path_base_dir,
-        str(effective_config.get("glossary_file") or ""),
+        str(_get_nested(effective_config, "glossary_file") or ""),
         _discover_glossary_path(docs_dir),
     )
+    
     results_dir = _resolve_config_path(
         path_base_dir,
-        str(effective_config.get("results_dir") or ""),
+        str(_get_nested(effective_config, "output.results_dir") or _get_nested(effective_config, "results_dir") or ""),
         tools_dir / "Results",
     )
-    raw_languagetool_dir = str(effective_config.get("languagetool_dir") or "").strip()
+    
+    raw_languagetool_dir = str(_get_nested(effective_config, "languagetool_dir") or "").strip()
     languagetool_configured_dir = (
         _resolve_config_path(path_base_dir, raw_languagetool_dir, vendor_dir)
         if raw_languagetool_dir
@@ -400,7 +407,7 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         profile_selection_mode=profile_selection_mode,
         profile_score=profile_score,
         profile_reasons=profile_reasons,
-        role_identifiers=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.domain_roles") or _get_nested(effective_config, "audit_rules.role_identifiers") or [])),
+        role_identifiers=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.role_identifiers") or _get_nested(effective_config, "audit_rules.domain_roles") or [])),
         entity_whitelist={
             lang: tuple(str(item) for item in terms)
             for lang, terms in (
@@ -409,6 +416,19 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
             if isinstance(terms, (list, tuple))
         },
         latin_whitelist=tuple(str(item) for item in (_get_nested(effective_config, "audit_rules.latin_whitelist") or [])),
+        ai_review={
+            "enabled": _get_nested(effective_config, "ai_review.enabled", False),
+            "provider": _get_nested(effective_config, "ai_review.provider", "litellm"),
+            "model": _get_nested(effective_config, "ai_review.model", "gpt-4o-mini"),
+            "api_key_env": _get_nested(effective_config, "ai_review.api_key_env", "OPENAI_API_KEY"),
+            "batch_size": _get_nested(effective_config, "ai_review.batch_size", 20),
+            "short_label_threshold": _get_nested(effective_config, "ai_review.short_label_threshold", 3),
+        },
+        output={
+            "retention_mode": _get_nested(effective_config, "output.retention_mode", "overwrite"),
+            "archive_name_prefix": _get_nested(effective_config, "output.archive_name_prefix", "audit"),
+            "apply_safe_fixes": _get_nested(effective_config, "audit_rules.apply_safe_fixes", False),
+        }
     )
     if validate:
         validate_runtime(runtime)
