@@ -360,6 +360,18 @@ class OutputOptions:
 
 
 @dataclass
+class ARLocaleQC:
+    """Settings for Arabic-specific quality control / إعدادات ضبط الجودة الخاصة باللغة العربية"""
+    enable_exclamation_style: bool = True  # Check for spacing before '!' and '؟'
+    enable_long_ui_string: bool = True  # Flag unusually long translations
+    enable_similar_phrase_variation: bool = True  # Detect inconsistent translations for same term
+    enable_suspicious_literal_translation: bool = True  # Catch literal translations that lose meaning
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class AuditOptions:
     """Unified configuration for a single l10n-audit run / الإعدادات الموحدة لعملية التدقيق"""
 
@@ -370,6 +382,12 @@ class AuditOptions:
     audit_rules: AuditRules = field(default_factory=AuditRules)
     ai_review: AIReview = field(default_factory=AIReview)
     output: OutputOptions = field(default_factory=OutputOptions)
+    ar_locale_qc: ARLocaleQC = field(default_factory=ARLocaleQC)
+
+    # Environment paths (often overridden by runtime)
+    project_root: str = ".."
+    glossary_file: str = "glossary.json"
+    languagetool_dir: str = "vendor"
 
     # Internal injection for testing
     ai_provider_override: Any | None = None
@@ -387,9 +405,13 @@ class AuditOptions:
             "audit_rules": self.audit_rules.to_dict(),
             "ai_review": self.ai_review.to_dict(),
             "output": self.output.to_dict(),
+            "ar_locale_qc": self.ar_locale_qc.to_dict(),
+            "project_root": self.project_root,
+            "glossary_file": self.glossary_file,
+            "languagetool_dir": self.languagetool_dir,
         }
 
-    def default_config_json(self) -> str:
+    def default_config_json(self, profile_name: str | None = None) -> str:
         """Returns a hyper-detailed prettified JSON string of all defaults with vertical bilingual comments."""
         data = {
             "config_version": 2,
@@ -404,7 +426,7 @@ class AuditOptions:
 
                 "//_comment_force_profile_en": "Manual profile override. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings].",
                 "//_comment_force_profile_ar": "تخصيص يدوي لنوع المشروع. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings].",
-                "force_profile": self.project_detection.force_profile
+                "force_profile": profile_name or self.project_detection.force_profile
             },
 
             "audit_rules": {
@@ -463,7 +485,37 @@ class AuditOptions:
                 "//_comment_archive_name_prefix_en": "Archive prefix.",
                 "//_comment_archive_name_prefix_ar": "بادئة الأرشيف.",
                 "archive_name_prefix": self.output.archive_name_prefix or "audit"
-            }
+            },
+
+            "ar_locale_qc": {
+                "//_comment_enable_exclamation_style_en": "Check for spacing around Arabic punctuation like '!' and '؟'. Recommendation: true.",
+                "//_comment_enable_exclamation_style_ar": "التحقق من المسافات حول علامات الترقيم مثل '!' و '؟'. ينصح بـ true.",
+                "enable_exclamation_style": self.ar_locale_qc.enable_exclamation_style,
+
+                "//_comment_enable_long_ui_string_en": "Flag translations that are significantly longer than the source. Recommendation: true.",
+                "//_comment_enable_long_ui_string_ar": "تنبيه في حال كانت الترجمة أطول من اللازم بالنسبة للمصدر. ينصح بـ true.",
+                "enable_long_ui_string": self.ar_locale_qc.enable_long_ui_string,
+
+                "//_comment_enable_similar_phrase_variation_en": "Consistency Check. [true: flags minor differences for same key, false: skips].",
+                "//_comment_enable_similar_phrase_variation_ar": "تحقق التناسق. [true: ينبه في حال وجود ترجمات مختلفة قليلاً لنفس المصطلح].",
+                "enable_similar_phrase_variation": self.ar_locale_qc.enable_similar_phrase_variation,
+
+                "//_comment_enable_suspicious_literal_translation_en": "Semantic loss detection. Recommendation: true.",
+                "//_comment_enable_suspicious_literal_translation_ar": "اكتشاف ضياع المعنى في الترجمة الحرفية. ينصح بـ true.",
+                "enable_suspicious_literal_translation": self.ar_locale_qc.enable_suspicious_literal_translation
+            },
+
+            "//_comment_project_root_en": "Relative or absolute path to the project root.",
+            "//_comment_project_root_ar": "المسار النسبي أو المطلق لجذر المشروع.",
+            "project_root": self.project_root,
+
+            "//_comment_glossary_file_en": "Path to the terminology glossary file.",
+            "//_comment_glossary_file_ar": "مسار ملف القاموس الموحد.",
+            "glossary_file": self.glossary_file,
+
+            "//_comment_languagetool_dir_en": "Path to local LanguageTool installation (optional).",
+            "//_comment_languagetool_dir_ar": "مسار تثبيت LanguageTool المحلي (اختياري).",
+            "languagetool_dir": self.languagetool_dir
         }
         return json.dumps(data, indent=2, ensure_ascii=False)
 

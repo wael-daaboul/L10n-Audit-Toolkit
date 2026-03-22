@@ -20,7 +20,7 @@ WORKSPACE_CONFIG = "config.json"
 WORKSPACE_VERSION = "version.json"
 WORKSPACE_GLOSSARY = "glossary.json"
 WORKSPACE_TEMPLATE_DIR = "toolkit-template"
-CURRENT_CONFIG_VERSION = 1
+CURRENT_CONFIG_VERSION = 2
 
 
 def toolkit_version() -> str:
@@ -270,7 +270,9 @@ def init_workspace(
 
     config_path = workspace_config_path(project_root)
     if force or not config_path.exists():
-        write_json(config_path, default_workspace_config(project_root, profile_name))
+        from l10n_audit.models import AuditOptions
+        payload = AuditOptions().default_config_json(profile_name)
+        config_path.write_text(payload, encoding="utf-8")
 
     glossary_path = workspace_glossary_path(project_root)
     if force or not glossary_path.exists():
