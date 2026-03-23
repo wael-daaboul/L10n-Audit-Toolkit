@@ -8,6 +8,8 @@ import json
 import concurrent.futures
 from pathlib import Path
 
+logger = logging.getLogger("l10n_audit.ai_review")
+
 from l10n_audit.core.audit_runtime import (
     load_locale_mapping,
     load_runtime,
@@ -209,7 +211,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
     if previous_issues is not None:
         # Ensure they are dicts for the logic below
         all_issues = [i.to_dict() if hasattr(i, "to_dict") else i for i in previous_issues]
-        logger.info("[AI] Consuming %d issues from in-memory tracker.", len(all_issues))
+        logger.debug("[AI] Consuming %d issues from in-memory tracker.", len(all_issues))
     else:
         all_issues = load_issues(runtime)
         
@@ -255,8 +257,21 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
     all_fixes: list[dict] = []
     batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
     
+    # Display interactive waiting message
+    print("\n🚀 Sending review request to AI (Waiting for cloud response)...", end="", flush=True)
+
+    import threading
+    def _heartbeat(stop_event):
+        while not stop_event.is_set():
+            stop_event.wait(2.0)
+            if not stop_event.is_set():
+                print(".", end="", flush=True)
+
     for i, batch in enumerate(batches):
-        print(f"  [AI] Analyzing batch {i+1}/{len(batches)} ({len(batch)} keys)...", end="\r", flush=True)
+        stop_event = threading.Event()
+        hb_thread = threading.Thread(target=_heartbeat, args=(stop_event,))
+        hb_thread.start()
+            
         try:
             fixes = ai_provider.review_batch(batch, ai_config)
             all_fixes.extend(fixes)
@@ -265,7 +280,12 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
             if i < len(batches) - 1:
                 time.sleep(2)
         except Exception as exc:
-            logging.warning("AI review batch %d failed: %s", i + 1, exc)
+            logger.error("AI review batch %d failed: %s", i + 1, exc)
+        finally:
+            stop_event.set()
+            hb_thread.join()
+
+    print(" ✅ Response received.")
 
     if options.write_reports:
         out_dir = options.effective_output_dir(runtime.results_dir) / "per_tool" / "ai_review"

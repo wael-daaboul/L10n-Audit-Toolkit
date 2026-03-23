@@ -1,5 +1,10 @@
 {
-  "project_profile": "flutter_getx_json",
+  "config_version": 2,
+
+  "project_detection": {
+    "force_profile": "flutter_getx_json"
+  },
+
   "project_root": "../runtime_project",
   "source_locale": "en",
   "target_locales": ["ar"],

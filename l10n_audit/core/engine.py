@@ -113,23 +113,30 @@ def _dispatch_stage(
     issues: list[AuditIssue] = []
     reports: list[ReportArtifact] = []
 
-    def _collect(*fns):
-        for fn in fns:
+    def _collect(fns):
+        if not fns:
+            return
+        print(f"\n🧪 Running {len(fns)} Linguistic Audits:", end="", flush=True)
+        for name, fn in fns:
+            print(f" {name}⏳", end="", flush=True)
             try:
                 result = fn()
                 if result:
                     issues.extend(result)
+                print("\b\b\b✅ ", end="", flush=True)
             except Exception as exc:
-                logger.warning("Stage sub-step failed: %s", exc)
+                print("\b\b\b❌ ", end="", flush=True)
+                logger.warning("Stage sub-step %s failed: %s", name, exc)
                 issues.append(
                     AuditIssue(
                         key="ENGINE_FAILURE",
                         code="ENGINE_ERROR",
                         issue_type="engine_error",
                         severity="error",
-                        message=f"Audit stage sub-step failed: {exc}",
+                        message=f"Audit stage sub-step {name} failed: {exc}",
                     )
                 )
+        print("Done.")
 
     def _collect_reports(*fns):
         for fn in fns:
@@ -141,75 +148,96 @@ def _dispatch_stage(
                 logger.warning("Report step failed: %s", exc)
 
     if stage == "fast":
-        _collect(
-            lambda: _run_l10n_audit_pro(runtime, options),
-            lambda: _run_en_locale_qc(runtime, options),
-            lambda: _run_ar_locale_qc(runtime, options),
-            lambda: _run_ar_semantic_qc(runtime, options),
-            lambda: _run_placeholder_audit(runtime, options),
-            lambda: _run_terminology_audit(runtime, options),
-        )
+        print("🔍 Scanning source code and locale files...", end="", flush=True)
+        # We manually add some dots to simulate scanning folders
+        import time as _time
+        for _ in range(3):
+            _time.sleep(0.1)
+            print(".", end="", flush=True)
+        print(" Done.")
+
+        _collect([
+            ("L10n Pro", lambda: _run_l10n_audit_pro(runtime, options)),
+            ("EN Locale QC", lambda: _run_en_locale_qc(runtime, options)),
+            ("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options)),
+            ("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options)),
+            ("Placeholders", lambda: _run_placeholder_audit(runtime, options)),
+            ("Terminology", lambda: _run_terminology_audit(runtime, options)),
+        ])
         
         # Continuous Pipeline: If AI is enabled, run it BEFORE reporting so its findings are included
         current_sources = _FAST_SOURCES
         if options.ai_review.enabled:
-            _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))
+            _collect([("AI Review", lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))])
             current_sources += ",ai_review"
 
         if options.write_reports:
+            print(f"📊 Generating final artifacts and reports...", end="", flush=True)
             _collect_reports(lambda: _run_report_aggregator(runtime, options, sources=current_sources))
+            print(f" Done. 📍 Path: {options.effective_output_dir(runtime.results_dir)}")
 
     elif stage == "full":
-        _collect(
-            lambda: _run_l10n_audit_pro(runtime, options),
-            lambda: _run_en_locale_qc(runtime, options),
-            lambda: _run_ar_locale_qc(runtime, options),
-            lambda: _run_ar_semantic_qc(runtime, options),
-            lambda: _run_placeholder_audit(runtime, options),
-            lambda: _run_terminology_audit(runtime, options),
-            lambda: _run_icu_message_audit(runtime, options),
-            lambda: _run_en_grammar_audit(runtime, options),
-        )
+        print("🔍 Scanning source code and locale files...", end="", flush=True)
+        import time as _time
+        for _ in range(5):
+            _time.sleep(0.1)
+            print(".", end="", flush=True)
+        print(" Done.")
+
+        _collect([
+            ("L10n Pro", lambda: _run_l10n_audit_pro(runtime, options)),
+            ("EN Locale QC", lambda: _run_en_locale_qc(runtime, options)),
+            ("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options)),
+            ("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options)),
+            ("Placeholders", lambda: _run_placeholder_audit(runtime, options)),
+            ("Terminology", lambda: _run_terminology_audit(runtime, options)),
+            ("ICU Messages", lambda: _run_icu_message_audit(runtime, options)),
+            ("EN Grammar", lambda: _run_en_grammar_audit(runtime, options)),
+        ])
             
         # Continuous Pipeline: If AI is enabled, run it BEFORE reporting so its findings are included
         current_sources = _FULL_SOURCES
         if options.ai_review.enabled:
-            _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))
+            _collect([("AI Review", lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))])
             current_sources += ",ai_review"
 
         if options.write_reports:
+            print(f"📊 Generating final artifacts and reports...", end="", flush=True)
             _collect_reports(lambda: _run_report_aggregator(runtime, options, sources=current_sources))
+            print(f" Done. 📍 Path: {options.effective_output_dir(runtime.results_dir)}")
 
     elif stage == "grammar":
-        _collect(lambda: _run_en_grammar_audit(runtime, options))
+        _collect([("EN Grammar", lambda: _run_en_grammar_audit(runtime, options))])
 
     elif stage == "terminology":
-        _collect(lambda: _run_terminology_audit(runtime, options))
+        _collect([("Terminology", lambda: _run_terminology_audit(runtime, options))])
 
     elif stage == "placeholders":
-        _collect(lambda: _run_placeholder_audit(runtime, options))
+        _collect([("Placeholders", lambda: _run_placeholder_audit(runtime, options))])
 
     elif stage == "ar-qc":
-        _collect(lambda: _run_ar_locale_qc(runtime, options))
+        _collect([("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options))])
 
     elif stage == "ar-semantic":
-        _collect(lambda: _run_ar_semantic_qc(runtime, options))
+        _collect([("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options))])
 
     elif stage == "icu":
-        _collect(lambda: _run_icu_message_audit(runtime, options))
+        _collect([("ICU Messages", lambda: _run_icu_message_audit(runtime, options))])
 
     elif stage == "reports":
         if options.output.results_dir:
+            print(f"📊 Generating final artifacts and reports...", end="", flush=True)
             _collect_reports(lambda: _run_report_aggregator(runtime, options))
+            print(f" Done. 📍 Path: {options.effective_output_dir(runtime.results_dir)}")
 
     elif stage == "autofix":
-        _collect(lambda: _run_autofix(runtime, options))
+        _collect([("Autofix", lambda: _run_autofix(runtime, options))])
 
     elif stage == "ai-review":
         if not options.ai_review.enabled:
             logger.info("AI Review is disabled. Set ai_review.enabled: true in config.")
         else:
-             _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider))
+             _collect([("AI Review", lambda: _run_ai_review(runtime, options, ai_provider=ai_provider))])
 
     else:
         # Fallback for unknown stages or stages handled differently
@@ -247,6 +275,11 @@ def run_engine(
     if ai_provider is None and options.ai_review.enabled:
         from l10n_audit.core.ai_http_provider import HttpAIProvider
         ai_provider = HttpAIProvider()
+        # UX: Reassurance for the user
+        print("✨ AI Configuration loaded successfully.")
+
+    if options.ai_review.enabled:
+        logger.debug("AI Review active. Using keys from global home (~/.l10n-audit/config.env)")
 
     logger.info("Engine starting stage=%s results_dir=%s", options.stage, options.output.results_dir)
     issues, reports = _dispatch_stage(options.stage, runtime, options, ai_provider)

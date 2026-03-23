@@ -1,76 +1,90 @@
 {
-  "//_comment_stage_en": "Control the depth of the audit. [full: heavy grammar + AI + terminology + QC, fast: terminology + QC only, terminology: glossary enforcement only, grammar: linguistics only]. Use 'full' for final release checks.",
-  "//_comment_stage_ar": "التحكم في عمق التدقيق. [full: تدقيق لغوي ثقيل + ذكاء اصطناعي + مصطلحات + جودة، fast: مصطلحات وجودة فقط، terminology: فرض القاموس فقط، grammar: لغويات فقط]. استخدم 'full' لفحص ما قبل الإصدار النهائي.",
+  "config_version": 2,
+
+  "//_stage": {
+    "title": "Audit Depth | عمق التدقيق",
+    "choices": [
+      "full        = AI + Grammar + QC (Recommended for production)",
+      "fast        = Terminology + QC (High performance)",
+      "terminology = Isolated Glossary enforcement",
+      "grammar     = Pure linguistic and style verification"
+    ],
+    "note": "Use 'full' for release-candidate builds to ensure zero semantic drift."
+  },
   "stage": "full",
 
   "project_detection": {
-    "//_comment_auto_detect_en": "Automatic framework discovery. [true: scans for .arb, .php, or i18n markers, false: ignores scanning]. Setting to 'true' is recommended for multi-package monorepos.",
-    "//_comment_auto_detect_ar": "الاكتشاف التلقائي لنوع المشروع. [true: يبحث عن ملفات .arb أو .php أو علامات i18n، false: يتجاهل الفحص]. يوصى بضبطه على 'true' للمشاريع التي تحتوي على عدة حزم.",
+    "//_auto_detect": "Automatic framework discovery | الاكتشاف التلقائي لإطار العمل",
     "auto_detect": true,
 
-    "//_comment_force_profile_en": "Manual override for project type. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings]. Set to null if auto_detect is true.",
-    "//_comment_force_profile_ar": "تخصيص يدوي لنوع المشروع. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings]. اتركه null إذا كان الاكتشاف التلقائي مفعلاً.",
+    "//_force_profile": {
+      "title": "Manual Profile Override | فرض ملف تعريف يدوي",
+      "choices": [
+        "flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n",
+        "android_xml, ios_strings"
+      ],
+      "note": "Set to null to let the engine auto-discover based on project markers."
+    },
     "force_profile": null
   },
 
   "audit_rules": {
-    "//_comment_role_identifiers_en": "Reserved app roles or persona terms (e.g. 'captain', 'rider', 'admin') that should be protected from being flagged as mixed-script or semantic inconsistencies.",
-    "//_comment_role_identifiers_ar": "أسماء الأدوار أو الأشخاص المحجوزة في التطبيق (مثل 'captain' أو 'admin') والتي يجب حمايتها من اعتبارها أخطاء لغوية أو تناقضات معنوية.",
+    "//_role_identifiers": "Domain-specific roles (e.g. captain) | أدوار النظام الخاصة (مثل سائق)",
     "role_identifiers": ["admin", "driver", "rider", "captain"],
 
-    "//_comment_latin_whitelist_en": "Technical terms or brand names allowed within Arabic strings. Highly recommended to include your brand name to avoid false-positive 'mixed-script' warnings.",
-    "//_comment_latin_whitelist_ar": "المصطلحات التقنية أو الأسماء التجارية المسموح بها داخل النصوص العربية. يوصى بشدة بإضافة اسم علامتك التجارية لتجنب تحذيرات تداخل اللغات الخاطئة.",
+    "//_latin_whitelist": "Allowed brands in Arabic text | العلامات التجارية المسموحة في النص العربي",
     "latin_whitelist": ["Taxi", "App", "DeepSeek", "OpenAI"],
 
-    "//_comment_entity_whitelist_en": "Global entities that must remain untouched. Mapping these ensures the audit engine doesn't suggest literal translations for proper nouns.",
-    "//_comment_entity_whitelist_ar": "الكيانات العالمية التي يجب أن تظل كما هي. يضمن تحديدها عدم اقتراح محرك التدقيق لترجمات حرفية للأسماء العلم.",
+    "//_entity_whitelist": "Protected terms | الكيانات المحمية",
     "entity_whitelist": {
       "en": ["Admin", "Team"],
       "ar": ["الإدارة", "الفريق"]
     },
 
-    "//_comment_apply_safe_fixes_en": "The Smart Auto-Fixer. [true: automatically replaces forbidden_terms defined in glossary.json with approved_ar directly in your files, false: audit report only].",
-    "//_comment_apply_safe_fixes_ar": "المصلح الآلي الذكي. [true: يستبدل تلقائياً الكلمات المحظورة المعرفة في glossary.json بالمصطلحات المعتمدة مباشرة في ملفاتك، false: تقرير تدقيق فقط].",
+    "//_apply_safe_fixes": "Auto-apply glossary fixes | تطبيق تصحيحات القاموس آلياً",
     "apply_safe_fixes": false
   },
 
   "ai_review": {
-    "//_comment_enabled_en": "High-Precision Semantic Review. [true: activates deep analysis via LLM to verify context and meaning, false: uses fast heuristics only]. Set to true to eliminate false positives in complex strings.",
-    "//_comment_enabled_ar": "مراجعة معنوية عالية الدقة. [true: يفعل التحليل العميق عبر نماذج اللغة للتحقق من السياق والمعنى، false: يستخدم الاختصارات السريعة فقط]. فعله للتخلص من النتائج الخاطئة.",
+    "//_enabled": "Enable LLM semantic review | تفعيل المراجعة بالذكاء الاصطناعي",
     "enabled": false,
 
-    "//_comment_provider_en": "Provider: [openai: high quality, deepseek: cost-effective excellence, litellm: universal support + local models]. Recommendation: Use litellm for maximum provider flexibility.",
-    "//_comment_provider_ar": "مزود الخدمة: [openai: جودة عالية، deepseek: أداء ممتاز وتكلفة منخفضة، litellm: دعم شامل لعدة مزودين ونماذج محلية]. ينصح بـ litellm لأقصى مرونة.",
+    "//_provider": "AI Provider (openai/deepseek/litellm) | مزود خدمة الذكاء الاصطناعي",
     "provider": "litellm",
 
-    "//_comment_model_en": "Model ID: [gpt-4o-mini: recommended for price/perf, deepseek-chat: excellent for logic, claude-3-haiku: fast]. Use 'mini' models for cost-efficient large audits.",
-    "//_comment_model_ar": "معرف النموذج: [gpt-4o-mini: ينصح به للسعر والأداء، deepseek-chat: ممتاز للمنطق، claude-3-haiku: سريع]. استخدم نماذج 'mini' للتدقيقات الكبيرة.",
+    "//_model": "LLM Identifier (e.g. gpt-4o-mini) | معرف نموذج اللغة",
     "model": "gpt-4o-mini",
 
-    "//_comment_api_key_env_en": "Name of the environment variable (NOT the key itself) stored in your system or .env file which contains your API access token.",
-    "//_comment_api_key_env_ar": "اسم متغير البيئة (وليس المفتاح نفسه) المخزن في نظامك أو في ملف .env والذي يحتوي على رمز وصول API الخاص بك.",
+    "//_api_key_env": "Env var for API key | اسم متغير البيئة لمفتاح API",
     "api_key_env": "OPENAI_API_KEY",
 
-    "//_comment_batch_size_en": "Throughput optimization. [Range: 1-100]. Controls how many strings are sent to the AI in a single batch. default: 20.",
-    "//_comment_batch_size_ar": "تحسين الأداء. [المدى: 1-100]. يتحكم في عدد النصوص المرسلة للذكاء الاصطناعي في دفعة واحدة. الافتراضي: 20.",
+    "//_batch_size": "Number of labels per AI request | عدد النصوص في كل طلب",
     "batch_size": 20,
 
-    "//_comment_short_label_threshold_en": "Content Filter. [0-10 words]. Translations with fewer words than this threshold are skipped by the AI to save costs on trivial labels (e.g. 'OK', 'Save').",
-    "//_comment_short_label_threshold_ar": "فلتر المحتوى. [0-10 كلمات]. سيتم تجاهل الترجمات التي تحتوي على كلمات أقل من هذا الحد لتوفير التكاليف (مثل 'موافق' أو 'حفظ').",
+    "//_short_label_threshold": "Skip trivial labels < X words | تخطي الكلمات القصيرة",
     "short_label_threshold": 3
   },
 
   "output": {
-    "//_comment_results_dir_en": "Target directory for dashboards, XLSX reports, and JSON artifacts. Keep as 'Results' for standard CI/CD integration.",
-    "//_comment_results_dir_ar": "المجلد المستهدف للوحات المتابعة وتقارير XLSX والنتائج. اتركه 'Results' للتكامل القياسي مع أنظمة البناء الآلي.",
+    "//_results_dir": "Target directory for reports | مجلد مخرجات التقارير",
     "results_dir": "Results",
 
-    "//_comment_retention_mode_en": "History management. [overwrite: deletes previous run, archive: moves previous Results to an _archives/ folder with a timestamp]. Recommendation: Use 'archive' for audit traceability.",
-    "//_comment_retention_mode_ar": "إدارة السجلات. [overwrite: يحذف عملية التشغيل السابقة، archive: ينقل النتائج السابقة لمجلد أرشيف مع طابع زمني]. ينصح بـ 'archive' لتتبع تاريخ التدقيق.",
+    "//_retention_mode": {
+      "title": "History Management | إدارة تاريخ الفحص",
+      "choices": [
+        "overwrite = Delete last run (Default)",
+        "archive   = Move to timestamped archives"
+      ]
+    },
     "retention_mode": "overwrite",
 
-    "//_comment_archive_name_prefix_en": "Naming convention for archives. Resulting folder will be [prefix]_[timestamp].",
-    "//_comment_archive_name_prefix_ar": "اصطلاح تسمية الأرشيف. المجلد الناتج سيكون [البادئة]_[الطابع_الزمني].",
+    "//_archive_name_prefix": "Prefix for history folders | بادئة مجلد الأرشيف",
     "archive_name_prefix": "audit"
-  }
+  },
+
+  "//_project_root": "Project root directory path | مسار جذر المشروع",
+  "project_root": ".",
+
+  "//_glossary_file": "Terminology glossary JSON path | مسار ملف القاموس الموحد",
+  "glossary_file": "docs/terminology/glossary.json"
 }
