@@ -40,7 +40,7 @@ def test_validate_ai_config_missing_key_raises():
     with patch.dict(os.environ, {}, clear=True):
         with pytest.raises(AIConfigError) as excinfo:
             validate_ai_config(ai_enabled=True)
-        assert "no API key resolved" in str(excinfo.value)
+        assert "AI API Key Not Found" in str(excinfo.value)
 
 @patch("dotenv.load_dotenv")
 def test_validate_ai_config_calls_load_dotenv(mock_load_dotenv):
