@@ -415,106 +415,240 @@ class AuditOptions:
         """Returns a hyper-detailed prettified JSON string of all defaults with vertical bilingual comments."""
         data = {
             "config_version": 2,
-            "//_comment_stage_en": "Control depth. [full: heavy grammar + AI + term + QC, fast: term + QC, terminology: glossary only, grammar: linguistics only].",
-            "//_comment_stage_ar": "التحكم في العمق. [full: تدقيق لغوي + ذكاء اصطناعي + مصطلحات + جودة، fast: مصطلحات وجودة، terminology: القاموس فقط، grammar: لغويات فقط].",
+            "//_comment_stage_en": [
+                "1. Control depth of the audit process.",
+                "2. [full]: Comprehensive audit (Grammar, AI, Terminology, QC).",
+                "3. [fast]: Performance-focused audit (Terminology & QC).",
+                "4. [terminology]: Isolated glossary enforcement only.",
+                "5. [grammar]: Pure linguistic and style verification."
+            ],
+            "//_comment_stage_ar": [
+                "1. التحكم في عمق ومستوى عملية التدقيق.",
+                "2. [full]: تدقيق شامل (لغويات، ذكاء اصطناعي، مصطلحات، جودة).",
+                "3. [fast]: تدقيق سريع يركز على المصطلحات والجودة.",
+                "4. [terminology]: فحص تطابق المصطلحات مع القاموس فقط.",
+                "5. [grammar]: تدقيق لغوي وأسلوبي فقط."
+            ],
             "stage": self.stage,
 
             "project_detection": {
-                "//_comment_auto_detect_en": "Automatic discovery. [true: scans for .arb, .php, or i18n markers, false: ignores scanning].",
-                "//_comment_auto_detect_ar": "الاكتشاف التلقائي. [true: يبحث عن ملفات .arb أو .php أو علامات i18n، false: يتجاهل الفحص].",
+                "//_comment_auto_detect_en": [
+                    "1. Enable automatic framework discovery.",
+                    "2. [true]: Scans project for .arb, .php, or i18n markers.",
+                    "3. [false]: Ignores scanning; requires force_profile."
+                ],
+                "//_comment_auto_detect_ar": [
+                    "1. تفعيل الاكتشاف التلقائي لإطار العمل.",
+                    "2. [true]: يبحث في المشروع عن ملفات .arb أو .php أو علامات i18n.",
+                    "3. [false]: يتجاهل الفحص؛ يتطلب تحديد force_profile يدوياً."
+                ],
                 "auto_detect": self.project_detection.auto_detect,
 
-                "//_comment_force_profile_en": "Manual profile override. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings].",
-                "//_comment_force_profile_ar": "تخصيص يدوي لنوع المشروع. [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings].",
+                "//_comment_force_profile_en": [
+                    "1. Manual project profile override.",
+                    "2. Supported: [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings]."
+                ],
+                "//_comment_force_profile_ar": [
+                    "1. تخصيص يدوي لنوع المشروع.",
+                    "2. المدعوم: [flutter_arb, laravel_php, json_flat, react_i18n, vue_i18n, android_xml, ios_strings]."
+                ],
                 "force_profile": profile_name or self.project_detection.force_profile
             },
 
             "audit_rules": {
-                "//_comment_role_identifiers_en": "Reserved persona terms (e.g. 'captain', 'rider') protected from mixed-script/semantic flags.",
-                "//_comment_role_identifiers_ar": "أسماء الأدوار المحجوزة (مثل 'captain' أو 'rider') والتي يجب حمايتها من تحذيرات اللغة أو المعنى.",
+                "//_comment_role_identifiers_en": [
+                    "1. Define domain-specific roles (e.g. 'captain', 'rider').",
+                    "2. These terms are protected from mixed-script or semantic flags."
+                ],
+                "//_comment_role_identifiers_ar": [
+                    "1. تعريف أدوار النظام الخاصة بك (مثل 'سائق' أو 'راكب').",
+                    "2. هذه المصطلحات محمية من تحذيرات اللغة أو المعنى."
+                ],
                 "role_identifiers": self.audit_rules.role_identifiers,
 
-                "//_comment_latin_whitelist_en": "Technical terms/brands allowed in Arabic text without mixed-script warnings.",
-                "//_comment_latin_whitelist_ar": "المصطلحات التقنية أو الأسماء التجارية المسموح بها داخل النصوص العربية.",
+                "//_comment_latin_whitelist_en": [
+                    "1. Allow technical terms or brands in Arabic text.",
+                    "2. Examples: ['DeepSeek', 'API', 'Betaxi']."
+                ],
+                "//_comment_latin_whitelist_ar": [
+                    "1. السماح بمصطلحات تقنية أو علامات تجارية داخل النص العربي.",
+                    "2. أمثلة: ['DeepSeek', 'API', 'Betaxi']."
+                ],
                 "latin_whitelist": self.audit_rules.latin_whitelist,
 
-                "//_comment_entity_whitelist_en": "Protected global terms to prevent inappropriate literal translation suggestions.",
-                "//_comment_entity_whitelist_ar": "المصطلحات العالمية المحمية لمنع اقتراح ترجمات حرفية غير مناسبة.",
+                "//_comment_entity_whitelist_en": [
+                    "1. Global terms to protect from inappropriate translation.",
+                    "2. Formatted as {'en': [], 'ar': []}."
+                ],
+                "//_comment_entity_whitelist_ar": [
+                    "1. مصطلحات عامة تجب حمايتها من الترجمة غير المناسبة.",
+                    "2. التنسيق: {'en': [], 'ar': []}."
+                ],
                 "entity_whitelist": self.audit_rules.entity_whitelist,
 
-                "//_comment_apply_safe_fixes_en": "Auto-Fixer. [true: replaces forbidden_terms in files, false: report only]. Recommendation: Use true for terminology standardized projects.",
-                "//_comment_apply_safe_fixes_ar": "المصلح الآلي. [true: يستبدل الكلمات المحظورة في ملفاتك، false: تقرير فقط]. ينصح بـ true لتوحيد المصطلحات.",
+                "//_comment_apply_safe_fixes_en": [
+                    "1. Standardize terminology automatically.",
+                    "2. [true]: Replaces forbidden_terms directly in file.",
+                    "3. [false]: Generates report only."
+                ],
+                "//_comment_apply_safe_fixes_ar": [
+                    "1. توحيد المصطلحات آلياً.",
+                    "2. [true]: يستبدل الكلمات المحظورة مباشرة في ملفاتك.",
+                    "3. [false]: ينشئ تقريراً فقط."
+                ],
                 "apply_safe_fixes": self.audit_rules.apply_safe_fixes
             },
 
             "ai_review": {
-                "//_comment_enabled_en": "Semantic Analysis. [true: uses LLM for deep verification, false: heuristics only]. Highly recommended for precision audit stages.",
-                "//_comment_enabled_ar": "مراجعة معنوية. [true: يفعل التحقق العميق عبر نماذج اللغة، false: خوارزميات سريعة فقط]. ينصح به للدقة العالية.",
+                "//_comment_enabled_en": [
+                    "1. Enable LLM-powered semantic review.",
+                    "2. Requires a valid API key and internet connection."
+                ],
+                "//_comment_enabled_ar": [
+                    "1. تفعيل المراجعة المعنوية بالذكاء الاصطناعي.",
+                    "2. يتطلب مفتاح API صالح واتصالاً بالإنترنت."
+                ],
                 "enabled": self.ai_review.enabled,
 
-                "//_comment_provider_en": "Provider: [openai: high quality, deepseek: cost-effective excellence, litellm: universal support]. Use litellm for maximum flexibility.",
-                "//_comment_provider_ar": "مزود الخدمة: [openai: جودة عالية، deepseek: أداء ممتاز وتكلفة منخفضة، litellm: دعم شامل]. ينصح بـ litellm للمرونة.",
+                "//_comment_provider_en": [
+                    "1. AI Service Provider selection.",
+                    "2. Supported: [openai, deepseek, litellm].",
+                    "3. litellm is recommended for universal model support."
+                ],
+                "//_comment_provider_ar": [
+                    "1. اختيار مزود خدمة الذكاء الاصطناعي.",
+                    "2. المدعوم: [openai, deepseek, litellm].",
+                    "3. يفضل استخدام litellm لدعم شامل للنماذج."
+                ],
                 "provider": self.ai_review.provider,
 
-                "//_comment_model_en": "Model: [gpt-4o-mini: recommended price/perf, deepseek-chat: logic expert]. Use 'mini' models for common audit tasks.",
-                "//_comment_model_ar": "النموذج: [gpt-4o-mini: ينصح به للسعر والأداء، deepseek-chat: خبير للمنطق]. استخدم نماذج 'mini' للمهام الاعتيادية.",
+                "//_comment_model_en": [
+                    "1. Specific LLM identifier (e.g. gpt-4o-mini).",
+                    "2. Recommendation: Use 'mini' models to optimize cost."
+                ],
+                "//_comment_model_ar": [
+                    "1. معرف نموذج اللغة (مثال: gpt-4o-mini).",
+                    "2. نصيحة: استخدم نماذج 'mini' لتقليل التكلفة."
+                ],
                 "model": self.ai_review.model or "gpt-4o-mini",
 
-                "//_comment_api_key_env_en": "Variable name for your API key.",
-                "//_comment_api_key_env_ar": "اسم متغير البيئة لمفتاح الـ API الخاص بك.",
+                "//_comment_api_key_env_en": [
+                    "1. Environment variable name holding your API key.",
+                    "2. Standard: OPENAI_API_KEY or DEEPSEEK_API_KEY."
+                ],
+                "//_comment_api_key_env_ar": [
+                    "1. اسم متغير البيئة الذي يحتوي على مفتاح الـ API.",
+                    "2. افتراضي: OPENAI_API_KEY أو DEEPSEEK_API_KEY."
+                ],
                 "api_key_env": self.ai_review.api_key_env or "OPENAI_API_KEY",
 
-                "//_comment_batch_size_en": "Processing batch size (default 20).",
-                "//_comment_batch_size_ar": "حجم دفعة المعالجة (الافتراضي 20).",
+                "//_comment_batch_size_en": [
+                    "1. Number of labels to process in a single AI request.",
+                    "2. Recommended: 20-50 based on context length."
+                ],
+                "//_comment_batch_size_ar": [
+                    "1. عدد النصوص التي يتم معالجتها في طلب ذكاء اصطناعي واحد.",
+                    "2. ينصح بـ 20-50 بناءً على طول المحتوى."
+                ],
                 "batch_size": self.ai_review.batch_size,
 
-                "//_comment_short_label_threshold_en": "Min words for AI review.",
-                "//_comment_short_label_threshold_ar": "الحد أدنى للكلمات لمراجعة الذكاء الاصطناعي.",
+                "//_comment_short_label_threshold_en": [
+                    "1. Minimum word count to trigger AI semantic check.",
+                    "2. Helps skip trivial labels like 'OK' or 'Save'."
+                ],
+                "//_comment_short_label_threshold_ar": [
+                    "1. الحد الأدنى لعدد الكلمات لتفعيل فحص الذكاء الاصطناعي.",
+                    "2. يساعد في تخطي الكلمات القصيرة مثل 'موافق' أو 'حفظ'."
+                ],
                 "short_label_threshold": self.ai_review.short_label_threshold
             },
 
             "output": {
-                "//_comment_results_dir_en": "Target directory for logs and reports. Keep as 'Results' for standard integration.",
-                "//_comment_results_dir_ar": "المجلد المستهدف للسجلات والتقارير. اتركه 'Results' للتكامل القياسي.",
+                "//_comment_results_dir_en": [
+                    "1. Target directory for logs and reports.",
+                    "2. Default: 'Results'."
+                ],
+                "//_comment_results_dir_ar": [
+                    "1. المجلد المستهدف لسجلات الفحص والتقارير.",
+                    "2. الافتراضي: 'Results'."
+                ],
                 "results_dir": self.output.results_dir or "Results",
 
-                "//_comment_retention_mode_en": "History: [overwrite: deletes previous run, archive: moves to _archives/]. Recommendation: Use 'archive' for CI/CD audit trails.",
-                "//_comment_retention_mode_ar": "إدارة السجلات: [overwrite: يحذف السجل السابق، archive: أرشفة السجل السابق]. ينصح بـ 'archive' لتتبع تاريخ التدقيق.",
+                "//_comment_retention_mode_en": [
+                    "1. History management for previous audit results.",
+                    "2. [overwrite]: Deletes the last Run directory.",
+                    "3. [archive]: Moves results to timestamped _archives/."
+                ],
+                "//_comment_retention_mode_ar": [
+                    "1. إدارة تاريخ نتائج الفحص السابقة.",
+                    "2. [overwrite]: يحذف مجلد الفحص السابق.",
+                    "3. [archive]: ينقل النتائج إلى مجلد _archives مؤرخ."
+                ],
                 "retention_mode": self.output.retention_mode,
 
-                "//_comment_archive_name_prefix_en": "Archive prefix.",
-                "//_comment_archive_name_prefix_ar": "بادئة الأرشيف.",
+                "//_comment_archive_name_prefix_en": [
+                    "1. Prefix for archived result folders.",
+                    "2. Format: {prefix}_YYYYMMDD_HHMMSS."
+                ],
+                "//_comment_archive_name_prefix_ar": [
+                    "1. البادئة لمجلدات الفحص المؤرشفة.",
+                    "2. التنسيق: {prefix}_YYYYMMDD_HHMMSS."
+                ],
                 "archive_name_prefix": self.output.archive_name_prefix or "audit"
             },
 
             "ar_locale_qc": {
-                "//_comment_enable_exclamation_style_en": "Check for spacing around Arabic punctuation like '!' and '؟'. Recommendation: true.",
-                "//_comment_enable_exclamation_style_ar": "التحقق من المسافات حول علامات الترقيم مثل '!' و '؟'. ينصح بـ true.",
+                "//_comment_enable_exclamation_style_en": [
+                    "1. Spacing check around Arabic punctuation ('!', '؟').",
+                    "2. Recommendation: true."
+                ],
+                "//_comment_enable_exclamation_style_ar": [
+                    "1. التحقق من المسافات حول علامات الترقيم ('!'، '؟').",
+                    "2. ينصح بـ true."
+                ],
                 "enable_exclamation_style": self.ar_locale_qc.enable_exclamation_style,
 
-                "//_comment_enable_long_ui_string_en": "Flag translations that are significantly longer than the source. Recommendation: true.",
-                "//_comment_enable_long_ui_string_ar": "تنبيه في حال كانت الترجمة أطول من اللازم بالنسبة للمصدر. ينصح بـ true.",
+                "//_comment_enable_long_ui_string_en": [
+                    "1. Detection of overly long translations vs source.",
+                    "2. Prevents UI overflow in mobile/compact views."
+                ],
+                "//_comment_enable_long_ui_string_ar": [
+                    "1. اكتشاف الترجمات الطويلة جداً مقارنة بالمصدر.",
+                    "2. يمنع تداخل النصوص في واجهات الهواتف."
+                ],
                 "enable_long_ui_string": self.ar_locale_qc.enable_long_ui_string,
 
-                "//_comment_enable_similar_phrase_variation_en": "Consistency Check. [true: flags minor differences for same key, false: skips].",
-                "//_comment_enable_similar_phrase_variation_ar": "تحقق التناسق. [true: ينبه في حال وجود ترجمات مختلفة قليلاً لنفس المصطلح].",
+                "//_comment_enable_similar_phrase_variation_en": [
+                    "1. Inconsistency Detection.",
+                    "2. Flags different translations for the same phrase."
+                ],
+                "//_comment_enable_similar_phrase_variation_ar": [
+                    "1. اكتشاف عدم التناسق.",
+                    "2. ينبه لوجود ترجمات مختلفة لنفس العبارة."
+                ],
                 "enable_similar_phrase_variation": self.ar_locale_qc.enable_similar_phrase_variation,
 
-                "//_comment_enable_suspicious_literal_translation_en": "Semantic loss detection. Recommendation: true.",
-                "//_comment_enable_suspicious_literal_translation_ar": "اكتشاف ضياع المعنى في الترجمة الحرفية. ينصح بـ true.",
+                "//_comment_enable_suspicious_literal_translation_en": [
+                    "1. Catch literal translations that lose semantic value.",
+                    "2. Highly recommended for creative UI content."
+                ],
+                "//_comment_enable_suspicious_literal_translation_ar": [
+                    "1. اكتشاف الترجمات الحرفية التي تفقد المعنى.",
+                    "2. ينصح به بشدة لمحتوى الواجهات الإبداعي."
+                ],
                 "enable_suspicious_literal_translation": self.ar_locale_qc.enable_suspicious_literal_translation
             },
 
-            "//_comment_project_root_en": "Relative or absolute path to the project root.",
-            "//_comment_project_root_ar": "المسار النسبي أو المطلق لجذر المشروع.",
+            "//_comment_project_root_en": ["Relative or absolute path to the project root."],
+            "//_comment_project_root_ar": ["المسار النسبي أو المطلق لجذر المشروع."],
             "project_root": self.project_root,
 
-            "//_comment_glossary_file_en": "Path to the terminology glossary file.",
-            "//_comment_glossary_file_ar": "مسار ملف القاموس الموحد.",
+            "//_comment_glossary_file_en": ["Path to the terminology glossary file."],
+            "//_comment_glossary_file_ar": ["مسار ملف القاموس الموحد."],
             "glossary_file": self.glossary_file,
 
-            "//_comment_languagetool_dir_en": "Path to local LanguageTool installation (optional).",
-            "//_comment_languagetool_dir_ar": "مسار تثبيت LanguageTool المحلي (اختياري).",
+            "//_comment_languagetool_dir_en": ["Local LanguageTool installation directory (optional)."],
+            "//_comment_languagetool_dir_ar": ["مسار تثبيت LanguageTool المحلي (اختياري)."],
             "languagetool_dir": self.languagetool_dir
         }
         return json.dumps(data, indent=2, ensure_ascii=False)
