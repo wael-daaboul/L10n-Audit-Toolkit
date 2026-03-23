@@ -45,9 +45,10 @@ final-audit-toolkit.txt
 
 # --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
 # ملاحظة: تم استبعاد "مفاتيح" لأنه يحتوي على أدوات عمل خاصة بالمطور
-مفاتيح/
+مفاتيح/*
 internal_notes/
 .dev_scripts/
+RELEASE_NOTE.md
 
 # --- إعدادات الحالة والبيئة المحلية ---
 vendor/
