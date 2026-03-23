@@ -92,19 +92,26 @@ def validate_ai_config(
     # Resolve API Key
     # 1. Direct pass
     # 2. Custom env var name
-    # 3. Defaults (OPENAI_API_KEY or DEEPSEEK_API_KEY)
+    # 3. Dynamic Fallback (DEEPSEEK -> OPENAI -> ANTHROPIC -> AI_API_KEY)
     resolved_key = ai_api_key
     if not resolved_key:
         if ai_api_key_env:
             resolved_key = os.getenv(ai_api_key_env)
         else:
-            resolved_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+            # Dynamic Waterfall
+            resolved_key = (
+                os.getenv("DEEPSEEK_API_KEY") or 
+                os.getenv("OPENAI_API_KEY") or 
+                os.getenv("ANTHROPIC_API_KEY") or 
+                os.getenv("AI_API_KEY")
+            )
 
     if not resolved_key:
-        desc = f"custom env {ai_api_key_env}" if ai_api_key_env else "OPENAI_API_KEY or DEEPSEEK_API_KEY"
         raise AIConfigError(
-            f"AI Review triggered but no API key resolved. "
-            f"Pass ai_api_key or set {desc}."
+            "❌ AI API Key Not Found!\n"
+            "Please add your provider's key to the global config file:\n"
+            "📍 Path: ~/.l10n-audit/config.env\n"
+            "Example: DEEPSEEK_API_KEY=sk-xxxx"
         )
 
     return {

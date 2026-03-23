@@ -334,7 +334,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     from dotenv import load_dotenv
+    from l10n_audit.core.workspace import ensure_global_config, get_global_config_path
+    
+    # 1. Ensure Global Config Home (~/.l10n-audit/config.env)
+    ensure_global_config()
+    
+    # 2. Load GLOBAL env keys
+    global_env = get_global_config_path()
+    if global_env.exists():
+        load_dotenv(dotenv_path=global_env)
+    
+    # 3. Load LOCAL .env (Overrides global if present)
     load_dotenv()
+    
     parser = build_parser()
     args = parser.parse_args()
     raise SystemExit(args.func(args))

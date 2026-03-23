@@ -23,6 +23,37 @@ WORKSPACE_TEMPLATE_DIR = "toolkit-template"
 CURRENT_CONFIG_VERSION = 2
 
 
+def get_global_config_path() -> Path:
+    """Return the absolute path to the global config file (~/.l10n-audit/config.env)."""
+    return Path.home() / ".l10n-audit" / "config.env"
+
+
+def ensure_global_config() -> None:
+    """Check if the global config directory and file exist. 
+    If not, create them with a template and print a welcome message.
+    """
+    config_path = get_global_config_path()
+    if not config_path.exists():
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            template = (
+                "# L10n Audit - Global AI Configuration\n"
+                "DEEPSEEK_API_KEY=\n"
+                "OPENAI_API_KEY=\n"
+                "ANTHROPIC_API_KEY=\n"
+                "AI_API_KEY=\n"
+            )
+            config_path.write_text(template, encoding="utf-8")
+            
+            # Color codes for a premium feel
+            # \033[94m (Blue), \033[92m (Green), \033[0m (Reset)
+            print(f"\n\033[94m✨ Welcome! Global config created at \033[92m{config_path}\033[0m")
+            print(f"\033[94m👉 Please add your API key there to enable AI features.\033[0m\n")
+        except Exception:
+            # Silent fail for permission issues or read-only homes
+            pass
+
+
 def toolkit_version() -> str:
     # Prioritize our internal source-of-truth VERSION during v1.2.2 rollout
     from l10n_audit.models import VERSION
