@@ -92,16 +92,19 @@ def validate_ai_config(
     # Resolve API Key
     # 1. Direct pass
     # 2. Custom env var name
-    # 3. Default (OPENAI_API_KEY)
+    # 3. Defaults (OPENAI_API_KEY or DEEPSEEK_API_KEY)
     resolved_key = ai_api_key
     if not resolved_key:
-        env_var_name = ai_api_key_env or "OPENAI_API_KEY"
-        resolved_key = os.getenv(env_var_name)
+        if ai_api_key_env:
+            resolved_key = os.getenv(ai_api_key_env)
+        else:
+            resolved_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
 
     if not resolved_key:
+        desc = f"custom env {ai_api_key_env}" if ai_api_key_env else "OPENAI_API_KEY or DEEPSEEK_API_KEY"
         raise AIConfigError(
             f"AI Review triggered but no API key resolved. "
-            f"Pass ai_api_key or set {'custom env ' + ai_api_key_env if ai_api_key_env else 'OPENAI_API_KEY'}."
+            f"Pass ai_api_key or set {desc}."
         )
 
     return {

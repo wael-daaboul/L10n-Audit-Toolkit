@@ -169,7 +169,7 @@ def chunk_issues(issues, batch_size=50):
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
 
-def run_stage(runtime, options, *, ai_provider=None) -> list:
+def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> list:
     """Run AI review stage and return a list of :class:`AuditIssue`.
 
     Parameters
@@ -177,6 +177,8 @@ def run_stage(runtime, options, *, ai_provider=None) -> list:
     ai_provider:
         Optional :class:`~l10n_audit.core.ai_protocol.AIProvider`.
         Defaults to the production LiteLLM provider.
+    previous_issues:
+        Optional list of issues from previous stages in the same run.
     """
     import os
     import time
@@ -203,8 +205,14 @@ def run_stage(runtime, options, *, ai_provider=None) -> list:
         from l10n_audit.core.ai_factory import get_ai_provider
         ai_provider = get_ai_provider(options.ai_review.provider)
 
-    # Load existing issues to review
-    all_issues = load_issues(runtime)
+    # Load existing issues to review (In-memory if available, else Disk)
+    if previous_issues is not None:
+        # Ensure they are dicts for the logic below
+        all_issues = [i.to_dict() if hasattr(i, "to_dict") else i for i in previous_issues]
+        logger.info("[AI] Consuming %d issues from in-memory tracker.", len(all_issues))
+    else:
+        all_issues = load_issues(runtime)
+        
     if not all_issues:
         return []
 

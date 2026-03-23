@@ -47,7 +47,7 @@ logger = logging.getLogger("l10n_audit.api")
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _stage_module_names(stage: str) -> list[str]:
+def _stage_module_names(stage: str, ai_enabled: bool = False) -> list[str]:
     """Return the module names that will run for a given *stage*.
 
     Used by the CLI to print progress messages like ``Running audits.X...``
@@ -74,7 +74,16 @@ def _stage_module_names(stage: str) -> list[str]:
         "autofix": ["fixes.apply_safe_fixes"],
         "ai-review": ["audits.ai_review"],
     }
-    return mapping.get(stage, [])
+    
+    modules = mapping.get(stage, [])
+    
+    # If AI is enabled, append ai_review to the pipeline (continuous flow)
+    if ai_enabled and "audits.ai_review" not in modules:
+        modules = list(modules)
+        # Avoid double-adding if report_aggregator is at the end, insert after it or just append
+        modules.append("audits.ai_review")
+        
+    return modules
 
 
 def check_prerequisites() -> None:
@@ -247,7 +256,7 @@ def run_audit(
         elif stage in CONSUMER_STAGES:
             # Consumers MUST NOT delete findings they are intended to process
             report_path = results_dir / "final_audit_report.json"
-            if not report_path.exists():
+            if not report_path.exists() and not effective_ai_enabled:
                 raise AuditError(
                     f"Consumer stage '{stage}' requires input data that is currently missing.\n"
                     "Please run a producer stage first (e.g., 'fast' or 'full') to generate the report."

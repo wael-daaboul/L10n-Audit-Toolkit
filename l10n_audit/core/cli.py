@@ -176,7 +176,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"  [Engine] L10n Audit Engine v{l10n_audit.__version__} loaded.")
             print(f"  [Stage] Target: {stage}")
 
-        for label in _stage_module_names(stage):
+        ai_enabled = getattr(args, "ai_enabled", False)
+        for label in _stage_module_names(stage, ai_enabled=ai_enabled):
             print(f"Running {label}...")
 
         # Unify arguments with the main API
@@ -332,6 +333,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+    load_dotenv()
     parser = build_parser()
     args = parser.parse_args()
     raise SystemExit(args.func(args))

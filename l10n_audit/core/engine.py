@@ -74,9 +74,9 @@ def _run_en_grammar_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
     return run_stage(runtime, options)
 
 
-def _run_ai_review(runtime, options: AuditOptions, ai_provider=None) -> list[AuditIssue]:
+def _run_ai_review(runtime, options: AuditOptions, ai_provider=None, previous_issues=None) -> list[AuditIssue]:
     from l10n_audit.audits.ai_review import run_stage
-    return run_stage(runtime, options, ai_provider=ai_provider)
+    return run_stage(runtime, options, ai_provider=ai_provider, previous_issues=previous_issues)
 
 
 def _run_report_aggregator(runtime, options: AuditOptions, **_) -> list[ReportArtifact]:
@@ -149,8 +149,15 @@ def _dispatch_stage(
             lambda: _run_placeholder_audit(runtime, options),
             lambda: _run_terminology_audit(runtime, options),
         )
+        
+        # Continuous Pipeline: If AI is enabled, run it BEFORE reporting so its findings are included
+        current_sources = _FAST_SOURCES
+        if options.ai_review.enabled:
+            _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))
+            current_sources += ",ai_review"
+
         if options.write_reports:
-            _collect_reports(lambda: _run_report_aggregator(runtime, options, sources=_FAST_SOURCES))
+            _collect_reports(lambda: _run_report_aggregator(runtime, options, sources=current_sources))
 
     elif stage == "full":
         _collect(
@@ -163,8 +170,15 @@ def _dispatch_stage(
             lambda: _run_icu_message_audit(runtime, options),
             lambda: _run_en_grammar_audit(runtime, options),
         )
+            
+        # Continuous Pipeline: If AI is enabled, run it BEFORE reporting so its findings are included
+        current_sources = _FULL_SOURCES
+        if options.ai_review.enabled:
+            _collect(lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))
+            current_sources += ",ai_review"
+
         if options.write_reports:
-            _collect_reports(lambda: _run_report_aggregator(runtime, options, sources=_FULL_SOURCES))
+            _collect_reports(lambda: _run_report_aggregator(runtime, options, sources=current_sources))
 
     elif stage == "grammar":
         _collect(lambda: _run_en_grammar_audit(runtime, options))

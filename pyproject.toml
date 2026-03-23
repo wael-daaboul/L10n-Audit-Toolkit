@@ -4,12 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "l10n-audit-toolkit"
-version = "1.2.5"
+version = "1.2.6"
 description = "Cross-framework localization audit and translation QA toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "language-tool-python"
+    "language-tool-python",
+    "python-dotenv",
+    "litellm",
+    "openpyxl"
 ]
 license = { file = "LICENSE" }
 authors = [
