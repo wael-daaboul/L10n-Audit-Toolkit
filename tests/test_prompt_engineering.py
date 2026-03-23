@@ -1,4 +1,4 @@
-from ai.prompts import get_review_prompt
+from l10n_audit.ai.prompts import get_review_prompt
 
 def test_prompt_contains_new_instructions():
     batch = [{"key": "k1", "source": "Add Address", "current_translation": "العنوان", "identified_issue": "imperative"}]

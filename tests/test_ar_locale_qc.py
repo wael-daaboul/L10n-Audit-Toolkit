@@ -8,7 +8,7 @@ from conftest import load_json, run_module
 def test_ar_locale_qc_detects_targeted_issues(tmp_path: Path, fixtures_dir: Path) -> None:
     out_json = tmp_path / "ar_qc.json"
     run_module(
-        "audits.ar_locale_qc",
+        "l10n_audit.audits.ar_locale_qc",
         [
             "--en", str(fixtures_dir / "locale_samples" / "ar_qc.en.json"),
             "--input", str(fixtures_dir / "locale_samples" / "ar_qc.ar.json"),
@@ -52,7 +52,7 @@ def test_ar_locale_qc_blocks_context_sensitive_admin_rewrite(tmp_path: Path, too
     monkeypatch.setenv("L10N_AUDIT_CONFIG", str(config_file))
 
     run_module(
-        "audits.ar_locale_qc",
+        "l10n_audit.audits.ar_locale_qc",
         [
             "--en",
             str(en_file),
@@ -90,7 +90,7 @@ def test_ar_locale_qc_skips_punctuation_rewrite_for_technical_mixed_text(tmp_pat
     glossary_file.write_text('{"terms":[],"rules":{"forbidden_terms":[]}}', encoding="utf-8")
 
     run_module(
-        "audits.ar_locale_qc",
+        "l10n_audit.audits.ar_locale_qc",
         [
             "--en",
             str(en_file),
@@ -123,7 +123,7 @@ def test_ar_locale_qc_flags_sentence_shape_and_meaning_loss(tmp_path: Path, tool
     glossary_file.write_text('{"terms":[],"rules":{"forbidden_terms":[]}}', encoding="utf-8")
 
     run_module(
-        "audits.ar_locale_qc",
+        "l10n_audit.audits.ar_locale_qc",
         [
             "--en",
             str(en_file),
@@ -169,7 +169,7 @@ def test_ar_locale_qc_protects_placeholders_and_numbers(tmp_path: Path, tools_di
     glossary_file.write_text('{"terms":[],"rules":{"forbidden_terms":[]}}', encoding="utf-8")
 
     run_module(
-        "audits.ar_locale_qc",
+        "l10n_audit.audits.ar_locale_qc",
         [
             "--en", str(en_file),
             "--input", str(ar_file),

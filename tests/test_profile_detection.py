@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from core.audit_runtime import AuditRuntimeError, load_runtime
+from l10n_audit.core.audit_runtime import AuditRuntimeError, load_runtime
 
 
 def _write(path: Path, content: str) -> None:

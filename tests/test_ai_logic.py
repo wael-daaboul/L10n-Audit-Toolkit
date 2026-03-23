@@ -1,6 +1,6 @@
 import json
-from ai.verification import check_placeholders, check_newlines, check_html
-from ai.prompts import get_review_prompt
+from l10n_audit.ai.verification import check_placeholders, check_newlines, check_html
+from l10n_audit.ai.prompts import get_review_prompt
 
 def test_verification_placeholders():
     # Valid

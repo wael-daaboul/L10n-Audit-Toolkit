@@ -96,6 +96,20 @@
       "allowed_extensions": [".js", ".ts", ".vue"],
       "project_markers": [["src"], ["pages"]],
       "notes": "Vue / Nuxt profile for JSON locale files."
+    },
+    "json_flat": {
+      "locale_format": "json",
+      "source_locale": "en",
+      "target_locales": ["ar"],
+      "locale_path_templates": {
+        "en": ["en.json"],
+        "ar": ["ar.json"]
+      },
+      "code_dir_candidates": ["."],
+      "usage_patterns": [],
+      "allowed_extensions": [".js", ".ts", ".json"],
+      "project_markers": [["en.json"]],
+      "notes": "Generic flat JSON profile for localized files in the project root."
     }
   }
 }

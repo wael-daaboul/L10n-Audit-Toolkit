@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from core.usage_scanner import scan_code_usage
+from l10n_audit.core.usage_scanner import scan_code_usage
 
 def test_wrapper_usage_detection(tmp_path):
     # 1. Create a dummy code file with wrapper usage

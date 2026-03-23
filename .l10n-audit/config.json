@@ -1,23 +1,30 @@
 {
-  "config_version": 1,
-  "project_profile": "auto",
-  "source_locale": "en",
-  "target_locales": [
-    "ar"
-  ],
-  "project_root": "..",
-  "glossary_file": "glossary.json",
-  "results_dir": "Results",
-  "languagetool_dir": "vendor",
-  "ar_locale_qc": {
-    "enable_exclamation_style": true,
-    "enable_long_ui_string": true,
-    "enable_similar_phrase_variation": true,
-    "enable_suspicious_literal_translation": true
+  "config_version": 2,
+  "project_detection": {
+    "auto_detect": false,
+    "force_profile": "json_flat",
+    "project_root": ".."
   },
-  "icu_message_audit": {
-    "enabled": true,
-    "strict_branch_matching": true,
-    "enable_selectordinal": true
+  "audit_rules": {
+    "role_identifiers": [],
+    "entity_whitelist": {
+      "en": [],
+      "ar": []
+    },
+    "latin_whitelist": [],
+    "apply_safe_fixes": false
+  },
+  "ai_review": {
+    "enabled": false,
+    "provider": "litellm",
+    "model": "gpt-4o-mini",
+    "api_key_env": "OPENAI_API_KEY",
+    "batch_size": 20,
+    "short_label_threshold": 3
+  },
+  "output": {
+    "results_dir": "Results",
+    "retention_mode": "overwrite",
+    "archive_name_prefix": "audit"
   }
 }

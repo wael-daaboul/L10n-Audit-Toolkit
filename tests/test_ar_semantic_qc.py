@@ -14,7 +14,7 @@ def test_ar_semantic_qc_generates_review_candidate_for_missing_action(tmp_path: 
     ar_file.write_text('{"save_profile_helper":"الملف الشخصي للمتابعة"}', encoding="utf-8")
 
     run_module(
-        "audits.ar_semantic_qc",
+        "l10n_audit.audits.ar_semantic_qc",
         [
             "--en",
             str(en_file),
@@ -56,7 +56,7 @@ def test_ar_semantic_qc_keeps_context_sensitive_role_pairs_review_only(tmp_path:
     monkeypatch.setenv("L10N_AUDIT_CONFIG", str(config_file))
 
     run_module(
-        "audits.ar_semantic_qc",
+        "l10n_audit.audits.ar_semantic_qc",
         [
             "--en",
             str(en_file),

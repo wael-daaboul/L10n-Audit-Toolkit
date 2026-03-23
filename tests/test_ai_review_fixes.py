@@ -5,7 +5,7 @@ from l10n_audit.exceptions import AIConfigError
 
 def test_chunk_issues():
     issues = list(range(105))
-    from audits.ai_review import chunk_issues
+    from l10n_audit.audits.ai_review import chunk_issues
     chunks = list(chunk_issues(issues, batch_size=50))
     assert len(chunks) == 3
     assert len(chunks[0]) == 50
@@ -15,14 +15,14 @@ def test_chunk_issues():
 def test_run_stage_raises_if_not_enabled():
     runtime = MagicMock()
     options = AuditOptions(ai_review=AIReview(enabled=False))
-    from audits.ai_review import run_stage
+    from l10n_audit.audits.ai_review import run_stage
     with pytest.raises(AIConfigError) as excinfo:
         run_stage(runtime, options)
     assert "AI review requested but not enabled" in str(excinfo.value)
 
 @patch("time.sleep")
-@patch("audits.ai_review.load_issues")
-@patch("audits.ai_review.load_locale_mapping")
+@patch("l10n_audit.audits.ai_review.load_issues")
+@patch("l10n_audit.audits.ai_review.load_locale_mapping")
 @patch("l10n_audit.core.ai_factory.get_ai_provider")
 def test_run_stage_batching_sleep(mock_get_provider, mock_load_locale, mock_load_issues, mock_sleep):
     runtime = MagicMock()
@@ -42,7 +42,7 @@ def test_run_stage_batching_sleep(mock_get_provider, mock_load_locale, mock_load
     mock_get_provider.return_value = mock_provider
     
     with patch("l10n_audit.core.validators.validate_ai_config", return_value={}):
-        from audits.ai_review import run_stage
+        from l10n_audit.audits.ai_review import run_stage
         run_stage(runtime, options)
     
     # 55 items, batch size 20 (default) -> 3 batches. Should sleep twice.

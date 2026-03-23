@@ -6,7 +6,7 @@ from conftest import load_json, run_module
 def test_en_locale_qc_detects_known_patterns(tmp_path: Path, fixtures_dir: Path) -> None:
     out_json = tmp_path / "en_qc.json"
     run_module(
-        "audits.en_locale_qc",
+        "l10n_audit.audits.en_locale_qc",
         [
             "--input", str(fixtures_dir / "locale_samples" / "en_qc.en.json"),
             "--ar", str(fixtures_dir / "locale_samples" / "en_qc.ar.json"),
@@ -33,7 +33,7 @@ def test_en_locale_qc_skips_technical_strings(tmp_path: Path) -> None:
     )
     ar_file.write_text('{"npm":"","cd":"","url":"","mail":"","iphone":""}', encoding="utf-8")
     run_module(
-        "audits.en_locale_qc",
+        "l10n_audit.audits.en_locale_qc",
         [
             "--input",
             str(en_file),

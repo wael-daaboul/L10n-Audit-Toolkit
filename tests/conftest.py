@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from core.schema_validation import validate_instance
+from l10n_audit.core.schema_validation import validate_instance
 
 
 TOOLS_DIR = Path(__file__).resolve().parents[1]

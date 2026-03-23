@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from core.languagetool_manager import create_language_tool_session, discover_local_languagetool
+from l10n_audit.core.languagetool_manager import create_language_tool_session, discover_local_languagetool
 
 
 def _runtime(tmp_path: Path, configured_dir: Path | None = None):
@@ -58,7 +58,7 @@ def test_create_language_tool_session_prefers_local_server(monkeypatch, tmp_path
 
     fake_module = SimpleNamespace(LanguageTool=FakeTool)
     monkeypatch.setitem(__import__("sys").modules, "language_tool_python", fake_module)
-    monkeypatch.setattr("core.languagetool_manager._ensure_local_server", lambda installation, port=8083: ("http://127.0.0.1:8083", "LanguageTool mode: local bundled server"))
+    monkeypatch.setattr("l10n_audit.core.languagetool_manager._ensure_local_server", lambda installation, port=8083: ("http://127.0.0.1:8083", "LanguageTool mode: local bundled server"))
 
     session = create_language_tool_session("en-US", runtime)
 

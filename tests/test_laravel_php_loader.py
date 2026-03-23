@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from audits.placeholder_audit import compare_placeholders
-from core.audit_runtime import AuditRuntimeError
-from core.locale_loaders import load_locale_mapping
-from core.usage_scanner import compile_usage_patterns, scan_code_keys
+from l10n_audit.audits.placeholder_audit import compare_placeholders
+from l10n_audit.core.audit_runtime import AuditRuntimeError
+from l10n_audit.core.locale_loaders import load_locale_mapping
+from l10n_audit.core.usage_scanner import compile_usage_patterns, scan_code_keys
 
 
 def test_laravel_php_loader_flattens_grouped_keys(fixtures_dir: Path) -> None:

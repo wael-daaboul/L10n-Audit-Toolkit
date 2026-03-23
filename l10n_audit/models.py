@@ -55,6 +55,12 @@ VALID_STAGES = frozenset(
     }
 )
 
+# Producers: Stages that generate new audit data 
+PRODUCER_STAGES = frozenset({"full", "fast", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu"})
+
+# Consumers: Stages that process/transform existing results
+CONSUMER_STAGES = frozenset({"ai-review", "reports", "autofix"})
+
 IssueCode = Literal[
     "MISSING_KEY",
     "MISSING_KEY_AR",
@@ -306,7 +312,7 @@ class ResultsRetention:
 # AuditOptions
 # ---------------------------------------------------------------------------
 
-VERSION = "1.2.4"
+VERSION = "1.2.5"
 
 
 @dataclass
@@ -386,11 +392,15 @@ class AuditOptions:
 
     # Environment paths (often overridden by runtime)
     project_root: str = ".."
-    glossary_file: str = "glossary.json"
+    # Power-user Overrides
+    glossary_file: str | Path | None = "glossary.json"
+    out_xlsx: str | Path | None = None
+    config_schema: str | Path | None = None
     languagetool_dir: str = "vendor"
-
-    # Internal injection for testing
+    
+    # Internal injection for testing / Feedback
     ai_provider_override: Any | None = None
+    verbose: bool = False
 
     def effective_output_dir(self, runtime_results_dir: Path) -> Path:
         """Determines the final results directory by checking output options."""

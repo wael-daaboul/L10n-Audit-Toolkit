@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.audit_runtime import AuditRuntimeError, compute_text_hash, read_simple_xlsx, write_simple_xlsx
-from fixes.apply_review_fixes import main as review_main
-from fixes.apply_safe_fixes import add_direct_locale_safety_pass, apply_safe_changes, build_fix_plan, main
+from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, read_simple_xlsx, write_simple_xlsx
+from l10n_audit.fixes.apply_review_fixes import main as review_main
+from l10n_audit.fixes.apply_safe_fixes import add_direct_locale_safety_pass, apply_safe_changes, build_fix_plan, main
 
 
 def test_safe_fixes_apply_only_safe_changes() -> None:
@@ -89,8 +89,8 @@ def test_safe_fixes_main_supports_json_locales(monkeypatch, tmp_path: Path) -> N
     _write_json(ar_file, {"trimmed": " مرحبا ", "plain": "العالم"})
 
     runtime = _make_runtime(tmp_path, locale_format="json", en_file=en_file, ar_file=ar_file, results_dir=tmp_path / "Results")
-    monkeypatch.setattr("fixes.apply_safe_fixes.load_runtime", lambda _script_path: runtime)
-    monkeypatch.setattr("fixes.apply_safe_fixes.load_all_report_issues", lambda _results_dir: ({}, [], []))
+    monkeypatch.setattr("l10n_audit.fixes.apply_safe_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_safe_fixes.load_all_report_issues", lambda _results_dir: ({}, [], []))
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -132,8 +132,8 @@ def test_safe_fixes_main_supports_laravel_php_locales(monkeypatch, tmp_path: Pat
     (ar_dir / "lang.php").write_text((source_fixture / "ar" / "lang.php").read_text(encoding="utf-8"), encoding="utf-8")
 
     runtime = _make_runtime(tmp_path, locale_format="laravel_php", en_file=en_dir, ar_file=ar_dir, results_dir=tmp_path / "Results")
-    monkeypatch.setattr("fixes.apply_safe_fixes.load_runtime", lambda _script_path: runtime)
-    monkeypatch.setattr("fixes.apply_safe_fixes.load_all_report_issues", lambda _results_dir: ({}, [], []))
+    monkeypatch.setattr("l10n_audit.fixes.apply_safe_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_safe_fixes.load_all_report_issues", lambda _results_dir: ({}, [], []))
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -214,7 +214,7 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
         sheet_name="Review Queue",
     )
 
-    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -267,7 +267,7 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
         review_queue,
         sheet_name="Review Queue",
     )
-    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
     final_payload = json.loads((runtime.results_dir / "final_locale" / "ar.final.json").read_text(encoding="utf-8"))
@@ -301,7 +301,7 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
         review_queue,
         sheet_name="Review Queue",
     )
-    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
@@ -334,7 +334,7 @@ def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, 
         review_queue,
         sheet_name="Review Queue",
     )
-    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
@@ -353,7 +353,7 @@ def test_apply_review_fixes_rejects_malformed_row(monkeypatch, tmp_path: Path) -
         review_queue,
         sheet_name="Review Queue",
     )
-    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     with pytest.raises(AuditRuntimeError):
         review_main()
@@ -386,7 +386,7 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
         review_queue,
         sheet_name="Review Queue",
     )
-    monkeypatch.setattr("fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
+    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))

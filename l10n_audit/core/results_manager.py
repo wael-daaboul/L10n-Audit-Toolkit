@@ -1,6 +1,7 @@
 import shutil
 import re
 import logging
+from datetime import datetime
 from pathlib import Path
 from l10n_audit.models import AuditOptions
 
@@ -36,25 +37,21 @@ def manage_previous_results(results_dir: Path, options: AuditOptions) -> None:
                 logger.warning("Failed to delete %s during results cleanup: %s", item, e)
                 
     elif mode == "archive":
-        # 1. Determine next version number
-        existing_versions = []
-        for item in results_dir.iterdir():
-            if item.is_dir():
-                match = archive_regex.match(item.name)
-                if match:
-                    existing_versions.append(int(match.group(1)))
-        
-        next_version = max(existing_versions, default=0) + 1
-        archive_name = f"{prefix}_v{next_version}"
+        # 1. Generate timestamped archive name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_name = f"{prefix}_{timestamp}"
         archive_path = results_dir / archive_name
         
-        # 2. Identify active report items (anything NOT an archive)
+        # 2. Identify active report items (anything NOT an archive folder)
+        # We assume folders matching prefix_* or containing v(\d+) are archives
         items_to_archive = []
         for item in results_dir.iterdir():
-            # Skip existing archives
-            if item.is_dir() and archive_regex.match(item.name):
-                continue
-            # Skip the newly planned archive path just in case
+            if item.is_dir():
+                # Avoid archiving existing archives
+                if item.name.startswith(f"{prefix}_"):
+                    continue
+            
+            # Skip the newly planned archive path
             if item.name == archive_name:
                 continue
             items_to_archive.append(item)
@@ -64,6 +61,7 @@ def manage_previous_results(results_dir: Path, options: AuditOptions) -> None:
             archive_path.mkdir(parents=True, exist_ok=True)
             for item in items_to_archive:
                 try:
+                    # Use shutil.move for both files and directories
                     shutil.move(str(item), str(archive_path / item.name))
                 except Exception as e:
                     logger.warning("Failed to archive %s: %s", item, e)

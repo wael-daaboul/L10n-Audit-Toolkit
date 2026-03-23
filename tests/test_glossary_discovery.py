@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from core.audit_runtime import _discover_glossary_path
-from core.schema_validation import preset_mappings
+from l10n_audit.core.audit_runtime import _discover_glossary_path
+from l10n_audit.core.schema_validation import preset_mappings
 
 
 def test_runtime_prefers_neutral_glossary_filename(tmp_path: Path) -> None:

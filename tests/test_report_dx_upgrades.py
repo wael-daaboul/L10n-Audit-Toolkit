@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from reports.report_aggregator import build_review_queue, render_markdown
+from l10n_audit.reports.report_aggregator import build_review_queue, render_markdown
 from conftest import write_json
 
 def test_aggregator_filters_info_from_review_queue(tmp_path):
@@ -74,7 +74,7 @@ def test_aggregator_deduplicates_by_key(tmp_path):
     # Let's see.
 
 def test_aggregator_ignores_missing_reports_not_in_sources(tmp_path):
-    from core.audit_report_utils import load_all_report_issues
+    from l10n_audit.core.audit_report_utils import load_all_report_issues
     results = tmp_path / "Results"
     results.mkdir()
     (results / "per_tool" / "localization").mkdir(parents=True)

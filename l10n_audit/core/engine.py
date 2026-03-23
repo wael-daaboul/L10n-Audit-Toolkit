@@ -35,57 +35,57 @@ logger = logging.getLogger("l10n_audit.engine")
 # ---------------------------------------------------------------------------
 
 def _run_l10n_audit_pro(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.l10n_audit_pro import run_stage
+    from l10n_audit.audits.l10n_audit_pro import run_stage
     return run_stage(runtime, options)
 
 
 def _run_en_locale_qc(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.en_locale_qc import run_stage
+    from l10n_audit.audits.en_locale_qc import run_stage
     return run_stage(runtime, options)
 
 
 def _run_ar_locale_qc(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.ar_locale_qc import run_stage
+    from l10n_audit.audits.ar_locale_qc import run_stage
     return run_stage(runtime, options)
 
 
 def _run_ar_semantic_qc(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.ar_semantic_qc import run_stage
+    from l10n_audit.audits.ar_semantic_qc import run_stage
     return run_stage(runtime, options)
 
 
 def _run_placeholder_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.placeholder_audit import run_stage
+    from l10n_audit.audits.placeholder_audit import run_stage
     return run_stage(runtime, options)
 
 
 def _run_terminology_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.terminology_audit import run_stage
+    from l10n_audit.audits.terminology_audit import run_stage
     return run_stage(runtime, options)
 
 
 def _run_icu_message_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.icu_message_audit import run_stage
+    from l10n_audit.audits.icu_message_audit import run_stage
     return run_stage(runtime, options)
 
 
 def _run_en_grammar_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from audits.en_grammar_audit import run_stage
+    from l10n_audit.audits.en_grammar_audit import run_stage
     return run_stage(runtime, options)
 
 
 def _run_ai_review(runtime, options: AuditOptions, ai_provider=None) -> list[AuditIssue]:
-    from audits.ai_review import run_stage
+    from l10n_audit.audits.ai_review import run_stage
     return run_stage(runtime, options, ai_provider=ai_provider)
 
 
 def _run_report_aggregator(runtime, options: AuditOptions, **_) -> list[ReportArtifact]:
-    from reports.report_aggregator import run_stage
+    from l10n_audit.reports.report_aggregator import run_stage
     return run_stage(runtime, options)
 
 
 def _run_autofix(runtime, options: AuditOptions) -> list[AuditIssue]:
-    from fixes.apply_safe_fixes import run_stage
+    from l10n_audit.fixes.apply_safe_fixes import run_stage
     return run_stage(runtime, options)
 
 

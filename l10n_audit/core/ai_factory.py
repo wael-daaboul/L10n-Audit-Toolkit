@@ -13,9 +13,9 @@ class LiteLLMProvider:
     """Provider-Agnostic AI review provider using LiteLLM."""
 
     def review_batch(self, batch: list[dict], config: dict[str, Any]) -> list[dict]:
-        from ai.prompts import get_review_prompt
-        from ai.verification import verify_batch_fixes
-        from ai.provider import request_ai_review_litellm
+        from l10n_audit.ai.prompts import get_review_prompt
+        from l10n_audit.ai.verification import verify_batch_fixes
+        from l10n_audit.ai.provider import request_ai_review_litellm
 
         prompt = get_review_prompt(batch, {})
         response = request_ai_review_litellm(prompt, config)

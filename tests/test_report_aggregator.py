@@ -3,10 +3,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
-from core.audit_runtime import AuditRuntimeError
-from core.audit_report_utils import load_all_report_issues
-from core.audit_runtime import read_simple_xlsx
-from reports.report_aggregator import build_review_queue
+from l10n_audit.core.audit_runtime import AuditRuntimeError
+from l10n_audit.core.audit_report_utils import load_all_report_issues
+from l10n_audit.core.audit_runtime import read_simple_xlsx
+from l10n_audit.reports.report_aggregator import build_review_queue
 
 from conftest import write_json
 
@@ -112,7 +112,7 @@ def test_report_aggregator_uses_semantic_candidate_value_for_review_rows(tmp_pat
 
 
 def test_simple_xlsx_reader_round_trips(tmp_path: Path) -> None:
-    from core.audit_runtime import write_simple_xlsx
+    from l10n_audit.core.audit_runtime import write_simple_xlsx
 
     path = tmp_path / "queue.xlsx"
     rows = [{"key": "a", "status": "pending"}, {"key": "b", "status": "approved"}]
@@ -122,7 +122,7 @@ def test_simple_xlsx_reader_round_trips(tmp_path: Path) -> None:
 
 
 def test_simple_xlsx_reader_supports_reordered_columns_and_multiline_unicode(tmp_path: Path) -> None:
-    from core.audit_runtime import write_simple_xlsx
+    from l10n_audit.core.audit_runtime import write_simple_xlsx
 
     path = tmp_path / "queue_reordered.xlsx"
     rows = [{"approved_new": "مرحبا\n%s", "status": "approved", "key": "welcome"}]
@@ -131,7 +131,7 @@ def test_simple_xlsx_reader_supports_reordered_columns_and_multiline_unicode(tmp
 
 
 def test_simple_xlsx_reader_uses_cell_references_not_encounter_order(tmp_path: Path) -> None:
-    from core.audit_runtime import write_simple_xlsx
+    from l10n_audit.core.audit_runtime import write_simple_xlsx
 
     path = tmp_path / "queue_cells.xlsx"
     rows = [{"key": "welcome", "status": "approved"}]
@@ -147,7 +147,7 @@ def test_simple_xlsx_reader_uses_cell_references_not_encounter_order(tmp_path: P
 
 
 def test_simple_xlsx_reader_rejects_missing_required_columns(tmp_path: Path) -> None:
-    from core.audit_runtime import write_simple_xlsx
+    from l10n_audit.core.audit_runtime import write_simple_xlsx
 
     path = tmp_path / "queue_missing.xlsx"
     write_simple_xlsx([{"key": "welcome"}], ["key"], path, sheet_name="Queue")

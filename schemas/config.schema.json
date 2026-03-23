@@ -1,68 +1,64 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "L10n Audit Toolkit Configuration Schema (v2)",
   "type": "object",
-  "required": [
-    "project_root",
-    "glossary_file",
-    "results_dir",
-    "languagetool_dir"
-  ],
   "properties": {
-    "project_profile": { "type": "string", "minLength": 1 },
-    "locale_format": { "type": "string", "enum": ["json", "laravel_php"] },
-    "locale_root": { "type": "string" },
-    "source_locale": { "type": "string", "minLength": 1 },
-    "target_locales": {
-      "type": "array",
-      "items": { "type": "string", "minLength": 1 }
-    },
-    "project_root": { "type": "string", "minLength": 1 },
-    "locales_dir": { "type": "string", "minLength": 1 },
-    "en_file": { "type": "string", "minLength": 1 },
-    "ar_file": { "type": "string", "minLength": 1 },
-    "code_dir": { "type": "string", "minLength": 1 },
-    "code_dirs": {
-      "type": "array",
-      "items": { "type": "string", "minLength": 1 }
-    },
-    "locale_paths": {
-      "type": "object",
-      "additionalProperties": { "type": "string", "minLength": 1 }
-    },
-    "glossary_file": { "type": "string", "minLength": 1 },
-    "results_dir": { "type": "string", "minLength": 1 },
-    "languagetool_dir": { "type": "string", "minLength": 1 },
-    "usage_patterns": {
-      "type": "array",
-      "items": { "type": "string", "minLength": 1 }
-    },
-    "allowed_extensions": {
-      "type": "array",
-      "items": { "type": "string", "minLength": 1 }
-    },
-    "profile_overrides": {
-      "type": "object",
-      "additionalProperties": true
-    },
-    "ar_locale_qc": {
+    "config_version": { "type": "integer", "enum": [1, 2] },
+    "project_profile": { "type": "string" },
+    
+    "project_detection": {
       "type": "object",
       "properties": {
-        "enable_exclamation_style": { "type": "boolean" },
-        "enable_long_ui_string": { "type": "boolean" },
-        "enable_similar_phrase_variation": { "type": "boolean" },
-        "enable_suspicious_literal_translation": { "type": "boolean" }
-      },
-      "additionalProperties": true
+        "auto_detect": { "type": "boolean" },
+        "force_profile": { "type": "string" },
+        "project_root": { "type": "string" }
+      }
     },
-    "icu_message_audit": {
+    
+    "audit_rules": {
+      "type": "object",
+      "properties": {
+        "role_identifiers": { "type": "array", "items": { "type": "string" } },
+        "latin_whitelist": { "type": "array", "items": { "type": "string" } },
+        "entity_whitelist": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "apply_safe_fixes": { "type": "boolean" }
+      }
+    },
+    
+    "ai_review": {
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
-        "strict_branch_matching": { "type": "boolean" },
-        "enable_selectordinal": { "type": "boolean" }
-      },
-      "additionalProperties": true
-    }
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "api_key_env": { "type": "string" },
+        "batch_size": { "type": "integer" },
+        "short_label_threshold": { "type": "integer" }
+      }
+    },
+    
+    "output": {
+      "type": "object",
+      "properties": {
+          "results_dir": { "type": "string" },
+          "retention_mode": { "type": "string", "enum": ["archive", "overwrite"] },
+          "archive_name_prefix": { "type": "string" },
+          "out_xlsx": { "type": "string" }
+      }
+    },
+
+    "source_locale": { "type": "string" },
+    "target_locales": { "type": "array", "items": { "type": "string" } },
+    "project_root": { "type": "string" },
+    "glossary_file": { "type": "string" },
+    "results_dir": { "type": "string" },
+    "languagetool_dir": { "type": "string" },
+    "locales_dir": { "type": "string" },
+    "en_file": { "type": "string" },
+    "ar_file": { "type": "string" }
   },
   "additionalProperties": true
 }

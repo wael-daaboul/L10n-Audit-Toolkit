@@ -6,7 +6,7 @@ from conftest import load_json, run_module
 def run_icu_case(tmp_path: Path, fixtures_dir: Path, case: str) -> dict:
     out_json = tmp_path / f"{case}.json"
     run_module(
-        "audits.icu_message_audit",
+        "l10n_audit.audits.icu_message_audit",
         [
             "--en", str(fixtures_dir / "locale_samples" / f"{case}.en.json"),
             "--ar", str(fixtures_dir / "locale_samples" / f"{case}.ar.json"),

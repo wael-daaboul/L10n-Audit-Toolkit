@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from core.glossary_engine import load_glossary_rules, apply_text_replacements
+from l10n_audit.core.glossary_engine import load_glossary_rules, apply_text_replacements
 
 def test_load_glossary_rules_success(tmp_path):
     glossary = {

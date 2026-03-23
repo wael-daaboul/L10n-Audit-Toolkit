@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from fixes.apply_glossary_fixes import apply_glossary_to_data
+from l10n_audit.fixes.apply_glossary_fixes import apply_glossary_to_data
 from conftest import write_json
 
 def test_apply_glossary_to_data_replacements():
@@ -23,7 +23,7 @@ def test_apply_glossary_to_data_whole_word_boundary():
     assert updated["k2"] == "زبونا" # No replacement here as 'زبون' isn't a whole word.
 
 def test_fixer_round_trip(tmp_path):
-    from fixes.apply_glossary_fixes import apply_glossary_to_data
+    from l10n_audit.fixes.apply_glossary_fixes import apply_glossary_to_data
     target = tmp_path / "ar.json"
     # Correct order: write_json(path, payload)
     write_json(target, {"welcome": "يا زبون"})

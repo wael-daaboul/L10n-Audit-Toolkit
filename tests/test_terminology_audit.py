@@ -6,7 +6,7 @@ from conftest import load_json, run_module
 def test_terminology_audit_detects_forbidden_terms(tmp_path: Path, fixtures_dir: Path) -> None:
     out_json = tmp_path / "terminology.json"
     run_module(
-        "audits.terminology_audit",
+        "l10n_audit.audits.terminology_audit",
         [
             "--en", str(fixtures_dir / "locale_samples" / "terminology.en.json"),
             "--ar", str(fixtures_dir / "locale_samples" / "terminology.ar.json"),
@@ -33,7 +33,7 @@ def test_terminology_audit_blocks_context_sensitive_admin_replacement(tmp_path: 
     )
 
     run_module(
-        "audits.terminology_audit",
+        "l10n_audit.audits.terminology_audit",
         [
             "--en",
             str(en_file),

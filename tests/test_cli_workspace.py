@@ -18,7 +18,7 @@ def _run_cli(tools_dir: Path, cwd: Path, *args: str) -> subprocess.CompletedProc
     python_path = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{tools_dir}{':' + python_path if python_path else ''}"
     return subprocess.run(
-        [sys.executable, "-m", "core.cli", *args],
+        [sys.executable, "-m", "l10n_audit.core.cli", *args],
         cwd=str(cwd),
         text=True,
         capture_output=True,

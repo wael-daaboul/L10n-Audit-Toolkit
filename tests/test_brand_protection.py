@@ -1,5 +1,5 @@
 import pytest
-from audits.ar_locale_qc import detect_mixed_script_issues
+from l10n_audit.audits.ar_locale_qc import detect_mixed_script_issues
 
 def test_mixed_script_flags_unknown_latin():
     text = "مرحبا World"

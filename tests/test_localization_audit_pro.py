@@ -15,7 +15,7 @@ def test_localization_audit_pro_emits_usage_metadata(tmp_path: Path, tools_dir: 
     (code_dir / "screen.dart").write_text("TextFormField(helperText: 'profile.helper'.tr)\n", encoding="utf-8")
 
     run_module(
-        "audits.l10n_audit_pro",
+        "l10n_audit.audits.l10n_audit_pro",
         [
             "--en",
             str(en_file),

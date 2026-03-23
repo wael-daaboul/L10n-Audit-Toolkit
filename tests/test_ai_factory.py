@@ -24,8 +24,8 @@ def test_litellm_provider_routing(mock_completion):
         "provider": "litellm"
     }
 
-    with patch("ai.prompts.get_review_prompt", return_value="prompt text"), \
-         patch("ai.verification.verify_batch_fixes", side_effect=lambda b, f: f):
+    with patch("l10n_audit.ai.prompts.get_review_prompt", return_value="prompt text"), \
+         patch("l10n_audit.ai.verification.verify_batch_fixes", side_effect=lambda b, f: f):
         fixes = provider.review_batch(batch, config)
 
     assert len(fixes) == 1
@@ -52,8 +52,8 @@ def test_litellm_provider_cleans_markdown(mock_completion):
     batch = [{"key": "k1", "source": "src1", "current_translation": "cur1"}]
     config = {"api_key": "sk-1"}
 
-    with patch("ai.prompts.get_review_prompt", return_value="prompt"), \
-         patch("ai.verification.verify_batch_fixes", side_effect=lambda b, f: f):
+    with patch("l10n_audit.ai.prompts.get_review_prompt", return_value="prompt"), \
+         patch("l10n_audit.ai.verification.verify_batch_fixes", side_effect=lambda b, f: f):
         fixes = provider.review_batch(batch, config)
 
     assert len(fixes) == 1

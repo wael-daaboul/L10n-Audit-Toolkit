@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from core.audit_runtime import load_runtime
-from core.usage_scanner import compile_usage_patterns, scan_code_keys, scan_code_usage
+from l10n_audit.core.audit_runtime import load_runtime
+from l10n_audit.core.usage_scanner import compile_usage_patterns, scan_code_keys, scan_code_usage
 
 
 def test_runtime_loads_profile_defaults(monkeypatch, runtime_test_config: Path) -> None:

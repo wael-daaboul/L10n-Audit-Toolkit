@@ -1,5 +1,5 @@
 import pytest
-from audits.ar_semantic_qc import detect_semantic_findings
+from l10n_audit.audits.ar_semantic_qc import detect_semantic_findings
 
 def test_possible_meaning_loss_threshold():
     bundle = {"semantic_flags": ["missing_action:save"]}

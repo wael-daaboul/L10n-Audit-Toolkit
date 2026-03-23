@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -116,6 +117,11 @@ def run_audit(
     apply_safe_fixes: bool | None = None,
     results_retention_mode: Literal["archive", "overwrite"] | None = None,
     results_retention_prefix: str | None = None,
+    glossary_path: str | Path | None = None,
+    out_xlsx: str | Path | None = None,
+    config_schema: str | Path | None = None,
+    verbose: bool = False,
+    force: bool = False,
 ) -> AuditResult:
     """Run an audit stage on *project_path* and return structured results.
 
@@ -124,35 +130,25 @@ def run_audit(
     project_path:
         Absolute or relative path to the project root.
     stage:
-        Audit stage to run. Valid values:
-        ``fast``, ``full``, ``grammar``, ``terminology``, ``placeholders``,
-        ``ar-qc``, ``ar-semantic``, ``icu``, ``reports``, ``autofix``,
-        ``ai-review``.
+        Audit stage to run.
     ai_enabled:
-        Enable the AI review step (requires API key).
+        Override AI review enablement.
     ai_api_key:
-        Direct API key. If not provided, will look for *ai_api_key_env*.
+        Personal API key override.
     ai_model:
-        Model identifier, e.g. ``"gpt-4o-mini"``.
+        Model name, e.g. "gpt-4o-mini" or "deepseek-chat".
     ai_api_base:
-        Override the API base URL.
-    ai_provider:
-        The provider type (default: ``"litellm"``).
-    ai_api_key_env:
-        The environment variable name to read the API key from.
+        Override provider URL.
     write_reports:
-        Write per-tool JSON/CSV/XLSX report files to disk.
-    output_dir:
-        Override the output directory.  Defaults to ``<project>/.l10n-audit/Results``.
-    ai_provider_override:
-        Optional :class:`~l10n_audit.core.ai_protocol.AIProvider` implementation.
-        Inject a :class:`~l10n_audit.core.mock_ai_provider.MockAIProvider` in tests
-        to prevent any network calls.
-
-    Returns
-    -------
-    AuditResult
-        Fully populated result object including issues, summary, and report paths.
+        Generate output files (JSON/CSV/XLSX).
+    glossary_path:
+        Path to a custom glossary JSON file.
+    out_xlsx:
+        Direct override path for the Excel report.
+    verbose:
+        Enable detailed step-by-step logging.
+    force:
+        Bypass safety pipelines or protection guards.
 
     Raises
     ------
@@ -183,7 +179,7 @@ def run_audit(
         validate_stage(stage)
 
         # Load runtime environment
-        from core.audit_runtime import load_runtime, AuditRuntimeError
+        from l10n_audit.core.audit_runtime import load_runtime, AuditRuntimeError
         try:
             runtime = load_runtime_from_path(path)
         except AuditRuntimeError as exc:
@@ -226,28 +222,54 @@ def run_audit(
             ),
             output=OutputOptions(
                 results_dir=output_dir or runtime.results_dir,
-                retention_mode=results_retention_mode or runtime.output["retention_mode"],
-                archive_name_prefix=results_retention_prefix or runtime.output["archive_name_prefix"],
-            )
+                retention_mode=results_retention_mode or runtime.output.get("retention_mode", "overwrite"),
+                archive_name_prefix=results_retention_prefix or runtime.output.get("archive_name_prefix", "audit"),
+            ),
+            # Power-user Artifact Overrides
+            glossary_file=glossary_path or runtime.glossary_file,
+            out_xlsx=out_xlsx,
+            config_schema=config_schema,
+            verbose=verbose,
+            ai_provider_override=ai_provider_override
         )
 
-        # Step 2: Results Retention Management
+        # Step 2: Results Retention Management (Suicide Loop Prevention)
+        from l10n_audit.models import PRODUCER_STAGES, CONSUMER_STAGES
         results_dir = options.effective_output_dir(runtime.results_dir)
-        manage_previous_results(results_dir, options)
+        
+        # Guard logic: Bypass if 'force' is enabled
+        if force:
+            logger.info("Force flag enabled. Bypassing stage-safety guards.")
+            manage_previous_results(results_dir, options)
+        elif stage in PRODUCER_STAGES:
+            # Producers can safely rotate results
+            manage_previous_results(results_dir, options)
+        elif stage in CONSUMER_STAGES:
+            # Consumers MUST NOT delete findings they are intended to process
+            report_path = results_dir / "final_audit_report.json"
+            if not report_path.exists():
+                raise AuditError(
+                    f"Consumer stage '{stage}' requires input data that is currently missing.\n"
+                    "Please run a producer stage first (e.g., 'fast' or 'full') to generate the report."
+                )
+            logger.info("Consumer stage '%s' validated. Input found at %s", stage, report_path)
+        else:
+            # Fallback for unrecognized/adhoc stages
+            manage_previous_results(results_dir, options)
 
         issues, reports = run_engine(runtime, options, ai_provider=ai_provider_override)
 
         # Phase 4: Glossary Auto-Fixer
         if apply_safe_fixes:
             try:
-                from core.glossary_engine import load_glossary_rules
-                from fixes.apply_glossary_fixes import apply_glossary_to_data
-                from core.locale_exporters import export_locale_mapping
+                from l10n_audit.core.glossary_engine import load_glossary_rules
+                from l10n_audit.fixes.apply_glossary_fixes import apply_glossary_to_data
+                from l10n_audit.core.locale_exporters import export_locale_mapping
                 
                 rules = load_glossary_rules(runtime.glossary_file)
                 if rules:
                     # Fix AR file
-                    from core.audit_runtime import load_locale_mapping
+                    from l10n_audit.core.audit_runtime import load_locale_mapping
                     ar_data = load_locale_mapping(runtime.ar_file, runtime, "ar")
                     updated_ar, count_ar = apply_glossary_to_data(ar_data, rules)
                     if count_ar > 0:
@@ -261,7 +283,7 @@ def run_audit(
         result.summary = AuditSummary.from_issues(issues)
         # Populate total_keys from locale data (best effort)
         try:
-            from core.audit_runtime import load_locale_mapping
+            from l10n_audit.core.audit_runtime import load_locale_mapping
             en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
             ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
             result.summary.total_keys_en = len(en_data)
@@ -292,7 +314,7 @@ def load_runtime_from_path(project_path: Path):
     sets the project root correctly without forking a subprocess.
     """
     import os
-    from core.audit_runtime import load_runtime
+    from l10n_audit.core.audit_runtime import load_runtime
 
     old_cwd = os.getcwd()
     try:
@@ -338,7 +360,7 @@ def init_workspace(
     path = validate_project_path(project_path)
 
     import os
-    from core.workspace import init_workspace as _init_ws
+    from l10n_audit.core.workspace import init_workspace as _init_ws
     old_cwd = os.getcwd()
     try:
         os.chdir(path)

@@ -1,4 +1,4 @@
-from core.context_evaluator import build_context_bundle, evaluate_candidate_change, infer_text_type
+from l10n_audit.core.context_evaluator import build_context_bundle, evaluate_candidate_change, infer_text_type
 
 
 def test_context_bundle_blocks_sentence_collapse_into_entity_label() -> None:

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from core.audit_runtime import AuditRuntimeError
-from core.locale_loaders import load_locale_mapping
+from l10n_audit.core.audit_runtime import AuditRuntimeError
+from l10n_audit.core.locale_loaders import load_locale_mapping
 
 
 def test_json_loader_flattens_nested_objects(tmp_path: Path) -> None:

@@ -1,14 +1,14 @@
 from pathlib import Path
 
-from audits.placeholder_audit import compare_placeholders
-from core.audit_runtime import parse_placeholders
+from l10n_audit.audits.placeholder_audit import compare_placeholders
+from l10n_audit.core.audit_runtime import parse_placeholders
 from conftest import load_json, run_module
 
 
 def run_placeholder_case(tmp_path: Path, fixtures_dir: Path, case: str) -> dict:
     out_json = tmp_path / f"{case}.json"
     run_module(
-        "audits.placeholder_audit",
+        "l10n_audit.audits.placeholder_audit",
         [
             "--en", str(fixtures_dir / "locale_samples" / f"{case}.en.json"),
             "--ar", str(fixtures_dir / "locale_samples" / f"{case}.ar.json"),

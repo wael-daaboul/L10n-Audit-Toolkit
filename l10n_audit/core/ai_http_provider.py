@@ -6,7 +6,7 @@ the :class:`~l10n_audit.core.ai_protocol.AIProvider` protocol.
 """
 from __future__ import annotations
 
-from ai.provider import request_ai_review
+from l10n_audit.ai.provider import request_ai_review
 
 
 class HttpAIProvider:
@@ -18,8 +18,8 @@ class HttpAIProvider:
         Returns an empty list if the request fails or yields no usable
         response.
         """
-        from ai.prompts import get_review_prompt
-        from ai.verification import verify_batch_fixes
+        from l10n_audit.ai.prompts import get_review_prompt
+        from l10n_audit.ai.verification import verify_batch_fixes
 
         prompt = get_review_prompt(batch, {})
         response = request_ai_review(prompt, config)
