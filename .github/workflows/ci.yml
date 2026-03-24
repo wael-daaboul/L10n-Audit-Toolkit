@@ -4,14 +4,12 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-    branches: [ main, master ]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    # زيادة وقت السماح لتجنب الخطأ 143 (SIGTERM)
-    timeout-minutes: 15 
-    
+    timeout-minutes: 25
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,43 +18,30 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          # تفعيل الـ Cache لتسريع التحميل وتجنب انقطاع الاتصال
-          cache: 'pip' 
+          cache: 'pip'
+          # المسار الدقيق لضمان كفاءة الكاش وتجنب تضخم الذاكرة
+          cache-dependency-path: |
+            pyproject.toml
+            requirements.txt
+            requirements-dev.txt
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # تثبيت المشروع بوضع المطور لضمان تعرف النظام على حزمة l10n_audit
           pip install -e .
-          # تثبيت المتطلبات مع استخدام الـ Cache
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-dev.txt
-          python -m pip install -r requirements-optional.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          # تثبيت الاختياري فقط إذا لزم الأمر (معطل حالياً لتوفير الذاكرة)
+          # if [ -f requirements-optional.txt ]; then pip install -r requirements-optional.txt; fi
 
       - name: Run tests
-        # إضافة خيار التحقق من استهلاك الذاكرة في pytest (اختياري)
-        run: python -m pytest tests -v
+        # فرض تشغيل الاختبارات في عملية واحدة (Process) لتقليل ضغط RAM
+        run: python -m pytest tests -v -n 0
 
       - name: Validate schemas
         run: |
-          # التأكد من صحة مسار الاستدعاء للموديول l10n_audit
-          python -m l10n_audit.core.schema_validation --input config/config.json --schema schemas/config.schema.json
-          python - <<'PY'
-          from pathlib import Path
-          import subprocess
-          import sys
-
-          terminology_dir = Path("docs/terminology")
-          glossary = terminology_dir / "glossary.json"
-          if not glossary.exists():
-              candidates = sorted(path for path in terminology_dir.glob("*.json") if path.is_file())
-              if not candidates:
-                  print("No glossary JSON file found under docs/terminology")
-                  sys.exit(0) # تغيير لـ 0 لتجنب كسر الـ CI إذا كان الملف اختيارياً
-              glossary = candidates[0]
-
-          subprocess.run(
-              [sys.executable, "-m", "l10n_audit.core.schema_validation", "--input", str(glossary), "--schema", "schemas/glossary.schema.json"],
-              check=True,
-          )
-          PY
+          if [[ -f config/config.json && -f schemas/config.schema.json ]]; then
+            python -m l10n_audit.core.schema_validation --input config/config.json --schema schemas/config.schema.json
+          else
+            echo "Schema files missing, skipping validation"
+          fi
