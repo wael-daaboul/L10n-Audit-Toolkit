@@ -1,8 +1,8 @@
-# 🌍 L10n Audit Toolkit (v1.2.5)
+# 🌍 L10n Audit Toolkit (v1.3.0)
 
-[![Version](https://img.shields.io/badge/version-1.2.5-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 [![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
-[![Tests](https://img.shields.io/badge/Tests-139%20Passed-brightgreen.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Tests](https://img.shields.io/badge/Tests-142%20Passed-brightgreen.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 ![Release](https://img.shields.io/github/v/release/wael-daaboul/L10n-Audit-Toolkit)
 
 
@@ -18,12 +18,34 @@ The **L10n Audit Toolkit** is a professional-grade, project-agnostic localizatio
 
 ---
 
-## 🏗️ Version 1.2.5: Universal Architecture
+## 🏗️ Version 1.3.0: Persistent Staging & Terminology Enforcement
 
-Starting with **v1.2.5**, the toolkit has transitioned to a **Universal, Data-Driven Architecture**. The core engine is now completely decoupled from specific project domains or frameworks.
+Starting with **v1.3.0**, the toolkit introduces **Persistent Staging** for verified translations and **Strict Glossary Enforcement** with AI self-correction logic.
 
 > [!IMPORTANT]
-> All audit logic, terminology rules, and entity protections are now dynamically driven by your local configuration. This means the tool works flawlessly for medical apps, banking platforms, ridesharing services, or games without any code changes.
+> This version introduces the `.l10n-audit/staged/` directory. Translations verified in previous runs are now persisted and automatically applied in subsequent audits (Idempotency), ensuring that manual approvals are never lost.
+
+---
+
+## 🚀 Key Features in v1.3.0
+
+### 🛡️ Persistent Staged Storage
+Verified translations are moved to a protected `.l10n-audit/staged/` directory.
+- **Auto-Migration**: Once a translation is marked as "verified", it is automatically migrated to the staged area.
+- **Idempotency**: The `autofix` stage prioritizes staged translations over new suggestions, preventing "correction loops".
+- **Safety**: The `staged/` directory is never cleared by standard cleanup routines.
+
+### 📚 Strict Glossary Enforcement & AI Retries
+The AI review engine now strictly follows your `glossary.json`.
+- **Glossary Validation**: Every AI suggestion is checked against the glossary before being accepted.
+- **Smart Retries**: If an AI suggestion violates glossary rules, the engine automatically retries (up to 3 times).
+- **Negative Prompts**: Retries include explicit feedback to the AI about the specific violation, forcing better compliance.
+
+### 🛠️ Integrated Auto-Fixer
+The `autofix` stage has been refactored to be more robust:
+- **Direct Scan Pass**: Automatically fixes common whitespace and punctuation issues without AI calls.
+- **Safe AI Integration**: Only applies AI suggestions that pass strict validation (placeholders, HTML, glossary).
+- **Excluded Paths**: Respects `excluded_paths` in `config.json` to avoid touching sensitive files.
 
 ---
 
@@ -44,56 +66,35 @@ cp config.json.example config.json
 ```
 
 ### 3. Namespace Overview
-Your `config.json` is organized into four logical namespaces:
+Your `config.json` is organized into logical namespaces:
 
 | Namespace | Responsibility | Primary Settings |
 | :--- | :--- | :--- |
 | **`project_detection`** | Framework discovery | `auto_detect`, `force_profile` |
 | **`audit_rules`** | Linguistic precision | `role_identifiers`, `latin_whitelist`, `apply_safe_fixes` |
 | **`ai_review`** | Semantic intelligence | `enabled`, `provider`, `model`, `api_key_env` |
-| **`output`** | Results management | `results_dir`, `retention_mode` |
-
----
-
-## 💎 Core Features
-
-### 🧠 Smart AI Semantic Review
-V1.2.5 integrates **LiteLLM** to provide deep semantic validation of identified issues. This eliminates false positives by understanding the intent and context of your translations.
-- **Provider Agnostic**: Supports OpenAI, DeepSeek, Anthropic, and local models.
-- **Cost Optimization**: Use `low-cost 'mini' models` (e.g., `gpt-4o-mini`, `deepseek-chat`) and tune the `short_label_threshold` to skip trivial labels like "OK" or "Save".
-- **Secure Integration**: Never hardcode keys; use `api_key_env` to point to your system's environment variables.
-
-### 🛠️ The Smart Auto-Fixer (`--apply-safe-fixes`)
-Standardize your terminology automatically. If enabled, the tool will read `glossary.json` and replace `forbidden_terms` with their approved equivalents directly in your locale files.
-- **Whole-Word Matching**: Prevents accidental substring replacements.
-- **RTL/LTR Aware**: Maintains script integrity during replacement.
-
-### 📁 Results Archiving & Retention
-Maintain full audit traceability across your project's history.
-- **`overwrite`**: Default mode. Replaces the last audit's `Results` directory.
-- **`archive`**: Moves previous results to a timestamped `_archives/` folder before starting a new run. Perfect for CI/CD audit trails.
+| **`output`** | Results management | `results_dir`, `retention_mode`, `excluded_paths` |
 
 ---
 
 ## ⌨️ CLI Command Reference
 
-Execute audits with precision using the standardized CLI interface.
-
 | Command | Description |
 | :--- | :--- |
-| `l10n-audit --version` | Verify installation (should show **1.2.5**) |
+| `l10n-audit --version` | Verify installation (should show **1.3.0**) |
 | `l10n-audit run --stage fast` | Perform terminology and QC checks only |
 | `l10n-audit run --stage full` | Run the complete audit suite (Grammar, AI, Terminology, QC) |
-| `l10n-audit run --apply-safe-fixes` | Audit and automatically apply terminology corrections |
+| `l10n-audit run --stage autofix` | Audit and automatically apply safe/verified fixes |
 | `l10n-audit doctor` | Diagnose workspace and framework discovery issues |
 
 ---
 
 ## 📝 Technical Notes for Power Users
 
-- **Brand Protection**: Use the `latin_whitelist` in `audit_rules` to prevent the engine from flagging your brand name or technical terms (e.g., "DeepSeek", "API") as 'mixed-script' errors in Arabic text.
+- **Brand Protection**: Use the `latin_whitelist` in `audit_rules` to prevent the engine from flagging your brand name or technical terms as 'mixed-script' errors.
 - **Context Preservation**: Defining `role_identifiers` (e.g., `['admin', 'captain']`) ensures the AI and heuristic engines understand your app's specific persona contexts.
 - **Performance**: Batch sizes can be adjusted via `ai_review.batch_size` (default: 20) to balance between execution speed and API rate limits.
+- **Error Logging**: In case of critical glossary violations or AI failures, the tool logs detailed information to `logs/audit_errors.log`. Check this file if an audit fails with a `GlossaryViolationError`.
 
 ---
 
@@ -101,4 +102,4 @@ Execute audits with precision using the standardized CLI interface.
 For issues, architectural questions, or feature requests, please refer to the internal documentation or contact the **Advanced Agentic Coding** team.
 
 ---
-*Generated by Antigravity AI for L10n-Audit v1.2.5*
+*Generated by Antigravity AI for L10n-Audit v1.3.0*

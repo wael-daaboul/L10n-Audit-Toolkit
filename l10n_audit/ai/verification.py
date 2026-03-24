@@ -51,15 +51,67 @@ def check_html(source, suggestion):
     
     return True, ""
 
-def verify_batch_fixes(original_batch, ai_fixes):
+class GlossaryViolationError(Exception):
+    """Raised when an AI suggestion violates glossary rules."""
+    pass
+
+
+def validate_glossary_compliance(suggestion: str, source_text: str, glossary: dict) -> tuple[bool, str]:
+    """Strictly validates if the suggestion complies with the provided glossary.
+    
+    Returns (True, "") if compliant, (False, "reason") otherwise.
+    """
+    if not glossary:
+        return True, ""
+
+    # Compile term patterns for source text matching
+    glossary_terms = []
+    for term in glossary.get("terms", []):
+        if isinstance(term, dict) and term.get("term_en") and term.get("approved_ar"):
+            glossary_terms.append({
+                "term_en": str(term["term_en"]),
+                "approved_ar": str(term["approved_ar"]),
+                "forbidden_ar": [str(i) for i in term.get("forbidden_ar", []) if i],
+                "pattern": re.compile(rf"(?<![A-Za-z]){re.escape(str(term['term_en']))}(?![A-Za-z])", re.IGNORECASE)
+            })
+
+    # 1. Global forbidden terms (unconditional)
+    rules = glossary.get("rules", {})
+    if isinstance(rules, dict):
+        for item in rules.get("forbidden_terms", []):
+            forbidden = str(item.get("forbidden_ar", ""))
+            if forbidden and forbidden in suggestion:
+                use_instead = item.get("use_instead", "an approved term")
+                return False, f"Uses forbidden global term '{forbidden}'. Use '{use_instead}' instead."
+
+    # 2. Key-term mapping based on source text
+    for term in glossary_terms:
+        if term["pattern"].search(source_text):
+            approved_ar = term["approved_ar"]
+            # Strict: Approved term MUST be in the suggestion if English uses it
+            if approved_ar not in suggestion:
+                return False, f"Missing approved glossary term '{approved_ar}' for English term '{term['term_en']}'."
+            
+            # Strict: Forbidden terms MUST NOT be in the suggestion
+            for forbidden in term["forbidden_ar"]:
+                if forbidden in suggestion:
+                    return False, f"Uses forbidden glossary term '{forbidden}' for English term '{term['term_en']}'. Use '{approved_ar}' instead."
+
+    return True, ""
+
+
+def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
     """
     Verifies a batch of AI suggestions.
-    Checks placeholders, newlines, and HTML tags.
-    If a suggestion fails verification, it is safely discarded.
+    Checks placeholders, newlines, HTML tags, and GLOSSARY compliance.
     """
     verified_fixes = []
-    source_by_key = {item["key"]: item["source"] for item in original_batch}
-    target_by_key = {item["key"]: item["current_translation"] for item in original_batch}
+    source_by_key = {item["key"]: item["source_text"] for item in original_batch if "source_text" in item}
+    # Fallback to 'source' if 'source_text' is missing
+    if not source_by_key:
+        source_by_key = {item["key"]: item.get("source", "") for item in original_batch}
+        
+    target_by_key = {item["key"]: item.get("current_translation", "") for item in original_batch}
     
     for fix in ai_fixes:
         key = fix.get("key")
@@ -68,33 +120,40 @@ def verify_batch_fixes(original_batch, ai_fixes):
         if not key or not suggestion or key not in source_by_key:
             continue
             
-        source = source_by_key[key]
-        target = target_by_key[key]
+        source_text = source_by_key[key]
+        target_text = target_by_key[key]
         
         # If suggestion is identical, skip
-        if suggestion.strip() == target.strip():
+        if suggestion.strip() == target_text.strip():
             continue
             
-        # Verification
+        # Basic Verification
         v_tasks = [
-            check_placeholders(source, suggestion),
-            check_newlines(source, suggestion),
-            check_html(source, suggestion)
+            check_placeholders(source_text, suggestion),
+            check_newlines(source_text, suggestion),
+            check_html(source_text, suggestion)
         ]
+        
+        # Glossary Verification
+        if glossary:
+            v_tasks.append(validate_glossary_compliance(suggestion, source_text, glossary))
         
         failed = [msg for ok, msg in v_tasks if not ok]
         
         if not failed:
             verified_fixes.append({
                 "key": key,
+                "verified": True,
                 "issue_type": "ai_suggestion",
                 "severity": "info",
                 "message": f"AI Suggestion: {fix.get('reason', '')}",
-                "source": source,
-                "target": target,
-                "suggestion": suggestion
+                "source": source_text,
+                "target": target_text,
+                "suggestion": suggestion,
+                "extra": {"verified": True} # For backward compatibility with some engines
             })
         else:
             logging.debug(f"AI Suggestion for {key} rejected by verification: {failed}")
             
     return verified_fixes
+

@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.0
+**Idempotency, Persistent Storage, and AI Reliability**
+
+- **Persistent Storage**: Introduced `.l10n-audit/staged/` for permanent storage of verified translations, preventing data loss between audit runs.
+- **Idempotency Fix**: Stage-aware cleanup logic now preserves `Results/` directory during `autofix` and `reports` stages.
+- **Smart Retry System**: Added a 3-retry mechanism for AI suggestions with negative prompting to strictly enforce glossary rules.
+- **Hard Glossary Enforcement**: AI suggestions violating the glossary are now rejected with a `GlossaryViolationError` after exhausted retries.
+- **Persistent Error Logging**: Integrated a dedicated `logs/audit_errors.log` to capture critical glossary violations and system errors.
+- **Seamless AI Integration**: Enhanced the fix engine to automatically apply AI-verified suggestions within safe bounds, strictly ignoring unverified `AI_SUGGESTION` items.
+- **Path Isolation**: Standardized use of `pathlib` across all modules for cross-platform stability.
+
+## v1.2.9
+**Minor Improvements and Bug Fixes**
+
+- Stability improvements for large-scale projects.
+- Improved project profile detection accuracy.
+
 ## v1.2.1
 **Arabic Protection, API Stability, and Reliability**
 

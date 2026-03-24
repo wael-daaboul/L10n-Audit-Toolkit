@@ -257,6 +257,15 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
     all_fixes: list[dict] = []
     batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
     
+    # Load raw glossary for strict validation pass
+    raw_glossary = {}
+    try:
+        if (runtime.config_dir / "glossary.json").exists():
+             import json as _json
+             raw_glossary = _json.loads((runtime.config_dir / "glossary.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
     # Display interactive waiting message
     print("\n🚀 Sending review request to AI (Waiting for cloud response)...", end="", flush=True)
 
@@ -273,7 +282,8 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
         hb_thread.start()
             
         try:
-            fixes = ai_provider.review_batch(batch, ai_config)
+            # Pass BOTH glossary_terms (for prompt) and raw_glossary (for validation)
+            fixes = ai_provider.review_batch(batch, ai_config, glossary=raw_glossary)
             all_fixes.extend(fixes)
             
             # Anti-rate-limit sleep between batches (except the last one)
@@ -286,6 +296,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
             hb_thread.join()
 
     print(" ✅ Response received.")
+
 
     if options.write_reports:
         out_dir = options.effective_output_dir(runtime.results_dir) / "per_tool" / "ai_review"

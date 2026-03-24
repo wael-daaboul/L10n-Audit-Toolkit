@@ -423,6 +423,14 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
             write_unified_json(json_file, payload)
             write_unified_json(aggr_file, {"included_sources": include_sources, "issues": issues})
             write_unified_json(review_json, {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
+            
+            # Migrate verified translations to staged storage
+            try:
+                from l10n_audit.core.results_manager import migrate_verified_to_staged
+                migrate_verified_to_staged(runtime.project_root, payload)
+            except Exception as migrate_exc:
+                logger.warning("Failed to migrate verified translations: %s", migrate_exc)
+
         except Exception as json_exc:
             logger.error("Failed to write unified JSON reports: %s", json_exc)
 

@@ -39,5 +39,5 @@ class AIProvider(Protocol):
         ``reason`` (optional).  May return an empty list or ``[]`` on failure.
     """
 
-    def review_batch(self, batch: list[dict], config: dict) -> list[dict]:
+    def review_batch(self, batch: list[dict], config: dict, glossary: dict | None = None) -> list[dict]:
         ...

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import logging
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from typing import Any
 from l10n_audit.core.locale_exporters import export_locale_mapping
 from l10n_audit.core.audit_report_utils import load_all_report_issues
 from l10n_audit.core.audit_runtime import is_risky_for_whitespace_normalization, load_locale_mapping, load_runtime, write_json, write_simple_xlsx
+
+logger = logging.getLogger("l10n_audit.fixes")
 
 SAFE_REPLACEMENTS = {
     "can not": "cannot",
@@ -29,17 +32,18 @@ SAFE_REPLACEMENTS = {
 def is_small_safe_change(old: str, new: str) -> bool:
     if not old or not new or old == new:
         return False
-    if len(old.split()) > 8 or len(new.split()) > 8:
+    # Max 12 words for safe AI suggestion (slightly more than general safe fix)
+    if len(old.split()) > 12 or len(new.split()) > 12:
         return False
-    return abs(len(old) - len(new)) <= max(8, len(old) // 2)
+    return abs(len(old) - len(new)) <= max(10, len(old) // 2)
 
 
 def classify_issue(issue: dict[str, Any]) -> str:
     source = str(issue.get("source", ""))
     issue_type = str(issue.get("issue_type", ""))
     details = issue.get("details", {})
-    old = str(details.get("old", ""))
-    new = str(details.get("new", ""))
+    old = str(details.get("old", issue.get("target", "")))
+    new = str(details.get("new", issue.get("suggestion", "")))
 
     if source == "locale_qc":
         if issue_type in {"whitespace", "spacing"}:
@@ -61,34 +65,90 @@ def classify_issue(issue: dict[str, Any]) -> str:
             return "auto_safe"
         return "review_required"
 
+    if source == "ai_review" or issue.get("code") == "AI_SUGGESTION":
+        # AI Suggestions are safe if verified and small
+        is_verified = issue.get("verified") is True or issue.get("extra", {}).get("verified") is True
+        if is_verified and is_small_safe_change(old, new):
+            return "auto_safe"
+        return "review_required"
+
     if source == "icu_message_audit":
         return "review_required"
 
     return "review_required"
 
 
-def build_fix_plan(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = None) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
     seen: dict[tuple[str, str, str], dict[str, Any]] = {}
+    
+    # --- Priority 1: Read from Persistent Staged Storage ---
+    if project_root:
+        try:
+            from l10n_audit.core.results_manager import get_staged_dir
+            import json as _json
+            staged_file = get_staged_dir(project_root) / "approved_translations.json"
+            if staged_file.exists():
+                staged_data = _json.loads(staged_file.read_text(encoding="utf-8"))
+                for identity, data in staged_data.items():
+                    key = data.get("key")
+                    locale = data.get("locale")
+                    candidate = data.get("suggestion")
+                    if not (key and locale and candidate):
+                        continue
+                        
+                    signature = (key, locale, candidate)
+                    item = {
+                        "key": key,
+                        "locale": locale,
+                        "source": "persistent_staged",
+                        "issue_type": "verified_migration",
+                        "severity": "info",
+                        "classification": "auto_safe",
+                        "message": "Applying previously verified translation from staged storage.",
+                        "current_value": data.get("source_text", ""),
+                        "candidate_value": candidate,
+                        "provenance": [{"source": "persistent_staged", "issue_type": "verified_migration", "message": "Staged", "severity": "info"}],
+                    }
+                    seen[signature] = item
+                    plan.append(item)
+                logger.info("Loaded %d items from persistent staged storage.", len(seen))
+        except Exception as e:
+            logger.warning("Failed to load persistent staged translations: %s", e)
+
+    # --- Priority 2: Audit Issues ---
     for issue in issues:
+        # Strict security: AI suggestions MUST be verified to be included in the plan
+        if issue.get("source") == "ai_review" or issue.get("code") == "AI_SUGGESTION" or issue.get("issue_type") == "ai_suggestion":
+            is_verified = issue.get("verified") is True or issue.get("extra", {}).get("verified") is True
+            if not is_verified:
+                logger.debug("Skipping unverified AI suggestion for key: %s", issue.get("key"))
+                continue
+
         details = issue.get("details", {})
         key = str(issue.get("key", ""))
         locale = "en" if issue.get("source") in {"locale_qc", "grammar"} else str(issue.get("locale", ""))
         if issue.get("source") == "ar_locale_qc":
             locale = "ar"
-        candidate = str(details.get("new", ""))
-        current = str(details.get("old", details.get("english_value", "")))
+            
+        candidate = str(details.get("new", issue.get("suggestion", "")))
+        current = str(details.get("old", issue.get("target", issue.get("current_translation", ""))))
+        
         classification = classify_issue(issue)
         signature = (key, locale, candidate)
+        
         provenance = {
             "source": str(issue.get("source", "")),
             "issue_type": str(issue.get("issue_type", "")),
             "message": str(issue.get("message", "")),
             "severity": str(issue.get("severity", "")),
         }
+        
         if signature in seen:
-            seen[signature]["provenance"].append(provenance)
+            if provenance not in seen[signature]["provenance"]:
+                seen[signature]["provenance"].append(provenance)
             continue
+            
         item = {
             "key": key,
             "locale": locale,
@@ -106,13 +166,18 @@ def build_fix_plan(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return plan
 
 
-def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], locale: str) -> tuple[dict[str, object], list[dict[str, Any]]]:
+def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], locale: str, excluded_keys: set[str] | None = None) -> tuple[dict[str, object], list[dict[str, Any]]]:
     updated = dict(data)
     applied: list[dict[str, Any]] = []
     per_key: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+    
+    excluded_keys = excluded_keys or set()
 
     for item in plan:
         if item["classification"] == "auto_safe" and item["locale"] == locale and item["candidate_value"]:
+            if str(item["key"]) in excluded_keys:
+                logger.debug("Skipping excluded key: %s", item["key"])
+                continue
             per_key[str(item["key"])].append(item)
 
     for key, items in per_key.items():
@@ -128,8 +193,13 @@ def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], loca
         new_value = next(iter(candidates))
         if current_value == new_value:
             continue
+        
         updated[key] = new_value
         applied.extend(items)
+        
+        # Log success
+        source_info = items[0]["source"]
+        logger.info("Applied safe fix for key '%s' (%s) - verified by %s", key, locale, source_info)
 
     return updated, applied
 
@@ -207,7 +277,7 @@ def main() -> None:
     ar_data = load_locale_mapping(runtime.ar_file, runtime, target_locale)
     _reports, issues, _missing = load_all_report_issues(runtime.results_dir)
 
-    plan = build_fix_plan(issues)
+    plan = build_fix_plan(issues, runtime.project_root)
     plan.extend(add_direct_locale_safety_pass(en_data, "en"))
     plan.extend(add_direct_locale_safety_pass(ar_data, "ar"))
 
@@ -288,6 +358,99 @@ def main() -> None:
     print(f"AR fixed:   {args.out_ar_fixed}")
     for path in [*exported_en, *exported_ar]:
         print(f"Exported:   {path}")
+
+
+# ---------------------------------------------------------------------------
+# Python API adapter — called by l10n_audit.core.engine
+# ---------------------------------------------------------------------------
+
+def run_stage(runtime, options, **_) -> list:
+    """Apply safe fixes to locale files and return a dummy issue list.
+    
+    Returns an empty list as this stage performs side-effects (writes files).
+    """
+    from l10n_audit.models import issue_from_dict
+    from l10n_audit.core.audit_report_utils import load_all_report_issues
+    from l10n_audit.core.locale_exporters import export_locale_mapping
+    from l10n_audit.core.audit_runtime import load_locale_mapping, write_json, write_simple_xlsx
+
+    results_dir = options.effective_output_dir(runtime.results_dir)
+    fixes_dir = results_dir / "fixes"
+    exports_dir = results_dir / "exports"
+    fixes_dir.mkdir(parents=True, exist_ok=True)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    target_locale = runtime.target_locales[0] if runtime.target_locales else "ar"
+    ar_data = load_locale_mapping(runtime.ar_file, runtime, target_locale)
+    
+    _reports, issues, _missing = load_all_report_issues(results_dir)
+
+    plan = build_fix_plan(issues, runtime.project_root)
+    plan.extend(add_direct_locale_safety_pass(en_data, "en"))
+    plan.extend(add_direct_locale_safety_pass(ar_data, "ar"))
+
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for item in plan:
+        signature = (
+            str(item["key"]),
+            str(item["locale"]),
+            str(item["issue_type"]),
+            str(item["candidate_value"]),
+        )
+        if signature not in seen:
+            seen.add(signature)
+            unique.append(item)
+
+    # Exclude paths logic
+    excluded_paths = [Path(p) for p in (options.excluded_paths or [])]
+    excluded_keys = set()
+    
+    # Simple check: if any issue's 'file' or 'path' is in excluded_paths, exclude its key
+    for issue in issues:
+        file_path = issue.get("file") or issue.get("path")
+        if file_path:
+            abs_file = Path(file_path).resolve()
+            for exc_p in excluded_paths:
+                if abs_file == exc_p.resolve() or str(abs_file).startswith(str(exc_p.resolve())):
+                    excluded_keys.add(issue.get("key"))
+                    break
+
+    fixed_en, applied_en = apply_safe_changes(en_data, unique, "en", excluded_keys=excluded_keys)
+    fixed_ar, applied_ar = apply_safe_changes(ar_data, unique, "ar", excluded_keys=excluded_keys)
+
+    
+    applied_signatures = {
+        (str(item["key"]), str(item["locale"]), str(item["issue_type"]), str(item["candidate_value"]))
+        for item in [*applied_en, *applied_ar]
+    }
+    auto_safe_items = [item for item in unique if item["classification"] == "auto_safe"]
+    skipped_auto_safe = [
+        item
+        for item in auto_safe_items
+        if (str(item["key"]), str(item["locale"]), str(item["issue_type"]), str(item["candidate_value"])) not in applied_signatures
+    ]
+    review_required_items = [item for item in unique if item["classification"] == "review_required"]
+
+    # Write results
+    out_en_fixed = fixes_dir / "en.fixed.json"
+    out_ar_fixed = fixes_dir / "ar.fixed.json"
+    out_en_fixed.write_text(__import__("json").dumps(fixed_en, ensure_ascii=False, indent=2), encoding="utf-8")
+    out_ar_fixed.write_text(__import__("json").dumps(fixed_ar, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if runtime.locale_format == "laravel_php":
+        export_locale_mapping(fixed_en, runtime.locale_format, exports_dir / runtime.source_locale)
+        export_locale_mapping(fixed_ar, runtime.locale_format, exports_dir / target_locale)
+    else:
+        export_locale_mapping(fixed_en, "json", exports_dir / f"{runtime.source_locale}.json")
+        export_locale_mapping(fixed_ar, "json", exports_dir / f"{target_locale}.json")
+
+    write_json({"summary": {"total_items": len(unique)}, "plan": unique}, fixes_dir / "fix_plan.json")
+    write_json({"keys_auto_fixed": applied_en + applied_ar}, fixes_dir / "safe_fixes_applied_report.json")
+    write_simple_xlsx(unique, ["key", "locale", "source", "issue_type", "severity", "classification", "message", "current_value", "candidate_value"], fixes_dir / "fix_plan.xlsx")
+
+    return []
 
 
 if __name__ == "__main__":
