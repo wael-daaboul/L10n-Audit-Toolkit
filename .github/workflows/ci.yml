@@ -19,24 +19,40 @@ jobs:
         with:
           python-version: "3.11"
           cache: 'pip'
-          # المسار الدقيق لضمان كفاءة الكاش وتجنب تضخم الذاكرة
+          # الكاش يعتمد فقط على pyproject و dev لأننا استغنينا عن التثبيت المكرر لـ requirements.txt
           cache-dependency-path: |
             pyproject.toml
-            requirements.txt
             requirements-dev.txt
 
-      - name: Install dependencies
+      - name: Lean Install (High Stability)
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-          # تثبيت الاختياري فقط إذا لزم الأمر (معطل حالياً لتوفير الذاكرة)
-          # if [ -f requirements-optional.txt ]; then pip install -r requirements-optional.txt; fi
+          
+          echo "--- Memory before install ---"
+          free -h
+          
+          # 1. التثبيت بوضع المطور: يقرأ pyproject.toml ويثبت كل التبعيات الأساسية مرة واحدة
+          # استخدمنا --only-binary لضمان عدم استهلاك الذاكرة في بناء الحزم من المصدر
+          pip install -e . --no-cache-dir --only-binary=:all:
+
+          # 2. تثبيت أدوات الاختبار (pytest) فقط لضمان بيئة اختبار خفيفة
+          if [ -f requirements-dev.txt ]; then 
+            pip install --no-cache-dir --only-binary=:all: -r requirements-dev.txt
+          else
+            pip install --no-cache-dir pytest pytest-xdist
+          fi
+          
+          echo "--- Memory after install ---"
+          free -h
 
       - name: Run tests
-        # فرض تشغيل الاختبارات في عملية واحدة (Process) لتقليل ضغط RAM
-        run: python -m pytest tests -v -n 0
+        run: |
+          echo "--- Memory before tests ---"
+          free -h
+          # تشغيل الاختبارات بالتسلسل (-n 0) لمنع انفجار الذاكرة RAM
+          python -m pytest tests -v -n 0
+          echo "--- Memory after tests ---"
+          free -h
 
       - name: Validate schemas
         run: |
