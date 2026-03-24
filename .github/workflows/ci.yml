@@ -19,7 +19,6 @@ jobs:
         with:
           python-version: "3.11"
           cache: 'pip'
-          # الكاش يعتمد فقط على pyproject و dev لأننا استغنينا عن التثبيت المكرر لـ requirements.txt
           cache-dependency-path: |
             pyproject.toml
             requirements-dev.txt
@@ -27,20 +26,14 @@ jobs:
       - name: Lean Install (High Stability)
         run: |
           python -m pip install --upgrade pip
-          
           echo "--- Memory before install ---"
           free -h
           
-          # 1. التثبيت بوضع المطور: يقرأ pyproject.toml ويثبت كل التبعيات الأساسية مرة واحدة
-          # استخدمنا --only-binary لضمان عدم استهلاك الذاكرة في بناء الحزم من المصدر
+          # تثبيت المكتبات الأساسية من pyproject.toml بنسخ جاهزة
           pip install -e . --no-cache-dir --only-binary=:all:
-
-          # 2. تثبيت أدوات الاختبار (pytest) فقط لضمان بيئة اختبار خفيفة
-          if [ -f requirements-dev.txt ]; then 
-            pip install --no-cache-dir --only-binary=:all: -r requirements-dev.txt
-          else
-            pip install --no-cache-dir pytest pytest-xdist
-          fi
+          
+          # تثبيت pytest بشكل مستقر وبسيط
+          pip install --no-cache-dir pytest
           
           echo "--- Memory after install ---"
           free -h
@@ -49,8 +42,10 @@ jobs:
         run: |
           echo "--- Memory before tests ---"
           free -h
-          # تشغيل الاختبارات بالتسلسل (-n 0) لمنع انفجار الذاكرة RAM
-          python -m pytest tests -v -n 0
+          
+          # تشغيل pytest العادي (بدون -n لضمان التوافق)
+          python -m pytest tests -v
+          
           echo "--- Memory after tests ---"
           free -h
 
