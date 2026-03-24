@@ -1,8 +1,8 @@
 # 🌍 L10n Audit Toolkit (v1.3.0)
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
-[![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
-[![Tests](https://img.shields.io/badge/Tests-142%20Passed-brightgreen.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)
+![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)
+![Tests](https://img.shields.io/badge/Tests-142%20Passed-brightgreen.svg)
 ![Release](https://img.shields.io/github/v/release/wael-daaboul/L10n-Audit-Toolkit)
 
 
