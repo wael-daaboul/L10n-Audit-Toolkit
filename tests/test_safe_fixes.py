@@ -73,6 +73,7 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
 
 def _make_runtime(tmp_path: Path, *, locale_format: str, en_file: Path, ar_file: Path, results_dir: Path) -> SimpleNamespace:
     return SimpleNamespace(
+        project_root=tmp_path,
         locale_format=locale_format,
         en_file=en_file,
         ar_file=ar_file,
@@ -167,6 +168,7 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
     ar_file = tmp_path / "ar.json"
     _write_json(ar_file, {"welcome": "اهلا", "keep": "كما هو"})
     runtime = SimpleNamespace(
+        project_root=tmp_path,
         results_dir=tmp_path / "Results",
         ar_file=ar_file,
         locale_format="json",
@@ -243,7 +245,7 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
     source_old = "قديم"
     approved_new = "  Error:\n%s  "
     _write_json(ar_file, {"welcome": source_old})
-    runtime = SimpleNamespace(results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
+    runtime = SimpleNamespace(project_root=tmp_path, results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
     write_simple_xlsx(
         [
@@ -277,7 +279,7 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
 def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None:
     ar_file = tmp_path / "ar.json"
     _write_json(ar_file, {"welcome": "تم التغيير"})
-    runtime = SimpleNamespace(results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
+    runtime = SimpleNamespace(project_root=tmp_path, results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
     write_simple_xlsx(
         [
@@ -312,7 +314,7 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
 def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, tmp_path: Path) -> None:
     ar_file = tmp_path / "ar.json"
     _write_json(ar_file, {"welcome": "اهلا"})
-    runtime = SimpleNamespace(results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
+    runtime = SimpleNamespace(project_root=tmp_path, results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
     base_fields = {
         "key": "welcome",
@@ -345,7 +347,7 @@ def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, 
 def test_apply_review_fixes_rejects_malformed_row(monkeypatch, tmp_path: Path) -> None:
     ar_file = tmp_path / "ar.json"
     _write_json(ar_file, {"welcome": "اهلا"})
-    runtime = SimpleNamespace(results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
+    runtime = SimpleNamespace(project_root=tmp_path, results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
     write_simple_xlsx(
         [{"key": "welcome", "locale": "ar", "issue_type": "confirmed_missing_key", "approved_new": "مرحبا", "status": "approved"}],
@@ -362,7 +364,7 @@ def test_apply_review_fixes_rejects_malformed_row(monkeypatch, tmp_path: Path) -
 def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) -> None:
     ar_file = tmp_path / "ar.json"
     _write_json(ar_file, {"welcome": "اهلا"})
-    runtime = SimpleNamespace(results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
+    runtime = SimpleNamespace(project_root=tmp_path, results_dir=tmp_path / "Results", ar_file=ar_file, locale_format="json", source_locale="en", target_locales=("ar",))
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
     write_simple_xlsx(
         [
