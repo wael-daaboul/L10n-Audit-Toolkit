@@ -26,7 +26,33 @@ SAFE_REPLACEMENTS = {
     "ratting": "rating",
     "pont": "point",
     "canot": "cannot",
+    "dont": "don't",
+    "wont": "won't",
+    "cant": "can't",
+    "shouldnt": "shouldn't",
+    "wouldnt": "wouldn't",
+    "couldnt": "couldn't",
+    "doesnt": "doesn't",
+    "isnt": "isn't",
+    "arent": "aren't",
+    "werent": "weren't",
+    "wasnt": "wasn't",
+    "havent": "haven't",
+    "hasnt": "hasn't",
+    "hadnt": "hadn't",
 }
+
+
+def preprocess_source_text(text: str) -> str:
+    """Apply safe replacements to clean English source text before AI review."""
+    if not text or not isinstance(text, str):
+        return text
+    result = text
+    # Sort replacements by length descending to avoid partial replacements (e.g., 'cant' vs 'canot')
+    sorted_replacements = sorted(SAFE_REPLACEMENTS.items(), key=lambda x: len(x[0]), reverse=True)
+    for old, nxt in sorted_replacements:
+        result = result.replace(old, nxt)
+    return result
 
 
 def is_small_safe_change(old: str, new: str) -> bool:
@@ -131,8 +157,8 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
         if issue.get("source") == "ar_locale_qc":
             locale = "ar"
             
-        candidate = str(details.get("new", issue.get("suggestion", "")))
-        current = str(details.get("old", issue.get("target", issue.get("current_translation", ""))))
+        candidate = str(issue.get("approved_new") or issue.get("suggested_fix") or details.get("new") or issue.get("suggestion") or "").strip()
+        current = str(issue.get("source_old_value") or issue.get("target") or details.get("old") or issue.get("current_translation") or "").strip()
         
         classification = classify_issue(issue)
         signature = (key, locale, candidate)

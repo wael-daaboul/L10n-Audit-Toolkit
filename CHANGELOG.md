@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.1
+**Workspace Isolation, AI Preprocessing, and Unified Fix Merger**
+
+- **Workspace Isolation**: Introduced `.l10n-audit/workspace/` for safe audit execution. Files are copied to this isolated environment before auditing, ensuring original project files remain UNTOUCHED during the process.
+- **English Preprocessing**: Added a safe text cleaning layer before AI review. Common typos and contractions (e.g., `dont` -> `don't`) are corrected in the English source text sent to the AI, improving the quality and accuracy of suggested translations.
+- **Unified Fix Merger**: Implemented a consolidated engine for generating `.fix` files. It merges `auto_safe` corrections and human-reviewed fixes from `review_queue.xlsx`, maintaining the original project structure and format (JSON or Laravel PHP).
+- **Laravel Directory Support**: Added support for recursive directory copying in the workspace and fix generation, maintaining full compatibility with Laravel's `resources/lang/` structure.
+- **Performance & Stability**: Enhanced workspace cleanup with error tolerance and improved directory tree operations.
+
+
 ## v1.3.0
 **Idempotency, Persistent Storage, and AI Reliability**
 

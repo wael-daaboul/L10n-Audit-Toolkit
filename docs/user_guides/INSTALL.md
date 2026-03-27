@@ -4,6 +4,8 @@ This guide covers environment setup, dependency installation, test setup, and fi
 
 ## English
 
+Current version: **1.3.1** (The Bulletproof Edition)
+
 ### Purpose
 This guide covers system setup, optional dependencies, local LanguageTool, virtual environments, and first-run validation for the localization QA toolkit.
 
@@ -24,8 +26,10 @@ Current compatibility scope:
   - or configure `locale_paths`, `locale_root`, and `code_dirs` explicitly
 
 ### Optional System Dependencies
-- Java
-  - needed for local LanguageTool grammar analysis and for the `language-tool-python` fallback
+- Java (JRE/JDK 11+)
+  - **Critical**: Required for local LanguageTool grammar analysis and Arabic linguistic QC (`ar_locale_qc`). Without Java, the toolkit will gracefully skip these stages with a warning.
+- AI API Keys
+  - Required for `ai-review` stage. Configure them in `~/.l10n-audit/config.env` (created automatically on first run).
 - Local LanguageTool bundle
   - optional, discovered dynamically under `tools/vendor/LanguageTool-*` or `vendor/LanguageTool-*`
 
@@ -263,6 +267,8 @@ python3 -m pytest tests
 
 ## العربية
 
+الإصدار الحالي: **1.3.1** (The Bulletproof Edition)
+
 ### الغرض من هذا الدليل
 يوضح هذا الدليل كيفية تثبيت الحزمة وتجهيز البيئة وتشغيل أول تحقق ناجح، مع توضيح التبعيات المطلوبة والاختيارية وكيفية التراجع الآمن عند غياب بعضها.
 
@@ -283,8 +289,10 @@ python3 -m pytest tests
   - أو تعريف `locale_paths` أو `locale_root` و `code_dirs` بشكل صريح عند الحاجة
 
 ### التبعيات النظامية الاختيارية
-- Java
-  - مطلوب لتشغيل LanguageTool المحلي وأيضاً لسلوك `language-tool-python` الاحتياطي
+- Java (JRE/JDK 11+)
+  - **هام جداً**: مطلوب لتشغيل LanguageTool المحلي وفحوصات الجودة اللغوية العربية (`ar_locale_qc`). في حال غيابه، ستعرض الأداة تنبيهاً وتتجاوز هذه المراحل بسلام.
+- مفاتيح الذكاء الاصطناعي (AI Keys)
+  - مطلوبة لمرحلة `ai-review`. يجب ضبطها في الملف العالمي `~/.l10n-audit/config.env`.
 - LanguageTool المحلي
   - اختياري، ويتم اكتشافه ديناميكياً داخل `tools/vendor/LanguageTool-*` أو `vendor/LanguageTool-*`
 

@@ -20,6 +20,7 @@ REVIEW_QUEUE_COLUMNS = [
     "issue_type",
     "suggested_fix",
     "approved_new",
+    "needs_review",
     "status",
     "notes",
     "context_type",
@@ -98,6 +99,12 @@ def old_value_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_da
 
 
 def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_data: dict[str, object]) -> str:
+    # v1.3.1 - Prioritize top-level fields populated by AI review or merging
+    for field in ("suggested_fix", "suggestion", "approved_new"):
+        val = str(issue.get(field) or "")
+        if val:
+            return val
+
     details = issue.get("details", {})
     for field in ("new", "candidate_value", "expected_ar", "use_instead"):
         value = str(details.get(field, ""))
@@ -158,8 +165,15 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             prov_segment = f"{source}|{issue_type}|{severity}"
             if prov_segment not in existing["provenance"].split(" || "):
                 existing["provenance"] += f" || {prov_segment}"
-            # Prefer non-empty suggested fix
-            if not existing["suggested_fix"] and suggested_fix:
+            # Prioritize AI suggestions if they exist
+            is_ai = source in ("ai_review", "ai_suggestion") or "ai_suggestion" in issue_type
+            
+            if is_ai and suggested_fix:
+                existing["suggested_fix"] = suggested_fix
+                existing["suggested_hash"] = compute_text_hash(suggested_fix)
+                if "|ai_reviewed" not in existing["provenance"]:
+                    existing["provenance"] += "|ai_reviewed"
+            elif not existing["suggested_fix"] and suggested_fix:
                 existing["suggested_fix"] = suggested_fix
                 existing["suggested_hash"] = compute_text_hash(suggested_fix)
         else:
@@ -169,7 +183,8 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "old_value": current_value,
                 "issue_type": issue_type,
                 "suggested_fix": suggested_fix,
-                "approved_new": "",
+                "approved_new": str(issue.get("approved_new") or ""),
+                "needs_review": "Yes" if issue.get("needs_review") or issue.get("severity") in ("critical", "high") else "No",
                 "status": "pending",
                 "notes": message,
                 "context_type": str((issue.get("details", {}) or {}).get("context_type", "")),
@@ -352,10 +367,115 @@ if __name__ == "__main__":
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
 
+def merge_issues_in_memory(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Groups issues by (key, locale) and merges AI suggestions into base issues.
+    
+    This handles the case where multiple tools (and AI) report on the same key.
+    We prioritize 'empty_string', 'missing_in_ar', 'empty_ar' as base issues.
+    """
+    import logging
+    logger = logging.getLogger("l10n_audit.merge")
+    
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    
+    for issue in issues:
+        key = str(issue.get("key", ""))
+        # Normalize locale: if empty or missing, assume 'ar' if it looks like an Arabic-related issue
+        loc = str(issue.get("locale", "")).strip()
+        source = str(issue.get("source", ""))
+        it = str(issue.get("issue_type", ""))
+        
+        if not loc:
+            if source in ("ar_locale_qc", "ar_semantic_qc", "ai_review") or "ar" in it or "arabic" in it.lower():
+                loc = "ar"
+            else:
+                loc = "en" # Fallback
+        
+        groups.setdefault((key, loc), []).append(issue)
+    
+    merged: list[dict[str, Any]] = []
+    
+    for (key, loc), group_issues in groups.items():
+        if len(group_issues) == 1:
+            merged.append(group_issues[0])
+            continue
+            
+        # 1. Identify Base Issue (Priority: empty_string > missing_in_ar > empty_ar > other)
+        base_priority = ["empty_string", "missing_in_ar", "empty_ar", "missing_ar"]
+        base_issue = None
+        for bp in base_priority:
+            for gi in group_issues:
+                if str(gi.get("issue_type", "")) == bp:
+                    base_issue = gi
+                    break
+            if base_issue: break
+            
+        if not base_issue:
+            base_issue = group_issues[0] # Just take first as anchor
+            
+        # 2. Look for AI suggestions
+        ai_item = None
+        for gi in group_issues:
+            if gi is base_issue: continue
+            if str(gi.get("source", "")) in ("ai_review", "ai_suggestion") or "ai_suggestion" in str(gi.get("issue_type", "")):
+                ai_item = gi
+                break
+        
+        # 3. Perform Merge
+        notes = [str(base_issue.get("message", ""))]
+        provenance = [f"{base_issue.get('source')}|{base_issue.get('issue_type')}"]
+        
+        for gi in group_issues:
+            if gi is base_issue: continue
+            
+            # Merge messages/notes if different
+            msg = str(gi.get("message", ""))
+            if msg and msg not in notes:
+                notes.append(msg)
+            
+            # Merge provenance
+            prov = f"{gi.get('source')}|{gi.get('issue_type')}"
+            if prov not in provenance:
+                provenance.append(prov)
+                
+        # Update base issue with AI suggestion and hashes
+        if ai_item:
+            # v1.3.1 - Robust extraction from multiple fields
+            sugg = (
+                str(ai_item.get("suggestion") or "") or
+                str(ai_item.get("candidate_value") or "") or
+                str(ai_item.get("approved_new") or "") or
+                str(ai_item.get("suggested_fix") or "")
+            ).strip()
 
-# ---------------------------------------------------------------------------
-# Python API adapter — called by l10n_audit.core.engine
-# ---------------------------------------------------------------------------
+            if sugg:
+                base_issue["suggestion"] = sugg
+                base_issue["suggested_fix"] = sugg
+                base_issue["approved_new"] = sugg # Critical for direct application
+                
+                logger.info("Extracted translation from '%s' field for key '%s'", 
+                    "suggestion" if ai_item.get("suggestion") else "other", key)
+                
+                # Critical for apply-review: Use Hashes from AI item
+                if ai_item.get("source_hash"):
+                    base_issue["source_hash"] = ai_item["source_hash"]
+                if ai_item.get("suggested_hash"):
+                    base_issue["suggested_hash"] = ai_item["suggested_hash"]
+                
+                logger.info("Applied AI suggestion to '%s' for key '%s'.", base_issue.get("issue_type"), key)
+                if "ai_merged" not in str(base_issue.get("provenance", "")):
+                    base_issue["provenance"] = (base_issue.get("provenance", "") + "|ai_merged").strip("|")
+
+        base_issue["message"] = " | ".join(filter(None, notes))
+        # Keep track of original sources in extra for debugging
+        base_issue.setdefault("extra", {})["original_sources"] = provenance
+        
+        logger.info("Merged %d issues for key '%s' into 1. (Hashes copied: %s)", 
+                    len(group_issues), key, "Yes" if ai_item and ai_item.get("suggested_hash") else "No")
+        merged.append(base_issue)
+        
+    return merged
+
 
 def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     """Aggregate per-tool reports and write the final dashboard and review queue.
@@ -366,7 +486,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     """
     import logging
     from l10n_audit.models import ReportArtifact
-    from l10n_audit.core.audit_report_utils import load_all_report_issues  # type: ignore[import]
+    from l10n_audit.core.audit_report_utils import load_all_report_issues, load_hydrated_report  # type: ignore[import]
 
     logger = logging.getLogger("l10n_audit.report_aggregator")
     results_dir = options.effective_output_dir(runtime.results_dir)
@@ -377,7 +497,39 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     artifacts: list[ReportArtifact] = []
 
     try:
-        reports, issues, missing = load_all_report_issues(results_dir, include_sources=include_sources)
+        issues = []
+        reports = {}
+        missing = []
+
+        # 1. Direct Hydration (User provided --input-report)
+        if options.input_report:
+            report_path = Path(options.input_report)
+            logger.info("Hydrating from user-provided report: %s", report_path)
+            reports, issues, missing = load_hydrated_report(report_path)
+        
+        # 2. Per-tool scanning (Default behavior)
+        if not issues:
+            reports, issues, missing = load_all_report_issues(results_dir, include_sources=include_sources)
+        
+        # 3. Last-resort fallback to standard aggregate
+        if not issues:
+            std_agg = results_dir / "final" / "final_audit_report.json"
+            if std_agg.exists():
+                logger.info("Falling back to standard aggregate report: %s", std_agg)
+                reports, issues, missing = load_hydrated_report(std_agg)
+
+        if not issues:
+            err_msg = (
+                "\n❌ [Audit Failure] لم نجد بيانات في الذاكرة ولا في القرص.\n"
+                "يرجى تشغيل فحص جديد (كامل أو سريع) أو تحديد مسار الملف باستخدام --input-report.\n"
+                f"Searched directory: {results_dir}\n"
+            )
+            print(err_msg)
+            return []
+
+        # v1.3.1 - In-Memory Merging & AI Alignment
+        issues = merge_issues_in_memory(issues)
+
         summary = summarize_issues(issues)
         safe_fixes = safe_fix_counts(issues)
         review_rows = build_review_queue(issues, runtime)

@@ -55,6 +55,10 @@ def build_custom_findings(key: str, text: str) -> list[dict[str, object]]:
 
 
 def build_languagetool_findings(text_by_key: list[tuple[str, str]], runtime) -> tuple[str, list[dict[str, object]], str | None]:
+    from l10n_audit.core.utils import check_java_available, get_java_missing_warning
+    if not check_java_available():
+        return "rule-based", [], get_java_missing_warning("English")
+        
     session = create_language_tool_session("en-US", runtime)
     if session.tool is None:
         return "rule-based", [], session.note or "LanguageTool session unavailable."

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -131,6 +132,8 @@ def run_audit(
     config_schema: str | Path | None = None,
     verbose: bool = False,
     force: bool = False,
+    translate_missing: bool = False,
+    input_report: str | Path | None = None,
 ) -> AuditResult:
     """Run an audit stage on *project_path* and return structured results.
 
@@ -188,9 +191,13 @@ def run_audit(
         validate_stage(stage)
 
         # Load runtime environment
-        from l10n_audit.core.audit_runtime import load_runtime, AuditRuntimeError
+        from l10n_audit.core.audit_runtime import load_runtime, AuditRuntimeError, write_json
+        from l10n_audit.core.workspace import prepare_audit_workspace
         try:
             runtime = load_runtime_from_path(path)
+            # Recovery & Enhancement: Create isolated workspace (replaces paths in runtime)
+            runtime = prepare_audit_workspace(runtime)
+            logger.info("Audit workspace prepared and runtime paths isolated.")
         except AuditRuntimeError as exc:
             raise InvalidProjectError(f"Invalid project configuration: {exc}") from exc
         
@@ -222,12 +229,13 @@ def run_audit(
                 latin_whitelist=list(getattr(runtime, "latin_whitelist", [])),
             ),
             ai_review=AIReview(
-                enabled=effective_ai_enabled,
+                enabled=effective_ai_enabled or translate_missing,
                 provider=ai_provider or runtime.ai_review["provider"],
                 model=ai_model or runtime.ai_review["model"],
                 api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
                 batch_size=runtime.ai_review["batch_size"],
                 short_label_threshold=runtime.ai_review["short_label_threshold"],
+                translate_missing=translate_missing,
             ),
             output=OutputOptions(
                 results_dir=output_dir or runtime.results_dir,
@@ -239,7 +247,8 @@ def run_audit(
             out_xlsx=out_xlsx,
             config_schema=config_schema,
             verbose=verbose,
-            ai_provider_override=ai_provider_override
+            ai_provider_override=ai_provider_override,
+            input_report=input_report,
         )
 
         # Step 2: Results Retention Management (Suicide Loop Prevention)
@@ -254,38 +263,55 @@ def run_audit(
             # Producers can safely rotate results
             manage_previous_results(results_dir, options)
         elif stage in CONSUMER_STAGES:
-            # Consumers MUST NOT delete findings they are intended to process
+            # Consumers process existing findings.
+            # v1.3.1 fix: We now allow these stages to proceed even if the aggregate report 
+            # is missing, as they can still process individual JSON reports from per_tool/
             report_path = results_dir / "final_audit_report.json"
-            if not report_path.exists() and not effective_ai_enabled:
-                raise AuditError(
-                    f"Consumer stage '{stage}' requires input data that is currently missing.\n"
-                    "Please run a producer stage first (e.g., 'fast' or 'full') to generate the report."
-                )
-            logger.info("Consumer stage '%s' validated. Input found at %s", stage, report_path)
+            if not report_path.exists():
+                logger.info("Consumer stage '%s': Aggregated report not found at %s. Proceeding with per-tool cache files.", stage, report_path)
+            else:
+                logger.info("Consumer stage '%s' validated. Input found at %s", stage, report_path)
         else:
             # Fallback for unrecognized/adhoc stages
             manage_previous_results(results_dir, options)
 
+        # Step 3: Produce results and reports
         issues, reports = run_engine(runtime, options, ai_provider=ai_provider_override)
 
-        # Phase 4: Glossary Auto-Fixer
-        if apply_safe_fixes:
-            try:
-                from l10n_audit.core.glossary_engine import load_glossary_rules
-                from l10n_audit.fixes.apply_glossary_fixes import apply_glossary_to_data
-                from l10n_audit.core.locale_exporters import export_locale_mapping
-                
-                rules = load_glossary_rules(runtime.glossary_file)
-                if rules:
-                    # Fix AR file
-                    from l10n_audit.core.audit_runtime import load_locale_mapping
-                    ar_data = load_locale_mapping(runtime.ar_file, runtime, "ar")
-                    updated_ar, count_ar = apply_glossary_to_data(ar_data, rules)
-                    if count_ar > 0:
-                        export_locale_mapping(updated_ar, "json", runtime.ar_file)
-                        logger.info("Automatically applied %d glossary fixes to %s", count_ar, runtime.ar_file)
-            except Exception as exc:
-                logger.warning("Glossary auto-fix failed: %s", exc)
+        # Step 4: Unified Fix Generation (v1.3.0)
+        # This replaces the old glossary-only fix logic with a unified plan
+        from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
+        from l10n_audit.fixes.fix_merger import merge_and_export_fixes, export_review_queue
+        
+        issue_dicts = [i.to_dict() if hasattr(i, "to_dict") else i for i in issues]
+        fix_plan = build_fix_plan(issue_dicts, runtime.project_root)
+        
+        # Save the full plan for future reference (internal)
+        fixes_dir = results_dir / "fixes"
+        fixes_dir.mkdir(parents=True, exist_ok=True)
+        write_json({"plan": fix_plan}, fixes_dir / "fix_plan.json")
+        
+        # 4.1 Export Review Queue if any manual review is needed
+        review_required = [i for i in fix_plan if i["classification"] == "review_required"]
+        if review_required:
+            review_xlsx = results_dir / "review" / "review_queue.xlsx"
+            export_review_queue(fix_plan, runtime, review_xlsx)
+            logger.info(f"Review Required: {len(review_required)} items added to {review_xlsx}")
+            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {review_xlsx}")
+            
+        # 4.2 Immediate Auto-Fix Generation (.fix files next to originals)
+        if effective_apply_safe_fixes:
+            auto_fixes_en = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and i["locale"] == "en"}
+            auto_fixes_ar = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and (i["locale"] == "ar" or i["locale"] == runtime.target_locales[0])}
+            
+            if auto_fixes_en and runtime.original_en_file:
+                merge_and_export_fixes(runtime.original_en_file, auto_fixes_en, runtime=runtime)
+            if auto_fixes_ar and runtime.original_ar_file:
+                merge_and_export_fixes(runtime.original_ar_file, auto_fixes_ar, runtime=runtime)
+            
+            total_auto = len(auto_fixes_en) + len(auto_fixes_ar)
+            if total_auto > 0:
+                print(f"✅ [AUTO-FIXED]: {total_auto} safe corrections generated in .fix files.")
 
         result.issues = issues
         result.reports = reports

@@ -20,6 +20,7 @@ WORKSPACE_CONFIG = "config.json"
 WORKSPACE_VERSION = "version.json"
 WORKSPACE_GLOSSARY = "glossary.json"
 WORKSPACE_TEMPLATE_DIR = "toolkit-template"
+WORKSPACE_RUN_DIR = "workspace" # Isolation folder for active runs
 CURRENT_CONFIG_VERSION = 2
 
 
@@ -164,7 +165,7 @@ def default_workspace_config(project_root: Path, profile_name: str) -> dict[str,
             "archive_name_prefix": "audit"
         },
         
-        "project_root": "..",
+        "project_root": ".",
         "glossary_file": WORKSPACE_GLOSSARY,
         "languagetool_dir": "vendor",
         "ar_locale_qc": {
@@ -411,3 +412,54 @@ def workspace_status(project_root: Path) -> dict[str, Any]:
         "version_path": version_path,
         "glossary_path": glossary_path,
     }
+
+
+def _copy_path(src: Path, dst: Path) -> None:
+    """Helper to copy a file or a directory structure."""
+    if not src.exists():
+        return
+    if src.is_file():
+        shutil.copy2(src, dst)
+    elif src.is_dir():
+        # dirs_exist_ok=True is used because we ensure workspace is clean/prepapped
+        shutil.copytree(src, dst, dirs_exist_ok=True, ignore_dangling_symlinks=True)
+
+
+def prepare_audit_workspace(runtime: Any, force_clean: bool = True) -> Any:
+    """Prepares an isolated workspace for the current audit run.
+    
+    Copies original locale files into .l10n-audit/workspace/ to prevent
+    accidental modification of source data.
+    
+    Returns the updated runtime object with paths pointing to the workspace.
+    """
+    project_root = runtime.project_root
+    ws_base = workspace_dir(project_root) / WORKSPACE_RUN_DIR
+    
+    # 1. Clean workspace before run to avoid data accumulation
+    if force_clean and ws_base.exists():
+        shutil.rmtree(ws_base, ignore_errors=True)
+    
+    ws_base.mkdir(parents=True, exist_ok=True)
+    
+    # 2. Copy EN/AR files/directories into workspace
+    # 2a. Store originals for fix-application phase later
+    if hasattr(runtime, "en_file"):
+        runtime.original_en_file = runtime.en_file
+    if hasattr(runtime, "ar_file"):
+        runtime.original_ar_file = runtime.ar_file
+
+    # 2b. Maintain the original filename/extension in the workspace
+    if hasattr(runtime, "en_file") and runtime.en_file.exists():
+        target_en = ws_base / runtime.en_file.name
+        _copy_path(runtime.en_file, target_en)
+        # Update runtime in-memory to point to the isolated copy
+        runtime.en_file = target_en
+        
+    if hasattr(runtime, "ar_file") and runtime.ar_file.exists():
+        target_ar = ws_base / runtime.ar_file.name
+        _copy_path(runtime.ar_file, target_ar)
+        # Update runtime in-memory to point to the isolated copy
+        runtime.ar_file = target_ar
+        
+    return runtime

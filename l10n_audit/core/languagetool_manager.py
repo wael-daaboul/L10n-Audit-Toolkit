@@ -150,6 +150,10 @@ def _ensure_local_server(installation: LocalLanguageToolInstallation, port: int 
 
 
 def create_language_tool_session(language: str, runtime, *, port: int = DEFAULT_LOCAL_PORT) -> LanguageToolSession:
+    from l10n_audit.core.utils import check_java_available, get_java_missing_warning
+    if not check_java_available():
+        return LanguageToolSession(None, "rule-based", get_java_missing_warning(language.split("-")[0].upper()))
+
     try:
         import language_tool_python  # type: ignore
     except Exception as exc:
@@ -170,6 +174,14 @@ def create_language_tool_session(language: str, runtime, *, port: int = DEFAULT_
 
     try:
         tool = language_tool_python.LanguageTool(language)
-        return LanguageToolSession(tool, "LanguageTool mode: cached/downloaded fallback", "Using language-tool-python fallback.")
+        # Apply mandatory timeout to the internal session to prevent infinite hanging
+        if hasattr(tool, "_session"):
+            orig_request = tool._session.request
+            def timeout_request(*args, **kwargs):
+                kwargs.setdefault("timeout", 5.0)
+                return orig_request(*args, **kwargs)
+            tool._session.request = timeout_request
+            
+        return LanguageToolSession(tool, "LanguageTool mode: cached/downloaded fallback", "Using language-tool-python fallback with 5s timeout enforcement.")
     except Exception as exc:
         return LanguageToolSession(None, "rule-based", f"LanguageTool fallback unavailable: {exc}")

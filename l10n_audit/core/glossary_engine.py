@@ -45,3 +45,22 @@ def apply_text_replacements(text: str, rules: dict[str, str]) -> str:
         result = pattern.sub(approved, result)
         
     return result
+
+
+def validate_item(item: dict, glossary_data: dict) -> tuple[bool, list[str]]:
+    """
+    Validates a single translation item against the glossary.
+    Returns (is_valid, list_of_errors).
+    """
+    from l10n_audit.ai.verification import validate_glossary_compliance
+    
+    source = item.get("source", "")
+    suggestion = item.get("suggestion", "")
+    
+    if not source or not suggestion:
+        return True, []
+        
+    is_valid, error = validate_glossary_compliance(suggestion, source, glossary_data)
+    if not is_valid:
+        return False, [error]
+    return True, []

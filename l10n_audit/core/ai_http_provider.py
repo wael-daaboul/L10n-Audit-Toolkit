@@ -28,3 +28,10 @@ class HttpAIProvider:
             return verify_batch_fixes(batch, response["fixes"], glossary=glossary)
         return []
 
+    def request(self, system_prompt: str, batch: list[dict], config: dict | None = None) -> dict:
+        """New generic request interface for use with AISiftingReviewer."""
+        from l10n_audit.ai.provider import request_ai_review
+        # Merge system prompt with batch prompt or handle separately
+        # For now, we'll prefix the system prompt to the user prompt logic
+        return request_ai_review(system_prompt, config or {})
+

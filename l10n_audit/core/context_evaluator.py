@@ -153,6 +153,9 @@ def load_en_languagetool_signals(results_dir: Path) -> dict[str, dict[str, Any]]
 
 
 def build_language_tool_python_signals(ar_data: dict[str, object], runtime) -> dict[str, dict[str, Any]]:
+    from l10n_audit.core.utils import check_java_available
+    if not check_java_available():
+        return {}
     session = create_language_tool_session("ar", runtime)
     if session.tool is None:
         return {}

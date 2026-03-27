@@ -16,6 +16,7 @@ def _php_escape(value: str) -> str:
 
 
 def _insert_nested(target: dict[str, object], parts: list[str], value: object) -> None:
+    import logging
     current = target
     for part in parts[:-1]:
         child = current.get(part)
@@ -23,12 +24,21 @@ def _insert_nested(target: dict[str, object], parts: list[str], value: object) -
             child = {}
             current[part] = child
         elif not isinstance(child, dict):
-            raise AuditRuntimeError(f"Cannot export Laravel locale: structural collision at '{part}'.")
+            # Collision!
+            full_key = ".".join(parts)
+            logging.warning(f"Structural collision at key '{full_key}': part '{part}' is already a scalar. Keeping key flat.")
+            target[full_key] = value
+            return
         current = child
-    existing = current.get(parts[-1])
+    
+    last_part = parts[-1]
+    existing = current.get(last_part)
     if isinstance(existing, dict):
-        raise AuditRuntimeError(f"Cannot export Laravel locale: key collision at '{'.'.join(parts)}'.")
-    current[parts[-1]] = value
+        full_key = ".".join(parts)
+        logging.warning(f"Structural collision at key '{full_key}': final part is already a dict. Keeping key flat.")
+        target[full_key] = value
+    else:
+        current[last_part] = value
 
 
 def _serialize_php(value: object, indent: int = 0) -> str:

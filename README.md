@@ -1,8 +1,8 @@
-# 🌍 L10n Audit Toolkit (v1.3.0)
+# 🌍 L10n Audit Toolkit (v1.3.1)
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 [![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
-[![Tests](https://img.shields.io/badge/Tests-142%20Passed-brightgreen.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Tests](https://img.shields.io/badge/Tests-154%20Passed-brightgreen.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 ![Release](https://img.shields.io/github/v/release/wael-daaboul/L10n-Audit-Toolkit)
 
 
@@ -18,34 +18,37 @@ The **L10n Audit Toolkit** is a professional-grade, project-agnostic localizatio
 
 ---
 
-## 🏗️ Version 1.3.0: Persistent Staging & Terminology Enforcement
+## 🏗️ Version 1.3.1: Workspace Isolation & AI Preprocessing
 
-Starting with **v1.3.0**, the toolkit introduces **Persistent Staging** for verified translations and **Strict Glossary Enforcement** with AI self-correction logic.
+Starting with **v1.3.1**, the toolkit introduces **Workspace Isolation** to protect project files and **English Preprocessing** to enhance AI translation quality.
 
 > [!IMPORTANT]
-> This version introduces the `.l10n-audit/staged/` directory. Translations verified in previous runs are now persisted and automatically applied in subsequent audits (Idempotency), ensuring that manual approvals are never lost.
+> The audit engine now operates within an isolated `.l10n-audit/workspace/` environment. Project files are copied for analysis, and findings are exported as separate `.fix` files, ensuring that your original codebase remains untouched until you explicitly apply the fixes.
 
 ---
 
-## 🚀 Key Features in v1.3.0
+## 🚀 Key Features in v1.3.1
 
-### 🛡️ Persistent Staged Storage
-Verified translations are moved to a protected `.l10n-audit/staged/` directory.
-- **Auto-Migration**: Once a translation is marked as "verified", it is automatically migrated to the staged area.
-- **Idempotency**: The `autofix` stage prioritizes staged translations over new suggestions, preventing "correction loops".
-- **Safety**: The `staged/` directory is never cleared by standard cleanup routines.
+### 🛡️ Full Workspace Isolation
+All audits now run on temporary copies of your locale files.
+- **Safety**: Original project files are never modified during the audit.
+- **Support**: Native support for file-based (JSON) and folder-based (Laravel PHP) structures.
+- **Cleanup**: Automatic workspace management prevents data pollution between runs.
 
-### 📚 Strict Glossary Enforcement & AI Retries
-The AI review engine now strictly follows your `glossary.json`.
-- **Glossary Validation**: Every AI suggestion is checked against the glossary before being accepted.
-- **Smart Retries**: If an AI suggestion violates glossary rules, the engine automatically retries (up to 3 times).
-- **Negative Prompts**: Retries include explicit feedback to the AI about the specific violation, forcing better compliance.
+### 🧹 English Preprocessing
+Automated cleaning of English source text before it reaches the AI.
+- **Noise Filtering**: Removes common typos and technical artifacts.
+- **Contraction Handling**: Fixes common issues like `dont` -> `don't` or `cant` -> `can't`.
+- **Quality**: Better input results in significantly more accurate AI-suggested translations.
 
-### 🛠️ Integrated Auto-Fixer
-The `autofix` stage has been refactored to be more robust:
-- **Direct Scan Pass**: Automatically fixes common whitespace and punctuation issues without AI calls.
-- **Safe AI Integration**: Only applies AI suggestions that pass strict validation (placeholders, HTML, glossary).
-- **Excluded Paths**: Respects `excluded_paths` in `config.json` to avoid touching sensitive files.
+### 🔄 Unified Fix Merger
+A streamlined engine to consolidate all corrections.
+- **Merging**: Combines `auto_safe` corrections with human-approved fixes from `review_queue.xlsx`.
+- **Exporting**: Generates `.fix` files (e.g., `en.fix.json` or `lang.fix/`) maintaining the original structure.
+- **Human-in-the-Loop**: Seamlessly integrates reviewed items into the final patch.
+
+### 🛡️ Persistent Staged Storage (v1.3.0+)
+Verified translations are moved to a protected `.l10n-audit/staged/` directory for idempotency and safety.
 
 ---
 

@@ -90,10 +90,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"Workspace   : {status['workspace_dir']}")
     print(f"Framework   : {status['detected_profile']}")
     
-    print(f"\n[Environment Checks]")
-    print(f" - Workspace exists: {'✅ yes' if status['workspace_exists'] else '❌ no'}")
-    print(f" - Config exists   : {'✅ yes' if status['config_exists'] else '❌ no'}")
-    print(f" - Glossary exists : {'✅ yes' if status['glossary_exists'] else '⚠️ no'}")
+    from l10n_audit.core.utils import check_java_available
+    java_ok = check_java_available()
+    print(f" - Workspace exists : {'✅ yes' if status['workspace_exists'] else '❌ no'}")
+    print(f" - Config exists    : {'✅ yes' if status['config_exists'] else '❌ no'}")
+    print(f" - Glossary exists  : {'✅ yes' if status['glossary_exists'] else '⚠️ no'}")
+    print(f" - Java (for LT)    : {'✅ found' if java_ok else '❌ NOT FOUND'}")
+    
+    if not java_ok:
+        print(f"\n[Java Required for Grammar Audits]")
+        print(f" LanguageTool requires a Java runtime for local execution.")
+        print(f" Please install Java to enable full linguistic analysis:")
+        print(f"   • macOS: brew install openjdk")
+        print(f"   • Ubuntu: sudo apt install default-jre")
+        print(f"   • Windows: https://adoptium.net/")
     
     # 1. Configuration Schema Validation
     if status['config_exists']:
@@ -145,8 +155,32 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def get_ai_model(args, config_dict):
+    """
+    Resolves the AI model name from CLI args or config.
+    Supports short names (shortcuts) like 'reasoner', 'chat', 'fast'.
+    """
+    # 1. CLI Override
+    cli_model = getattr(args, "ai_model", None)
+    available_models = config_dict.get("available_models", {})
+    
+    if cli_model in available_models:
+        return available_models[cli_model]
+    if cli_model:
+        return cli_model
+        
+    # 2. Config Fallback
+    config_model = config_dict.get("model")
+    if config_model:
+        return config_model
+        
+    # 3. Ultimate Default
+    return "deepseek/deepseek-chat"
+
+
 def cmd_run(args: argparse.Namespace) -> int:
-    project_root = find_project_root(Path(args.path or Path.cwd()))
+    path_val = args.project_root if getattr(args, "project_root", None) else args.path
+    project_root = find_project_root(Path(path_val).resolve())
     config_path = workspace_config_path(project_root)
     
     verbose = getattr(args, "verbose", False)
@@ -173,10 +207,22 @@ def cmd_run(args: argparse.Namespace) -> int:
         from l10n_audit.api import _stage_module_names
 
         if verbose:
-            print(f"  [Engine] L10n Audit Engine v{l10n_audit.__version__} loaded.")
+            version = getattr(l10n_audit, '__version__', '1.3.1')
+            print(f"  [Engine] L10n Audit Engine v{version} loaded.")
             print(f"  [Stage] Target: {stage}")
 
+        # Resolve model name dynamically
+        from l10n_audit.core.workspace import read_json
+        config_dict = {}
+        if config_path.exists():
+            try:
+                config_dict = read_json(config_path).get("ai_review", {})
+            except Exception:
+                pass
+        
+        resolved_model = get_ai_model(args, config_dict)
         ai_enabled = getattr(args, "ai_enabled", False)
+        
         for label in _stage_module_names(stage, ai_enabled=ai_enabled):
             print(f"Running {label}...")
 
@@ -184,20 +230,22 @@ def cmd_run(args: argparse.Namespace) -> int:
         result = l10n_audit.run_audit(
             project_root,
             stage=stage,
-            ai_enabled=getattr(args, "ai_enabled", False),
+            ai_enabled=ai_enabled,
             ai_api_key=getattr(args, "ai_api_key", None),
-            ai_model=getattr(args, "ai_model", None),
+            ai_model=resolved_model,
             ai_api_base=getattr(args, "ai_api_base", None),
             write_reports=True,
             apply_safe_fixes=getattr(args, "apply_safe_fixes", False),
             results_retention_mode=getattr(args, "retention_mode", None),
             results_retention_prefix=getattr(args, "retention_prefix", None),
             # New Power-User Arguments
+            translate_missing=getattr(args, "translate_missing", False),
             glossary_path=getattr(args, "glossary", None),
             out_xlsx=getattr(args, "out_xlsx", None),
             config_schema=getattr(args, "schema", None),
-            verbose=verbose,
-            force=force
+            verbose=args.verbose,
+            force=args.force,
+            input_report=getattr(args, "input_report", None),
         )
 
         if not result.success:
@@ -264,11 +312,53 @@ def cmd_update(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_self_update(_args: argparse.Namespace) -> int:
-    print("If you installed the launcher with pipx, run:")
-    print("pipx upgrade l10n-audit-toolkit")
-    print("If you installed from GitHub directly, run:")
-    print("pipx upgrade --include-injected l10n-audit-toolkit")
+def cmd_self_update(args: argparse.Namespace) -> int:
+    """يعرض تعليمات تحديث الأداة عبر pipx."""
+    print("\n🚀 لتحديث أداة l10n-audit لآخر إصدار، نفذ الأمر التالي:")
+    print("   pipx upgrade l10n-audit-toolkit\n")
+    return 0
+
+
+def cmd_apply(args: argparse.Namespace) -> int:
+    path_val = getattr(args, "path", ".")
+    project_root = find_project_root(Path(path_val).resolve())
+    
+    from l10n_audit.core.audit_runtime import load_runtime
+    # load_runtime will find the .l10n-audit folder starting from project_root
+    runtime = load_runtime(project_root / "cli_anchor", validate=False)
+    
+    from l10n_audit.fixes.apply_review_fixes import run_apply
+    
+    # Default to .l10n-audit/Results/review/review_queue.xlsx if not provided
+    review_queue = Path(args.review_queue) if args.review_queue else runtime.results_dir / "review" / "review_queue.xlsx"
+    if not args.review_queue and not review_queue.exists():
+        # Fallback to absolute project-root based path if runtime results_dir didn't help
+        review_queue = project_root / ".l10n-audit" / "Results" / "review" / "review_queue.xlsx"
+    
+    if not review_queue.exists():
+        print(f"❌ Error: Review queue not found at {review_queue}")
+        print("   Please run an audit first or specify the path with --review-queue")
+        return 1
+
+    print(f"🛠️ Applying fixes from: {review_queue.name}")
+    if args.all:
+        print("🚀 Mode: --all (Merging all suggestions including AI)")
+    
+    report = run_apply(
+        runtime,
+        review_queue,
+        apply_all=args.all,
+        out_final_json=str(runtime.results_dir / "final_locale" / "ar.final.json"),
+        out_report=str(runtime.results_dir / "final_locale" / "review_fixes_report.json")
+    )
+    
+    print(f"\n✅ Apply complete:")
+    print(f"   - Approved/All items applied: {report['summary']['approved_rows_applied']}")
+    print(f"   - Items skipped (conflicts):  {report['summary']['approved_rows_skipped']}")
+    
+    if report['summary']['en_fixed_files'] or report['summary']['ar_fixed_files']:
+        print(f"   - Result: Generated .fix files next to original locale files.")
+    
     return 0
 
 
@@ -298,11 +388,13 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--stage", default="full",
         choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix", "ai-review"],
+        help="تحديد مرحلة الفحص (fast: سريع، full: شامل، ai-review: مراجعة الذكاء الاصطناعي)"
     )
-    run_parser.add_argument("--ai-enabled", action="store_true", help="Enable AI review features (opt-in)")
+    run_parser.add_argument("--ai-enabled", action="store_true", help="تفعيل مراجعة الذكاء الاصطناعي (اختياري)")
     run_parser.add_argument("--ai-api-key", help="API Key for AI provider")
     run_parser.add_argument("--ai-api-base", help="Custom API Base URL (OpenAI-compatible)")
     run_parser.add_argument("--ai-model", help="AI Model to use")
+    run_parser.add_argument("--translate-missing", action="store_true", help="Auto-translate missing keys using AI")
     run_parser.add_argument("--apply-safe-fixes", action="store_true", help="Automatically apply terminology fixes after audit.")
     run_parser.add_argument("--retention-mode", choices=["archive", "overwrite"], help="How to handle previous Results/ (archive or overwrite)")
     run_parser.add_argument("--retention-prefix", help="Prefix for archive folders (default: 'audit')")
@@ -310,7 +402,11 @@ def build_parser() -> argparse.ArgumentParser:
     # Unified 'Hidden Gems'
     run_parser.add_argument("--glossary", help="Path to a custom terminology glossary JSON.")
     run_parser.add_argument("--out-xlsx", help="Override path for the generated Excel report artifact.")
+    run_parser.add_argument("--project-root", help="Explicit path to the project source root (overrides --path).")
+    run_parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed execution logs and progress.")
+    run_parser.add_argument("-f", "--force", action="store_true", help="Force operation (e.g., overwrite files or skip pipeline guards).")
     run_parser.add_argument("--reset", action="store_true", help="Safely clear all existing results/cache before starting.")
+    run_parser.add_argument("--input-report", help="Path to a previous JSON report to reload data from (for reports/autofix stages)")
     
     run_parser.set_defaults(func=cmd_run)
 
@@ -329,6 +425,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     self_update_parser = subparsers.add_parser("self-update", help="Show how to update the global launcher")
     self_update_parser.set_defaults(func=cmd_self_update)
+
+    apply_parser = subparsers.add_parser("apply", help="Apply approved fixes from the review queue to original files")
+    apply_parser.add_argument("--path", default=".", help="Project root path")
+    apply_parser.add_argument("--review-queue", help="Path to review_queue.xlsx (optional)")
+    apply_parser.add_argument("--all", action="store_true", help="Force-apply all suggestions (including AI) regardless of status")
+    apply_parser.set_defaults(func=cmd_apply)
+
     return parser
 
 

@@ -45,19 +45,29 @@
 
   "ai_review": {
     "//_enabled": "Enable LLM semantic review | تفعيل المراجعة بالذكاء الاصطناعي",
-    "enabled": false,
+    "enabled": true,
 
     "//_provider": "AI Provider (openai/deepseek/litellm) | مزود خدمة الذكاء الاصطناعي",
-    "provider": "litellm",
+    "provider": "deepseek",
 
     "//_model": "LLM Identifier (e.g. gpt-4o-mini) | معرف نموذج اللغة",
-    "model": "gpt-4o-mini",
+    "model": "deepseek/deepseek-reasoner",
+
+    "//_available_models": "Supported AI models | النماذج المدعومة",
+    "available_models": {
+        "reasoner": "deepseek/deepseek-reasoner",
+        "chat": "deepseek/deepseek-chat",
+        "fast": "gpt-4o-mini"
+    },
 
     "//_api_key_env": "Env var for API key | اسم متغير البيئة لمفتاح API",
-    "api_key_env": "OPENAI_API_KEY",
+    "api_key_env": "DEEPSEEK_API_KEY",
+
+    "//_max_retries": "Number of retries for failed items | عدد محاولات إعادة الفحص",
+    "max_retries": 5,
 
     "//_batch_size": "Number of labels per AI request | عدد النصوص في كل طلب",
-    "batch_size": 20
+    "batch_size": 25
   },
 
   "output": {

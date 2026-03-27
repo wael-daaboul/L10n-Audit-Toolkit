@@ -5,7 +5,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from l10n_audit.core.audit_runtime import write_json
+from l10n_audit.core.audit_runtime import write_json, compute_text_hash
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
@@ -309,6 +309,16 @@ def normalize_icu_message_audit(payload: dict[str, Any]) -> list[dict[str, Any]]
 def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
+        # v1.3.1 - Robust extraction for merging
+        suggestion = (
+            str(row.get("suggestion") or "") or
+            str(row.get("candidate_value") or "") or
+            str(row.get("approved_new") or "") or
+            str(row.get("suggested_fix") or "")
+        ).strip()
+        
+        old_val = str(row.get("source") or row.get("original_source") or row.get("source_old_value") or "")
+        
         issues.append(
             {
                 "source": "ai_review",
@@ -316,9 +326,15 @@ def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "key": str(row.get("key", "")),
                 "issue_type": "ai_suggestion",
                 "severity": "info",
-                "message": str(row.get("identified_issue", "AI Review feedback")),
-                "locale": "ar",
+                "message": str(row.get("identified_issue") or row.get("message") or "AI Review feedback"),
+                "locale": str(row.get("locale") or "ar"),
+                "suggested_fix": suggestion,
+                "approved_new": suggestion,
+                "source_old_value": old_val,
+                "source_hash": str(row.get("source_hash") or compute_text_hash(old_val)),
+                "suggested_hash": str(row.get("suggested_hash") or compute_text_hash(suggestion)),
                 "details": row,
+                "provenance": str(row.get("provenance") or "ai_review|ai_suggestion"),
                 "recommendation": "Review AI suggestions for accuracy and fit before applying to your final translation set.",
             }
         )
@@ -385,6 +401,18 @@ def load_all_report_issues(results_dir: Path, include_sources: set[str] | None =
 
     issues = sort_issues(dedupe_issues(issues))
     return reports, issues, missing
+
+
+def load_hydrated_report(report_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    """Loads a single aggregated JSON report (final_audit_report.json) and hydratess findings."""
+    payload = load_json_report(report_path)
+    if payload is None:
+        return {}, [], [str(report_path)]
+    
+    issues = payload.get("issues", [])
+    # Re-normalize if they were raw tool outputs in the 'issues' list
+    # but usually if it comes from final_audit_report.json, they are already normalized.
+    return payload, issues, []
 
 
 def summarize_issues(issues: list[dict[str, Any]]) -> dict[str, Any]:

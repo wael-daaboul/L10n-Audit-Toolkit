@@ -125,8 +125,11 @@ class AuditIssue:
     file: str = ""
     line: int | None = None
     suggestion: str = ""
+    suggested_fix: str = ""
+    approved_new: str = ""
     source: str = ""
     target: str = ""
+    needs_review: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -195,12 +198,16 @@ def issue_from_dict(raw: dict[str, Any]) -> AuditIssue:
         file=str(file_val),
         line=raw.get("line"),
         suggestion=str(raw.get("suggestion") or ""),
+        suggested_fix=str(raw.get("suggested_fix") or raw.get("suggestion") or ""),
+        approved_new=str(raw.get("approved_new") or raw.get("suggestion") or ""),
         source=str(raw.get("source") or ""),
         target=str(raw.get("target") or raw.get("current_translation") or ""),
+        needs_review=bool(raw.get("needs_review", False)),
         extra={k: v for k, v in raw.items() if k not in {
             "key", "code", "issue_type", "type", "severity", "locale",
             "message", "description", "file", "line", "suggestion",
-            "source", "target", "current_translation",
+            "suggested_fix", "approved_new",
+            "source", "target", "current_translation", "needs_review",
         }},
     )
 
@@ -344,8 +351,10 @@ class AIReview:
     provider: str = "litellm"  # AI provider name (openai, deepseek, etc) / مزود خدمة الذكاء الاصطناعي
     model: str | None = None  # Model identifier (e.g. 'gpt-4o-mini') / اسم نموذج الذكاء الاصطناعي
     api_key_env: str | None = None  # Env var for API key / اسم متغير البيئة لمفتاح API
-    batch_size: int = 20  # Number of keys per AI request / عدد المفاتيح في كل طلب للذكاء الاصطناعي
+    batch_size: int = 10  # Number of keys per AI request / عدد المفاتيح في كل طلب للذكاء الاصطناعي
+    max_retries: int = 5  # Maximum retry attempts for glossary compliance / أقصى عدد لمحاولات إعادة المحاولة
     short_label_threshold: int = 3  # Min words for context evaluation / الحد الأدنى للكلمات لتقييم السياق
+    translate_missing: bool = False  # Auto-translate missing keys / الترجمة الآلية للمفاتيح المفقودة
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -391,7 +400,7 @@ class AuditOptions:
     ar_locale_qc: ARLocaleQC = field(default_factory=ARLocaleQC)
 
     # Environment paths (often overridden by runtime)
-    project_root: str = ".."
+    project_root: str = "."
     # Power-user Overrides
     glossary_file: str | Path | None = "glossary.json"
     out_xlsx: str | Path | None = None
@@ -401,6 +410,9 @@ class AuditOptions:
     # Internal injection for testing / Feedback
     ai_provider_override: Any | None = None
     verbose: bool = False
+    
+    # v1.3.1 - Hydration / Cache Loading
+    input_report: str | Path | None = None
 
     def effective_output_dir(self, runtime_results_dir: Path) -> Path:
         """Determines the final results directory by checking output options."""

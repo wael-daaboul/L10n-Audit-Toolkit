@@ -17,22 +17,24 @@ from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
 def test_ai_glossary_violation_retry(mock_litellm):
     # Mock AI returning a forbidden term
     mock_litellm.return_value = {
-        "fixes": [{"key": "test_key", "suggestion": "forbidden_word", "reason": "AI made a mistake"}]
+        "fixes": [{"key": "test_key", "suggestion": "badterm", "reason": "AI made a mistake"}]
     }
     
     glossary = {
         "rules": {
-            "forbidden_terms": [{"forbidden_ar": "forbidden_word", "use_instead": "approved_word"}]
+            "forbidden_terms": [{"forbidden_ar": "badterm", "use_instead": "approved_word"}]
         }
     }
     
     config = {"api_key": "fake", "model": "gpt-4"}
     batch = [{"key": "test_key", "source": "English", "current_translation": "Arabic"}]
     
-    with pytest.raises(GlossaryViolationError) as excinfo:
-        request_ai_review("prompt", config, original_batch=batch, glossary=glossary, max_retries=2)
+    # With SOFT ENFORCEMENT, it should NOT raise GlossaryViolationError
+    # but it should RETRY and then return the response with needs_review=True
+    response = request_ai_review("prompt", config, original_batch=batch, glossary=glossary, max_retries=2)
     
-    assert "Glossary enforcement failed" in str(excinfo.value)
+    assert response["fixes"][0]["needs_review"] is True
+    assert "compliance_warning" in response["fixes"][0]
     # Ensure it tried exactly 2 times (based on max_retries)
     assert mock_litellm.call_count == 2
 

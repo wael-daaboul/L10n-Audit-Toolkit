@@ -22,14 +22,42 @@ def setup_audit_logger():
 
 audit_logger = setup_audit_logger()
 
-def request_ai_review(prompt, config, original_batch=None, glossary=None, max_retries=3):
+def clean_json_response(raw_content):
+    """
+    Ensures the response is a valid JSON string even if truncated or wrapped in markdown.
+    """
+    import re
+    # 0. strip markdown code blocks
+    content = raw_content.strip()
+    if content.startswith("```"):
+        # Remove ```json or just ```
+        content = re.sub(r"^```(?:json)?", "", content)
+        # Remove trailing ```
+        content = re.sub(r"```$", "", content).strip()
+
+    # Look for the outermost JSON object or array if still not clean
+    json_match = re.search(r'(\{.*\}|\[.*\])', content, re.DOTALL)
+    if json_match:
+        content = json_match.group(1)
+        # Repair truncated JSON by closing open braces
+        if content.count('{') > content.count('}'):
+            content += '}' * (content.count('{') - content.count('}'))
+        if content.count('[') > content.count(']'):
+            content += ']' * (content.count('[') - content.count(']'))
+        return content
+    return content
+
+def request_ai_review(prompt, config, original_batch=None, glossary=None, max_retries=None):
     """
     Connects to AI using litellm to get a review suggestion.
-    Implements a 3-retry mechanism for glossary compliance.
+    Implements a SOFT enforcement mechanism for glossary compliance.
     """
     current_prompt = prompt
     negative_feedback = ""
     last_errors = []
+    
+    if max_retries is None:
+        max_retries = config.get("max_retries", 5)
 
     for attempt in range(max_retries):
         full_prompt = current_prompt
@@ -51,23 +79,28 @@ def request_ai_review(prompt, config, original_batch=None, glossary=None, max_re
                 key = fix.get("key")
                 suggestion = fix.get("suggestion")
                 if key in source_by_key and suggestion:
-                    ok, reason = validate_glossary_compliance(suggestion, source_by_key[key], glossary)
+                    ok, reason = validate_glossary_compliance(suggestion, source_by_key[key], glossary, key=key)
                     if not ok:
                         compliance_errors.append(f"Key '{key}': {reason}")
+                        # Soft Enforcement: Mark for review instead of strictly rejecting the batch
+                        fix["needs_review"] = True
+                        fix["compliance_warning"] = reason
             
-            if compliance_errors:
+            if compliance_errors and attempt < max_retries - 1:
                 last_errors = compliance_errors
-                logging.warning(f"AI Response failed glossary compliance (attempt {attempt + 1}): {compliance_errors}")
+                logging.warning(f"AI Response has glossary compliance warnings (attempt {attempt + 1}): {compliance_errors}")
                 negative_feedback = "The previous response violated terminology rules:\n- " + "\n- ".join(compliance_errors[:5])
-                continue # Retry with negative feedback
+                continue # Retry to get a better version, but won't hard-crash if last attempt
+            
+            # On last attempt or if successful, return what we have with flags
+            return response
 
         return response
     
     if last_errors:
-        err_msg = f"Glossary enforcement failed after {max_retries} attempts: {'; '.join(last_errors[:3])}"
-        audit_logger.error(err_msg) # Log to logs/audit_errors.log
-        print(f"\n❌ [CRITICAL ERROR]: {err_msg}") # Log to Terminal
-        raise GlossaryViolationError(err_msg)
+        err_msg = f"Glossary enforcement warnings after {max_retries} attempts for sample keys."
+        audit_logger.warning(err_msg)
+        print(f"\n⚠️ [GLOSSARY WARNING]: {err_msg} Check the report for flagged items.")
             
     return None
 
@@ -88,7 +121,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
         return None
 
     messages = [
-        {"role": "system", "content": "You are a localization expert. Return JSON ONLY. Follow the glossary strictly."},
+        {"role": "system", "content": "You are a localization expert. You MUST return a valid JSON object EXCLUSIVELY. No conversational text, no backticks, no notes before or after the JSON. Follow the glossary strictly."},
         {"role": "user", "content": prompt}
     ]
     
@@ -107,21 +140,12 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                 base_url=api_base,
                 temperature=0.0,
                 response_format=response_format,
+                timeout=60, # 60 second timeout per request
                 num_retries=1 # handle retries manually for better logging
             )
             
             content = response.choices[0].message.content
-            content = content.strip()
-            
-            # Clean markdown if present
-            if content.startswith("```"):
-                if content.startswith("```json"):
-                    content = content[len("```json"):]
-                elif content.startswith("```"):
-                    content = content[len("```"):]
-                if content.endswith("```"):
-                    content = content.rsplit("```", 1)[0]
-                content = content.strip()
+            content = clean_json_response(content)
  
             try:
                 return json.loads(content)

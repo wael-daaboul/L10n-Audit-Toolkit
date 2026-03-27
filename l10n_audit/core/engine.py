@@ -1,10 +1,13 @@
 """
-Core engine — dispatches audit stages to Python functions directly.
+محرك التدقيق الأساسي (Core Engine) — يقوم بتنسيق وتنفيذ مراحل التدقيق المختلفة.
 
-No ``subprocess`` is used.  Each audit stage calls the corresponding
-audit module's :func:`run_stage` function in-process.
-
-The engine is the heart of :func:`l10n_audit.api.run_audit`.
+شرح مراحل التدقيق (Stages):
+1. fast (التدقيق السريع): يركز على الفحوصات اللغوية والتقنية الأساسية؛ مناسب للاستخدام اليومي 
+   أثناء التطوير للتأكد من سلامة المتغيرات والقواميس.
+2. full (التدقيق الشامل): يتضمن جميع فحوصات المرحلة السريعة بالإضافة إلى فحص القواعد النحوية 
+   (Grammar Audit) باستخدام LanguageTool، وفحص رسائل ICU المعقدة.
+3. ai-review (المراجعة بالذكاء الاصطناعي): مرحلة اختيارية تستخدم النماذج اللغوية (LLMs) 
+   لاقتراح ترجمات للمفاتيح المفقودة أو تحسين صياغة النصوص الحالية بناءً على السياق.
 """
 from __future__ import annotations
 
@@ -79,9 +82,9 @@ def _run_ai_review(runtime, options: AuditOptions, ai_provider=None, previous_is
     return run_stage(runtime, options, ai_provider=ai_provider, previous_issues=previous_issues)
 
 
-def _run_report_aggregator(runtime, options: AuditOptions, **_) -> list[ReportArtifact]:
+def _run_report_aggregator(runtime, options: AuditOptions, **kwargs) -> list[ReportArtifact]:
     from l10n_audit.reports.report_aggregator import run_stage
-    return run_stage(runtime, options)
+    return run_stage(runtime, options, **kwargs)
 
 
 def _run_autofix(runtime, options: AuditOptions) -> list[AuditIssue]:

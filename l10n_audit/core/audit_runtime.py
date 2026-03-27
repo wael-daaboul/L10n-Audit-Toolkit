@@ -1,4 +1,12 @@
-#!/usr/bin/env python3
+"""
+نظام إدارة الجلسة (Audit Runtime) — هو العصب المركزي للأداة.
+
+الدور في الأوامر الأساسية:
+1. init (التهيئة): يقوم المحرك باستكشاف إطار العمل (Framework) تلقائياً، وإنشاء مجلد .l10n-audit 
+   مع ملف التكوين (config.json) والقواميس الافتراضية.
+2. doctor (التشخيص): يعتمد هذا الأمر على كائن Runtime للتأكد من سلامة المسارات، وجود Java 
+   (لمحرك LanguageTool)، وجاهزية مفاتيح الذكاء الاصطناعي.
+"""
 from __future__ import annotations
 
 import csv
@@ -21,7 +29,7 @@ class AuditRuntimeError(RuntimeError):
     pass
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class AuditPaths:
     tools_dir: Path
     config_dir: Path
@@ -57,6 +65,8 @@ class AuditPaths:
     latin_whitelist: tuple[str, ...]
     ai_review: dict[str, Any]
     output: dict[str, Any]
+    original_en_file: Path | None = None
+    original_ar_file: Path | None = None
 
 
 def _resolve_config_path(base_dir: Path, raw_value: str | None, fallback: Path) -> Path:
@@ -148,6 +158,8 @@ def detect_tools_dir(script_path: str | Path) -> Path:
             
     search_roots = [current] + list(current.parents)
     for candidate in search_roots:
+        if (candidate / ".l10n-audit").is_dir():
+            return candidate / ".l10n-audit"
         if (candidate / "config" / "config.json").exists():
             return candidate
         if (candidate / "Results").is_dir() and (candidate / "docs").is_dir():
@@ -302,6 +314,10 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
 
     runtime_config_dir = config_path.parent
     config_root_base = runtime_config_dir if override_config else tools_dir
+    if not override_config and config_root_base.name == ".l10n-audit":
+        # If we are inside the workspace folder, the project root is usually the parent.
+        config_root_base = config_root_base.parent
+        
     path_base_dir = tools_dir # Paths usually relative to .l10n-audit root
     
     config: dict[str, Any] = {}
@@ -402,6 +418,8 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
         locales_dir=locales_dir,
         en_file=en_file,
         ar_file=ar_file,
+        original_en_file=en_file,
+        original_ar_file=ar_file,
         code_dir=code_dir,
         code_dirs=code_dirs,
         glossary_file=glossary_file,

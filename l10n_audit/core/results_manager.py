@@ -139,3 +139,33 @@ def migrate_verified_to_staged(project_root: Path, results: Any) -> None:
         logger.info("Migrated %d verified translations to %s", new_approved_count, approved_file)
         approved_file.write_text(json.dumps(existing_approved, indent=2, ensure_ascii=False), encoding="utf-8")
 
+
+def save_to_staged(project_root: Path, item: dict) -> None:
+    """Saves a single verified suggestion directly to staged storage."""
+    import json
+    staged_dir = get_staged_dir(project_root)
+    approved_file = staged_dir / "approved_translations.json"
+    
+    existing_approved = {}
+    if approved_file.exists():
+        try:
+            existing_approved = json.loads(approved_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    key = item.get("key")
+    locale = item.get("locale", "ar") # Default to ar if missing
+    suggestion = item.get("suggestion")
+    
+    if key and suggestion:
+        existing_approved[f"{locale}:{key}"] = {
+            "key": key,
+            "locale": locale,
+            "suggestion": suggestion,
+            "source_text": item.get("source", ""),
+            "file": item.get("file", ""),
+            "migrated_at": datetime.now().isoformat(),
+            "verified": True
+        }
+        approved_file.write_text(json.dumps(existing_approved, indent=2, ensure_ascii=False), encoding="utf-8")
+

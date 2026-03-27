@@ -4,6 +4,7 @@
 import argparse
 import logging
 import os
+import re
 import json
 import concurrent.futures
 from pathlib import Path
@@ -221,21 +222,61 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
     en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
     ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
 
-    # Build batch
+    # Build batch with noise filtering
     flawed_keys: dict = {}
+    technical_prefixes = ("config", "setup", "uuid", "error_code", "zone")
+    technical_substr = ("_id", "_url")
+    uuid_pattern = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
     for issue in all_issues:
-        k = issue.get("key")
-        if not k:
+        k = str(issue.get("key", ""))
+        if not k or k.endswith("."): # Skip empty keys or parent keys
             continue
+            
+        # Skip technical keys (Recovery & Enhancement step 4)
+        k_lower = k.lower()
+        if k_lower.startswith(technical_prefixes) or any(s in k_lower for s in technical_substr) or uuid_pattern.search(k):
+            continue
+
         src = str(en_data.get(k, ""))
         target = str(ar_data.get(k, ""))
         if not src or not target:
             continue
+            
+        # Skip likely technical text (slugs, paths, IDs)
+        from l10n_audit.core.audit_runtime import is_likely_technical_text
+        from l10n_audit.fixes.apply_safe_fixes import preprocess_source_text
+        if is_likely_technical_text(src) or is_likely_technical_text(target):
+            continue
+
         desc = issue.get("message") or issue.get("description") or issue.get("issue_type") or "Unknown issue"
         if k in flawed_keys:
             flawed_keys[k]["identified_issue"] += f" | {desc}"
         else:
-            flawed_keys[k] = {"key": k, "source": src, "current_translation": target, "identified_issue": desc}
+            cleaned_src = preprocess_source_text(src)
+            flawed_keys[k] = {
+                "key": k,
+                "source": cleaned_src,
+                "original_source": src,
+                "current_translation": target,
+                "identified_issue": desc
+            }
+
+    # Add missing keys if translate_missing is enabled
+    if options.ai_review.translate_missing:
+        from l10n_audit.fixes.apply_safe_fixes import preprocess_source_text
+        for k, v in en_data.items():
+            if k not in ar_data or not str(ar_data.get(k, "")).strip():
+                if k not in flawed_keys:
+                    v_str = str(v)
+                    cleaned_v = preprocess_source_text(v_str)
+                    flawed_keys[k] = {
+                        "key": k,
+                        "source": cleaned_v,
+                        "original_source": v_str,
+                        "current_translation": "[MISSING]",
+                        "identified_issue": "Missing translation (Auto-translate requested)"
+                    }
 
     batch_items = list(flawed_keys.values())
     if not batch_items:

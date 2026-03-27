@@ -540,10 +540,17 @@ def detect_mixed_script_issues(key: str, text: str, extra_allowed_latin: set[str
     if compact_key and compact_text and compact_key == compact_text:
         return findings
 
-    if URL_OR_EMAIL_RE.search(text):
-        sanitized = URL_OR_EMAIL_RE.sub("", text)
+    # Mask placeholders to protect variables from being flagged as untranslated Latin
+    masked_text, _ = mask_placeholders(text)
+
+    if URL_OR_EMAIL_RE.search(masked_text):
+        # Remove URLs/Emails and placeholder tokens
+        sanitized = URL_OR_EMAIL_RE.sub("", masked_text)
     else:
-        sanitized = text
+        sanitized = masked_text
+    
+    # Strip masking tokens to avoid them being counted as Latin words
+    sanitized = re.sub(r"\[\[PH_\d+\]\]", " ", sanitized)
 
     latin_tokens = []
     for token in LATIN_TOKEN_RE.findall(sanitized):
@@ -827,6 +834,11 @@ def main() -> None:
         load_en_languagetool_signals(runtime.results_dir),
         build_language_tool_python_signals(ar_data, runtime),
     )
+
+    from l10n_audit.core.utils import check_java_available, get_java_missing_warning
+    if not check_java_available():
+        print(get_java_missing_warning("Arabic"))
+        lt_signals = load_en_languagetool_signals(runtime.results_dir)
 
     rows: list[dict[str, str]] = []
 

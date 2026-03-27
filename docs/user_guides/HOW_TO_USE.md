@@ -17,6 +17,8 @@ l10n-audit init
 ```
 *Why?* This creates a localized `.l10n-audit` folder containing your project's tailored configurations.
 
+**Important (Workspace Isolation)**: On every `run`, the toolkit copies your locale files to `.l10n-audit/workspace/`. Audits are performed on these copies to ensure the toolkit remains non-destructive.
+
 Check if everything was discovered correctly:
 ```bash
 l10n-audit doctor
@@ -49,12 +51,21 @@ export OPENROUTER_API_KEY="your-key"
 l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
 ```
 
-### 4. Direct Module Execution (Advanced)
-Instead of stages, you can run isolated checks:
+### 4. Applying Fixes (New in 1.3.1)
+After running audits or `ai-review`, you can merge the results back into your original source files.
+
+**Interactive Apply (Recommended)**: Review the generated `Review Queue` (XLSX/JSON) first, set the `status` to `approved` for the keys you want, and run:
 ```bash
-l10n-audit run --stage placeholders
-l10n-audit run --stage ar-semantic
+l10n-audit apply
 ```
+
+**Bulk Apply (AI + Safe)**: To force-apply all suggestions including AI-generated ones without individual review:
+```bash
+l10n-audit apply --all
+```
+*Note: This generates backup `.fix.json` or `.fix.php` files next to your originals.*
+
+### 5. Direct Module Execution (Advanced)
 
 ### 5. Helper Commands
 To check the version or get help on available options:
@@ -107,12 +118,21 @@ export OPENROUTER_API_KEY="your-key"
 l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
 ```
 
-### 4. تشغيل الوحدات المباشر (Advanced)
-بدلاً من المراحل، يمكنك تشغيل فحوصات معزولة:
+### 4. تطبيق الإصلاحات (جديد في 1.3.1)
+بعد تدقيق الملفات أو مراجعتها بالذكاء الاصطناعي، يمكنك دمج النتائج مرة أخرى في كود مشروعك الأصلي.
+
+**التطبيق المخصص**: راجع ملف `Review Queue` (Excel)، واضبط الحالة إلى `approved` للمفاتيح التي تم قبولها، ثم شغّل:
 ```bash
-l10n-audit run --stage placeholders
-l10n-audit run --stage ar-semantic
+l10n-audit apply
 ```
+
+**التطبيق الشامل (إصلاحات آلية + ذكاء اصطناعي)**: لتطبيق كل الاقتراحات دفعة واحدة دون مراجعة فردية:
+```bash
+l10n-audit apply --all
+```
+*ملاحظة: سينتج عن هذا إنشاء ملفات احتياطية مثل `.fix.php` بجانب ملفاتك الأصلية.*
+
+### 5. تشغيل الوحدات المباشر (Advanced)
 
 ### 5. أوامر المساعدة ومعرفة الإصدار
 للتحقق من رقم الإصدار الحالي المثبت أو طلب عرض دليل الاستخدام والخيارات المتاحة:
