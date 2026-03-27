@@ -400,7 +400,7 @@ class AuditOptions:
     ar_locale_qc: ARLocaleQC = field(default_factory=ARLocaleQC)
 
     # Environment paths (often overridden by runtime)
-    project_root: str = "."
+    project_root: str = ".."
     # Power-user Overrides
     glossary_file: str | Path | None = "glossary.json"
     out_xlsx: str | Path | None = None

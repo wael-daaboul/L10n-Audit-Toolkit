@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from l10n_audit.models import AuditOptions, AIReview
 from l10n_audit.exceptions import AIConfigError
+import l10n_audit.core.ai_factory # Ensure this module is loaded for patch()
 
 def test_chunk_issues():
     issues = list(range(105))
@@ -31,7 +32,7 @@ def test_run_stage_batching_sleep(mock_get_provider, mock_load_locale, mock_load
     runtime.source_locale = "en"
     runtime.target_locales = ["ar"]
     
-    options = AuditOptions(ai_review=AIReview(enabled=True, api_key_env="OPENAI_API_KEY"))
+    options = AuditOptions(ai_review=AIReview(enabled=True, api_key_env="OPENAI_API_KEY", batch_size=20))
     
     # Mock issues (more than 50 to trigger batching)
     mock_load_issues.return_value = [{"key": f"k{i}", "message": "msg"} for i in range(55)]

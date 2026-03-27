@@ -68,7 +68,12 @@ def test_json_exporter_preserves_original_key_order(tmp_path: Path) -> None:
     assert content.index('"z.last"') < content.index('"a.first"') < content.index('"m.middle"')
 
 
-def test_laravel_php_exporter_rejects_structural_collision(tmp_path: Path) -> None:
+def test_laravel_php_exporter_warns_on_structural_collision(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     mapping = {"messages.a": "Value", "messages.a.b": "Nested"}
-    with pytest.raises(AuditRuntimeError):
-        export_locale_mapping(mapping, "laravel_php", tmp_path / "exports" / "en")
+    out_dir = tmp_path / "exports" / "en"
+    export_locale_mapping(mapping, "laravel_php", out_dir)
+    
+    assert "Structural collision" in caplog.text
+    content = (out_dir / "messages.php").read_text(encoding="utf-8")
+    assert "'a' => 'Value'" in content
+    assert "'a.b' => 'Nested'" in content

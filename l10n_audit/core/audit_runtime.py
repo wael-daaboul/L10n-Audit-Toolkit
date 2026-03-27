@@ -314,10 +314,7 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
 
     runtime_config_dir = config_path.parent
     config_root_base = runtime_config_dir if override_config else tools_dir
-    if not override_config and config_root_base.name == ".l10n-audit":
-        # If we are inside the workspace folder, the project root is usually the parent.
-        config_root_base = config_root_base.parent
-        
+    
     path_base_dir = tools_dir # Paths usually relative to .l10n-audit root
     
     config: dict[str, Any] = {}

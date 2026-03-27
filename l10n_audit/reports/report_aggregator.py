@@ -518,15 +518,6 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
                 logger.info("Falling back to standard aggregate report: %s", std_agg)
                 reports, issues, missing = load_hydrated_report(std_agg)
 
-        if not issues:
-            err_msg = (
-                "\n❌ [Audit Failure] لم نجد بيانات في الذاكرة ولا في القرص.\n"
-                "يرجى تشغيل فحص جديد (كامل أو سريع) أو تحديد مسار الملف باستخدام --input-report.\n"
-                f"Searched directory: {results_dir}\n"
-            )
-            print(err_msg)
-            return []
-
         # v1.3.1 - In-Memory Merging & AI Alignment
         issues = merge_issues_in_memory(issues)
 

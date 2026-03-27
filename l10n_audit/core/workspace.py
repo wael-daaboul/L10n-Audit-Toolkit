@@ -165,7 +165,7 @@ def default_workspace_config(project_root: Path, profile_name: str) -> dict[str,
             "archive_name_prefix": "audit"
         },
         
-        "project_root": ".",
+        "project_root": "..",
         "glossary_file": WORKSPACE_GLOSSARY,
         "languagetool_dir": "vendor",
         "ar_locale_qc": {

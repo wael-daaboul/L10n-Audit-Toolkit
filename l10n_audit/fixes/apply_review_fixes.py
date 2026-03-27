@@ -98,6 +98,13 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
             if current_hash != source_hash:
                 skipped.append({"key": key, "locale": locale, "reason": "stale_source", "expected_hash": source_hash, "actual_hash": current_hash})
                 continue
+
+        suggested_hash = str(row.get("suggested_hash", "")).strip()
+        if suggested_hash:
+            actual_suggested_hash = compute_text_hash(approved_val)
+            if actual_suggested_hash != suggested_hash:
+                skipped.append({"key": key, "locale": locale, "reason": "suggested_hash_mismatch", "expected": suggested_hash, "actual": actual_suggested_hash})
+                continue
         
         if locale == "en":
             review_fixes_en[key] = approved_val
