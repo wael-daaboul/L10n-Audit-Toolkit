@@ -250,7 +250,7 @@ def _snap_dict(**kwargs) -> dict:
         "run_id": "r1",
         "timestamp": time.time(),
         "stage": "en_locale_qc",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "total_issues": 10,
         "auto_fix_count": 5,
         "ai_review_count": 3,

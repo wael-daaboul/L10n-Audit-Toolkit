@@ -4,7 +4,7 @@ This guide covers environment setup, dependency installation, test setup, and fi
 
 ## English
 
-Current version: **1.4.0** (The Master Architecture Edition)
+Current version: **1.5.0** (The Master Architecture Edition)
 
 ### Purpose
 This guide covers system setup, optional dependencies, local LanguageTool, virtual environments, and first-run validation for the localization QA toolkit.
@@ -267,7 +267,7 @@ python3 -m pytest tests
 
 ## العربية
 
-الإصدار الحالي: **1.4.0** (The Master Architecture Edition)
+الإصدار الحالي: **1.5.0** (The Master Architecture Edition)
 
 ### الغرض من هذا الدليل
 يوضح هذا الدليل كيفية تثبيت الحزمة وتجهيز البيئة وتشغيل أول تحقق ناجح، مع توضيح التبعيات المطلوبة والاختيارية وكيفية التراجع الآمن عند غياب بعضها.

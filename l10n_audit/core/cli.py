@@ -207,7 +207,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         from l10n_audit.api import _stage_module_names
 
         if verbose:
-            version = getattr(l10n_audit, '__version__', '1.4.0')
+            version = getattr(l10n_audit, '__version__', '1.5.0')
             print(f"  [Engine] L10n Audit Engine v{version} loaded.")
             print(f"  [Stage] Target: {stage}")
 

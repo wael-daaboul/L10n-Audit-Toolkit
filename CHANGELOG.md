@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.0]
+
+- reporting identity stabilization
+- master reconciliation
+- locale resolution centralization
+- candidate resolution
+- approval projection
+- decision quality surfacing
+
 ## [1.4.0] — Architecture Stabilization & Output Simplification
 
 ### ✨ Added

@@ -2,7 +2,7 @@
 
 Automated localization auditing, validation, and repair — built for real-world production pipelines.
 
-[![Version](https://img.shields.io/badge/version-1.4.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 [![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 
 ---

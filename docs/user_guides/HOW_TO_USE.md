@@ -51,7 +51,7 @@ export OPENROUTER_API_KEY="your-key"
 l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
 ```
 
-### 4. Applying Fixes (Included in 1.4.0)
+### 4. Applying Fixes (Included in 1.5.0)
 After running audits or `ai-review`, you can merge the results back into your original source files.
 
 **Interactive Apply (Recommended)**: Review the generated `Review Queue` (XLSX/JSON) first, set the `status` to `approved` for the keys you want, and run:
@@ -118,7 +118,7 @@ export OPENROUTER_API_KEY="your-key"
 l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
 ```
 
-### 4. تطبيق الإصلاحات (مضمنة في 1.4.0)
+### 4. تطبيق الإصلاحات (مضمنة في 1.5.0)
 بعد تدقيق الملفات أو مراجعتها بالذكاء الاصطناعي، يمكنك دمج النتائج مرة أخرى في كود مشروعك الأصلي.
 
 **التطبيق المخصص**: راجع ملف `Review Queue` (Excel)، واضبط الحالة إلى `approved` للمفاتيح التي تم قبولها، ثم شغّل:
