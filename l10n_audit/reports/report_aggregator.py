@@ -337,6 +337,101 @@ def _normalize_review_row(row: dict) -> dict:
     return normalized
 
 
+def _classify_decision_quality(
+    issue: dict,
+    resolution: dict,
+    projected_approved_new: str,
+) -> dict:
+    try:
+        res_mode = str(resolution.get("resolution_mode", "")).strip()
+        
+        # 1. Conflict
+        if res_mode == "conflict":
+            return {
+                "decision_quality": "blocked",
+                "decision_reason": "conflict",
+                "decision_token": "[DQ:BLOCKED]",
+            }
+
+        # 2. No candidate
+        if res_mode == "no_candidate":
+            return {
+                "decision_quality": "blocked",
+                "decision_reason": "no_candidate",
+                "decision_token": "[DQ:BLOCKED]",
+            }
+
+        # 3. Explicit review required
+        needs_review = issue.get("needs_review")
+        if needs_review is True:
+            return {
+                "decision_quality": "review_required",
+                "decision_reason": "needs_review",
+                "decision_token": "[DQ:REVIEW_REQUIRED]",
+            }
+        if isinstance(needs_review, str) and needs_review.strip().lower() in {"true", "yes", "1"}:
+            return {
+                "decision_quality": "review_required",
+                "decision_reason": "needs_review",
+                "decision_token": "[DQ:REVIEW_REQUIRED]",
+            }
+
+        # 4. High severity
+        severity = str(issue.get("severity", "") or "").strip().lower()
+        if severity in {"high", "critical"}:
+            return {
+                "decision_quality": "review_required",
+                "decision_reason": "high_severity",
+                "decision_token": "[DQ:REVIEW_REQUIRED]",
+            }
+
+        details = issue.get("details", {}) or {}
+
+        # 5. High semantic risk
+        semantic_risk = str(details.get("semantic_risk", "") or "").strip().lower()
+        if semantic_risk == "high":
+            return {
+                "decision_quality": "review_required",
+                "decision_reason": "high_semantic_risk",
+                "decision_token": "[DQ:REVIEW_REQUIRED]",
+            }
+
+        # 6. Review reason present
+        review_reason = str(details.get("review_reason", "") or "").strip()
+        if review_reason:
+            return {
+                "decision_quality": "review_required",
+                "decision_reason": "review_reason_present",
+                "decision_token": "[DQ:REVIEW_REQUIRED]",
+            }
+
+        # 7. Safe auto projected
+        if projected_approved_new != "" and res_mode == "suggested_fix":
+            return {
+                "decision_quality": "safe_auto_projected",
+                "decision_reason": "approved_projection",
+                "decision_token": "[DQ:SAFE_AUTO_PROJECTED]",
+            }
+
+        # 8. Suggestion only
+        if res_mode == "suggested_fix" and projected_approved_new == "":
+            return {
+                "decision_quality": "suggestion_only",
+                "decision_reason": "suggested_not_approved",
+                "decision_token": "[DQ:SUGGESTION_ONLY]",
+            }
+
+    except Exception:
+        pass
+
+    # 9. Fallback
+    return {
+        "decision_quality": "review_required",
+        "decision_reason": "fallback",
+        "decision_token": "[DQ:REVIEW_REQUIRED]",
+    }
+
+
 def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, str]]:
     en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
     target_locale = runtime.target_locales[0] if runtime.target_locales else "ar"
@@ -371,6 +466,8 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         resolved_fix = resolution["candidate_value"]
         notes_token = resolution["notes_token"]
         projected_approved_new = _project_approved_new(issue, resolution)
+        decision = _classify_decision_quality(issue, resolution, projected_approved_new)
+        decision_token = decision["decision_token"]
 
         row_key = (key, locale)
         if row_key in rows_by_key:
@@ -384,6 +481,9 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             # Append notes_token if not already present
             if notes_token and notes_token not in existing["notes"].split(" | "):
                 existing["notes"] += f" | {notes_token}"
+            # Append decision_token if not already present
+            if decision_token and decision_token not in existing["notes"].split(" | "):
+                existing["notes"] += f" | {decision_token}"
             # Merge provenance
             prov_segment = f"{source}|{issue_type}|{severity}"
             if prov_segment not in existing["provenance"].split(" || "):
@@ -409,7 +509,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 existing["approved_new"] = projected_approved_new
             rows_by_key[row_key] = _normalize_review_row(existing)
         else:
-            resolved_notes = " | ".join(filter(None, [message, notes_token]))
+            resolved_notes = " | ".join(filter(None, [message, notes_token, decision_token]))
             new_row = {
                 "key": key,
                 "locale": locale,
