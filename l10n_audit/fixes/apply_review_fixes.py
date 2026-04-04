@@ -14,6 +14,8 @@ from pathlib import Path
 from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, load_locale_mapping, load_runtime, read_simple_xlsx, write_json
 from l10n_audit.core.artifact_resolver import resolve_ar_fixed_json_path, resolve_fix_plan_path, resolve_master_path
 
+import pandas as _pd
+
 logger = logging.getLogger("l10n_audit.fixes")
 
 REQUIRED_REVIEW_COLUMNS = (
@@ -28,6 +30,101 @@ REQUIRED_REVIEW_COLUMNS = (
     "plan_id",
     "generated_at",
 )
+
+
+def reconcile_master_from_xlsx(xlsx_path: str, master_path: str) -> None:
+    """Sync human edits from review_queue.xlsx into audit_master.json.
+
+    Matches rows by plan_id only. Never creates new rows — only updates
+    existing ones. Missing plan_ids and missing XLSX columns are ignored.
+    """
+    try:
+        df = _pd.read_excel(xlsx_path, dtype=str)
+    except Exception as exc:
+        logger.warning("reconcile_master_from_xlsx: failed to read XLSX %s: %s", xlsx_path, exc)
+        return
+
+    if "plan_id" not in df.columns:
+        logger.warning("reconcile_master_from_xlsx: 'plan_id' column missing in %s — aborting.", xlsx_path)
+        return
+
+    has_approved_new = "approved_new" in df.columns
+    has_status = "status" in df.columns
+
+    # Build a lookup: plan_id -> {approved_new, status} from XLSX rows
+    # Detect duplicates while building the index.
+    xlsx_index: dict[str, dict] = {}
+    seen_pids: set[str] = set()
+    for _, row in df.iterrows():
+        raw_pid = row.get("plan_id", "")
+        if _pd.isna(raw_pid):
+            continue
+        pid = str(raw_pid).strip()
+        if not pid:
+            continue
+        if pid in seen_pids:
+            logger.warning("reconcile_master_from_xlsx: duplicate plan_id '%s' in XLSX — last row wins.", pid)
+        seen_pids.add(pid)
+        entry: dict = {}
+        if has_approved_new:
+            val = row.get("approved_new", "")
+            entry["approved_new"] = "" if _pd.isna(val) else str(val)
+        if has_status:
+            val = row.get("status", "")
+            entry["status"] = "" if _pd.isna(val) else str(val)
+        xlsx_index[pid] = entry
+
+    if not xlsx_index:
+        logger.debug("reconcile_master_from_xlsx: no valid plan_id rows found in XLSX.")
+        return
+
+    master_file = Path(master_path)
+    if not master_file.exists():
+        logger.warning("reconcile_master_from_xlsx: master file not found at %s — aborting.", master_path)
+        return
+
+    try:
+        master = _json.loads(master_file.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("reconcile_master_from_xlsx: failed to read master JSON: %s", exc)
+        return
+
+    rows = master.get("rows", [])
+    if not isinstance(rows, list):
+        logger.warning("reconcile_master_from_xlsx: 'rows' key is not a list in master JSON.")
+        return
+
+    updated_pids: list[str] = []
+    for json_row in rows:
+        # Skip non-dict entries defensively
+        if not isinstance(json_row, dict):
+            logger.debug("reconcile_master_from_xlsx: skipping non-dict row: %r", json_row)
+            continue
+        raw_pid = json_row.get("plan_id", "")
+        if _pd.isna(raw_pid) if not isinstance(raw_pid, str) else not raw_pid:
+            continue
+        pid = str(raw_pid).strip()
+        if not pid or pid not in xlsx_index:
+            continue
+        xlsx_entry = xlsx_index[pid]
+        if "approved_new" in xlsx_entry:
+            json_row["approved_new"] = xlsx_entry["approved_new"]
+        if "status" in xlsx_entry:
+            json_row["status"] = xlsx_entry["status"]
+        updated_pids.append(pid)
+
+    logger.debug("reconcile_master_from_xlsx: updated plan_ids: %s", updated_pids)
+    master["rows"] = rows
+
+    # Atomic write: write to .tmp then replace to avoid partial corruption
+    tmp_file = master_file.with_suffix(".tmp")
+    try:
+        tmp_file.write_text(_json.dumps(master, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_file.replace(master_file)
+        logger.info("reconcile_master_from_xlsx: updated %d rows in %s.", len(updated_pids), master_path)
+    except Exception as exc:
+        logger.warning("reconcile_master_from_xlsx: failed to write master JSON: %s", exc)
+        tmp_file.unlink(missing_ok=True)
 
 
 def base_ar_mapping(runtime) -> dict[str, object]:
@@ -170,6 +267,19 @@ def reconcile_master(results_dir: Path, all_rows: list[dict], applied_keys: set[
 
 
 def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_final_json: str | None = None, out_report: str | None = None) -> dict:
+    # Phase 1 — Master Reconciliation: sync XLSX human edits → audit_master.json BEFORE apply
+    if review_queue_path.exists():
+        _master_path = resolve_master_path(runtime)
+        try:
+            reconcile_master_from_xlsx(str(review_queue_path), str(_master_path))
+        except Exception as _rec_exc:
+            raise RuntimeError(
+                f"Master reconciliation failed before apply — aborting to prevent data loss. "
+                f"Cause: {_rec_exc}"
+            ) from _rec_exc
+    else:
+        logger.warning("run_apply: review_queue_path does not exist (%s) — skipping pre-apply reconciliation.", review_queue_path)
+
     # 1. Load auto_fixes from previous run's fix_plan
     auto_fixes_en = {}
     auto_fixes_ar = {}

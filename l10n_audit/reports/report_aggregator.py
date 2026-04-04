@@ -86,12 +86,204 @@ def review_locale(issue: dict[str, Any]) -> str:
     return locale or "ar"
 
 
+_SOURCE_LOCALE_MAP: dict[str, str] = {
+    "ar_locale_qc": "ar",
+    "ar_semantic_qc": "ar",
+    "en_locale_qc": "en",
+    "en_grammar_audit": "en",
+}
+
+
+def _resolve_issue_locale(issue: dict) -> str:
+    """Return the resolved locale for an issue, always one of 'ar', 'en', or 'unknown'.
+
+    Resolution priority (strict):
+      1. Explicit locale field
+      2. Source-based inference via _SOURCE_LOCALE_MAP
+      3. Key prefix inference  ('ar.' / 'en.' via split)
+      4. File path inference   ('/ar/', 'ar.json', '/en/', 'en.json')
+      5. Fallback → 'unknown'
+
+    Never raises. Never returns an empty string.
+    """
+    # Input validation
+    if not isinstance(issue, dict):
+        return "unknown"
+
+    # 1. Explicit locale — normalize to lowercase
+    locale = str(issue.get("locale", "") or "").strip().lower()
+    if locale in {"ar", "en"}:
+        return locale
+
+    # 2. Source-based inference — normalize to lowercase
+    source = str(issue.get("source", "") or "").strip().lower()
+    if source in _SOURCE_LOCALE_MAP:
+        return _SOURCE_LOCALE_MAP[source]
+
+    # 3. Key prefix inference via split to avoid false positives (e.g. "archive")
+    key = str(issue.get("key", "") or "").strip()
+    if key:
+        first_segment = key.split(".")[0].lower()
+        if first_segment == "ar":
+            return "ar"
+        if first_segment == "en":
+            return "en"
+
+    # 4. File path inference — normalize to lowercase, unify separators
+    file_path = str(issue.get("file_path", "") or "").strip().lower().replace("\\", "/")
+    if file_path:
+        if "/ar/" in file_path or file_path.endswith("ar.json"):
+            return "ar"
+        if "/en/" in file_path or file_path.endswith("en.json"):
+            return "en"
+
+    # 5. Fallback
+    return "unknown"
+
+
+def _resolve_candidate_value(
+    issue: dict,
+    current_value: str,
+    suggested_fix: str,
+) -> dict:
+    """Pure decision helper: resolve the best candidate value for a single issue.
+
+    Returns a dict with exactly 4 keys:
+        candidate_value   str
+        resolution_mode   str  one of: suggested_fix | current_value | no_candidate | conflict
+        conflict_flag     str  one of: "" | IDENTICAL_TO_CURRENT | EMPTY_SUGGESTION | STRUCTURAL_RISK
+        notes_token       str  one of: "" | [SAFE:SUGGESTED_FIX] | [KEEP:CURRENT_VALUE] | [NO_CANDIDATE] | [CONFLICT:STRUCTURAL_RISK]
+
+    Decision order (strict):
+      1. Empty suggestion       → no_candidate
+      2. Identical to current   → current_value
+      3. Structural risk        → conflict
+      4. Safe                   → suggested_fix
+    """
+    # Guard: never raise regardless of input types
+    try:
+        fix = str(suggested_fix) if suggested_fix is not None else ""
+        cur = str(current_value) if current_value is not None else ""
+    except Exception:
+        return {
+            "candidate_value": "",
+            "resolution_mode": "no_candidate",
+            "conflict_flag": "EMPTY_SUGGESTION",
+            "notes_token": "[NO_CANDIDATE]",
+        }
+
+    # 1. Empty suggestion
+    if not fix.strip():
+        return {
+            "candidate_value": "",
+            "resolution_mode": "no_candidate",
+            "conflict_flag": "EMPTY_SUGGESTION",
+            "notes_token": "[NO_CANDIDATE]",
+        }
+
+    # 2. Identical to current
+    if fix.strip() == cur.strip():
+        return {
+            "candidate_value": cur,
+            "resolution_mode": "current_value",
+            "conflict_flag": "IDENTICAL_TO_CURRENT",
+            "notes_token": "[KEEP:CURRENT_VALUE]",
+        }
+
+    # 3. Structural risk — deterministic token-count heuristic
+    def _counts(s: str) -> tuple:
+        return (
+            s.count("{{"),
+            s.count("}}"),
+            s.count("<"),
+            s.count(">"),
+            s.count("\n"),
+        )
+
+    if _counts(fix) != _counts(cur):
+        return {
+            "candidate_value": "",
+            "resolution_mode": "conflict",
+            "conflict_flag": "STRUCTURAL_RISK",
+            "notes_token": "[CONFLICT:STRUCTURAL_RISK]",
+        }
+
+    # 4. Safe suggested fix
+    return {
+        "candidate_value": fix,
+        "resolution_mode": "suggested_fix",
+        "conflict_flag": "",
+        "notes_token": "[SAFE:SUGGESTED_FIX]",
+    }
+
+
+_NEEDS_REVIEW_TRUTHY = {"true", "yes", "1"}
+_HIGH_SEVERITY = {"high", "critical"}
+
+
+def _project_approved_new(issue: dict, resolution: dict) -> str:
+    """Pure projection helper: decide whether approved_new should be auto-filled.
+
+    Returns the projected approved value string, or "" when human review is required.
+    Never returns None. Never raises.
+
+    Decision order (strict):
+      1. No candidate (no_candidate / conflict)  → ""
+      2. Explicit needs_review flag              → ""
+      3. High/critical severity                  → ""
+      4. High semantic_risk                      → ""
+      5. Non-empty review_reason                 → ""
+      6. Safe suggested_fix with non-empty value → candidate_value
+      7. All other cases                         → ""
+    """
+    try:
+        # 1. No candidate available
+        mode = str(resolution.get("resolution_mode", "")).strip()
+        if mode in ("no_candidate", "conflict"):
+            return ""
+
+        # 2. Explicit review required
+        needs_review = issue.get("needs_review")
+        if needs_review is True:
+            return ""
+        if isinstance(needs_review, str) and needs_review.strip().lower() in _NEEDS_REVIEW_TRUTHY:
+            return ""
+
+        # 3. High severity
+        severity = str(issue.get("severity", "") or "").strip().lower()
+        if severity in _HIGH_SEVERITY:
+            return ""
+
+        # 4. High semantic risk
+        details = issue.get("details") or {}
+        semantic_risk = str(details.get("semantic_risk", "") or "").strip().lower()
+        if semantic_risk == "high":
+            return ""
+
+        # 5. Review reason exists
+        review_reason = str(details.get("review_reason", "") or "").strip()
+        if review_reason:
+            return ""
+
+        # 6. Safe suggested fix
+        if mode == "suggested_fix":
+            candidate = str(resolution.get("candidate_value", "") or "").strip()
+            if candidate:
+                return candidate
+
+    except Exception:
+        pass
+
+    # 7. All other cases
+    return ""
+
+
 def old_value_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_data: dict[str, object]) -> str:
     details = issue.get("details", {})
     explicit = str(details.get("old", ""))
     if explicit:
         return explicit
-    locale = review_locale(issue)
+    locale = _resolve_issue_locale(issue)
     key = str(issue.get("key", ""))
     if locale == "en":
         return str(en_data.get(key, ""))
@@ -113,7 +305,7 @@ def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], a
         if value:
             return value
 
-    locale = review_locale(issue)
+    locale = _resolve_issue_locale(issue)
     issue_type = str(issue.get("issue_type", ""))
     key = str(issue.get("key", ""))
     if issue_type in {"confirmed_missing_key", "missing_in_ar", "in_en_not_ar"} and locale == "ar":
@@ -121,6 +313,28 @@ def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], a
     if issue_type in {"missing_in_en", "in_ar_not_en"} and locale == "en":
         return str(ar_data.get(key, ""))
     return ""
+
+
+def _normalize_review_row(row: dict) -> dict:
+    normalized = dict(row)
+    for field in [
+        "key",
+        "locale",
+        "old_value",
+        "issue_type",
+        "suggested_fix",
+        "approved_new",
+        "status",
+        "notes",
+        "provenance",
+        "source_hash",
+        "suggested_hash",
+        "plan_id",
+    ]:
+        if field in normalized:
+            val = normalized[field]
+            normalized[field] = "" if val is None else str(val)
+    return normalized
 
 
 def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, str]]:
@@ -145,7 +359,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         if str(issue.get("severity", "")).lower() == "info":
             continue
             
-        locale = review_locale(issue)
+        locale = _resolve_issue_locale(issue)
         key = str(issue.get("key", ""))
         issue_type = str(issue.get("issue_type", ""))
         current_value = old_value_for_issue(issue, en_data, ar_data)
@@ -153,7 +367,11 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         message = str(issue.get("message", ""))
         source = str(issue.get("source", ""))
         severity = str(issue.get("severity", ""))
-        
+        resolution = _resolve_candidate_value(issue, current_value, suggested_fix)
+        resolved_fix = resolution["candidate_value"]
+        notes_token = resolution["notes_token"]
+        projected_approved_new = _project_approved_new(issue, resolution)
+
         row_key = (key, locale)
         if row_key in rows_by_key:
             existing = rows_by_key[row_key]
@@ -163,32 +381,45 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             # Merge unique notes
             if message not in existing["notes"].split(" | "):
                 existing["notes"] += f" | {message}"
+            # Append notes_token if not already present
+            if notes_token and notes_token not in existing["notes"].split(" | "):
+                existing["notes"] += f" | {notes_token}"
             # Merge provenance
             prov_segment = f"{source}|{issue_type}|{severity}"
             if prov_segment not in existing["provenance"].split(" || "):
                 existing["provenance"] += f" || {prov_segment}"
-            # Prioritize AI suggestions if they exist
-            is_ai = source in ("ai_review", "ai_suggestion") or "ai_suggestion" in issue_type
-            
-            if is_ai and suggested_fix:
-                existing["suggested_fix"] = suggested_fix
-                existing["suggested_hash"] = compute_text_hash(suggested_fix)
-                if "|ai_reviewed" not in existing["provenance"]:
-                    existing["provenance"] += "|ai_reviewed"
-            elif not existing["suggested_fix"] and suggested_fix:
-                existing["suggested_fix"] = suggested_fix
-                existing["suggested_hash"] = compute_text_hash(suggested_fix)
+            # Force clear when resolution signals conflict or no candidate
+            resolution_mode = resolution["resolution_mode"]
+            if resolution_mode in ("conflict", "no_candidate"):
+                existing["suggested_fix"] = ""
+                existing["suggested_hash"] = compute_text_hash("")
+            else:
+                # Prioritize AI suggestions if they exist
+                is_ai = source in ("ai_review", "ai_suggestion") or "ai_suggestion" in issue_type
+                if is_ai and resolved_fix:
+                    existing["suggested_fix"] = resolved_fix
+                    existing["suggested_hash"] = compute_text_hash(resolved_fix)
+                    if "|ai_reviewed" not in existing["provenance"]:
+                        existing["provenance"] += "|ai_reviewed"
+                elif not existing["suggested_fix"] and resolved_fix:
+                    existing["suggested_fix"] = resolved_fix
+                    existing["suggested_hash"] = compute_text_hash(resolved_fix)
+            # Project approved_new if not already set
+            if not existing["approved_new"] and projected_approved_new:
+                existing["approved_new"] = projected_approved_new
+            rows_by_key[row_key] = _normalize_review_row(existing)
         else:
-            rows_by_key[row_key] = {
+            resolved_notes = " | ".join(filter(None, [message, notes_token]))
+            new_row = {
                 "key": key,
                 "locale": locale,
                 "old_value": current_value,
                 "issue_type": issue_type,
-                "suggested_fix": suggested_fix,
-                "approved_new": str(issue.get("approved_new") or ""),
+                "suggested_fix": resolved_fix,
+                "approved_new": projected_approved_new,
                 "needs_review": "Yes" if issue.get("needs_review") or issue.get("severity") in ("critical", "high") else "No",
                 "status": "pending",
-                "notes": message,
+                "notes": resolved_notes,
                 "context_type": str((issue.get("details", {}) or {}).get("context_type", "")),
                 "context_flags": str((issue.get("details", {}) or {}).get("context_flags", "")),
                 "semantic_risk": str((issue.get("details", {}) or {}).get("semantic_risk", "")),
@@ -196,11 +427,12 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "review_reason": str((issue.get("details", {}) or {}).get("review_reason", "")),
                 "source_old_value": current_value,
                 "source_hash": compute_text_hash(current_value),
-                "suggested_hash": compute_text_hash(suggested_fix),
+                "suggested_hash": compute_text_hash(resolved_fix),
                 "plan_id": compute_plan_id(key, locale, issue_type, current_value, suggested_fix),
                 "generated_at": generated_at,
                 "provenance": f"{source}|{issue_type}|{severity}",
             }
+            rows_by_key[row_key] = _normalize_review_row(new_row)
 
     rows = list(rows_by_key.values())
     # Filter out auto-safe from review queue if they match exactly
