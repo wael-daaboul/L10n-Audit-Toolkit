@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from l10n_audit.core.languagetool_manager import create_language_tool_session
+from l10n_audit.core.languagetool_layer import get_languagetool_layer, lt_findings_to_signal_dict
 
 
 SENTENCE_END_RE = re.compile(r"[.!?؟]$")
@@ -128,7 +128,11 @@ def action_mismatch_flags(en_value: str, ar_value: str) -> list[str]:
 
 
 def load_en_languagetool_signals(results_dir: Path) -> dict[str, dict[str, Any]]:
-    report_path = results_dir / "per_tool" / "grammar" / "grammar_audit_report.json"
+    # Try grammar report
+    report_path = results_dir / ".cache" / "raw_tools" / "grammar" / "grammar_audit_report.json"
+    if not report_path.exists():
+        # Fallback to legacy
+        report_path = results_dir / "per_tool" / "grammar" / "grammar_audit_report.json"
     if not report_path.exists():
         return {}
     payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -153,34 +157,41 @@ def load_en_languagetool_signals(results_dir: Path) -> dict[str, dict[str, Any]]
 
 
 def build_language_tool_python_signals(ar_data: dict[str, object], runtime) -> dict[str, dict[str, Any]]:
+    # Defer check to after we check Java availability.
     from l10n_audit.core.utils import check_java_available
     if not check_java_available():
         return {}
-    session = create_language_tool_session("ar", runtime)
-    if session.tool is None:
+    
+    layer = get_languagetool_layer(runtime, "ar")
+    if layer is None:
         return {}
-    signals: dict[str, dict[str, Any]] = {}
+
+    # Map the incoming data values to what layer.analyze_text_batch expects.
+    # Only submit valid non-empty strings.
+    text_by_key = [
+        (str(key), str(value))
+        for key, value in ar_data.items()
+        if isinstance(value, str) and value.strip()
+    ]
+
+    if not text_by_key:
+        layer.close()
+        return {}
+
     try:
-        for key, value in ar_data.items():
-            if not isinstance(value, str) or not value.strip():
-                continue
-            try:
-                matches = session.tool.check(value)
-            except Exception:
-                continue
-            if not matches:
-                continue
-            categories = Counter(str(getattr(getattr(match, "category", None), "id", "unknown")).lower() for match in matches)
-            signals[str(key)] = {
-                "lt_style_flags": categories.get("style", 0),
-                "lt_grammar_flags": categories.get("grammar", 0),
-                "lt_literalness_support": any("style" in category for category in categories),
-                "lt_rule_ids": [str(getattr(match, "ruleId", "")) for match in matches[:5]],
-                "sources": [session.mode],
-            }
+        # strict=False (default) swallows per-item exceptions and continues,
+        # which EXACTLY mirrors the previous `try / except Exception: continue` logic.
+        findings = layer.analyze_text_batch(text_by_key, strict=False)
+        
+        # Phase 1 / Step 5: Decision Engine hook (no-op)
+        # NOTE:
+        # Arabic pipeline must remain behaviorally identical in Phase 1.
+        # Decision Engine integration will be introduced in Phase 2.
+        
+        return dict(lt_findings_to_signal_dict(findings, session_mode=layer.session_mode))
     finally:
-        session.close()
-    return signals
+        layer.close()
+
 
 
 def merge_linguistic_signals(*signal_sets: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:

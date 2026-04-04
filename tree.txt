@@ -1,0 +1,2546 @@
+.
+├── CHANGELOG.md
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── MANIFEST.in
+├── README.md
+├── ROADMAP.md
+├── Results
+│   └── per_tool
+│       └── ar_locale_qc
+│           ├── ar_locale_qc_report.csv
+│           └── ar_locale_qc_report.xlsx
+├── SECURITY.md
+├── bin
+│   ├── __init__.py
+│   ├── l10n_audit.sh
+│   ├── l10n_audit_pro.sh
+│   └── run_all_audits.sh
+├── bootstrap.sh
+├── build
+│   ├── bdist.macosx-26.0-arm64
+│   └── lib
+│       ├── ai
+│       │   ├── prompts.py
+│       │   ├── provider.py
+│       │   └── verification.py
+│       ├── audits
+│       │   ├── __init__.py
+│       │   ├── ai_review.py
+│       │   ├── ar_locale_qc.py
+│       │   ├── ar_semantic_qc.py
+│       │   ├── en_grammar_audit.py
+│       │   ├── en_locale_qc.py
+│       │   ├── icu_message_audit.py
+│       │   ├── l10n_audit_pro.py
+│       │   ├── placeholder_audit.py
+│       │   └── terminology_audit.py
+│       ├── bin
+│       │   └── __init__.py
+│       ├── core
+│       │   ├── __init__.py
+│       │   ├── audit_report_utils.py
+│       │   ├── audit_runtime.py
+│       │   ├── cli.py
+│       │   ├── context_evaluator.py
+│       │   ├── glossary_engine.py
+│       │   ├── languagetool_manager.py
+│       │   ├── locale_exporters
+│       │   │   ├── __init__.py
+│       │   │   ├── exporter_factory.py
+│       │   │   ├── json_exporter.py
+│       │   │   └── laravel_php_exporter.py
+│       │   ├── locale_loaders
+│       │   │   ├── __init__.py
+│       │   │   ├── json_loader.py
+│       │   │   ├── laravel_php_loader.py
+│       │   │   └── loader_factory.py
+│       │   ├── profile_detection.py
+│       │   ├── resources
+│       │   │   ├── __init__.py
+│       │   │   └── project_profiles.json
+│       │   ├── schema_validation.py
+│       │   ├── usage_scanner.py
+│       │   └── workspace.py
+│       ├── fixes
+│       │   ├── __init__.py
+│       │   ├── apply_glossary_fixes.py
+│       │   ├── apply_review_fixes.py
+│       │   └── apply_safe_fixes.py
+│       ├── http_api
+│       │   └── server.py
+│       ├── l10n_audit
+│       │   ├── __init__.py
+│       │   ├── ai
+│       │   │   ├── prompts.py
+│       │   │   ├── provider.py
+│       │   │   └── verification.py
+│       │   ├── api.py
+│       │   ├── audits
+│       │   │   ├── __init__.py
+│       │   │   ├── ai_review.py
+│       │   │   ├── ar_locale_qc.py
+│       │   │   ├── ar_semantic_qc.py
+│       │   │   ├── en_grammar_audit.py
+│       │   │   ├── en_locale_qc.py
+│       │   │   ├── icu_message_audit.py
+│       │   │   ├── l10n_audit_pro.py
+│       │   │   ├── placeholder_audit.py
+│       │   │   └── terminology_audit.py
+│       │   ├── core
+│       │   │   ├── __init__.py
+│       │   │   ├── ai_factory.py
+│       │   │   ├── ai_http_provider.py
+│       │   │   ├── ai_protocol.py
+│       │   │   ├── ai_review.py
+│       │   │   ├── audit_report_utils.py
+│       │   │   ├── audit_runtime.py
+│       │   │   ├── cli.py
+│       │   │   ├── context_evaluator.py
+│       │   │   ├── engine.py
+│       │   │   ├── glossary_engine.py
+│       │   │   ├── languagetool_manager.py
+│       │   │   ├── locale_exporters
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── exporter_factory.py
+│       │   │   │   ├── json_exporter.py
+│       │   │   │   └── laravel_php_exporter.py
+│       │   │   ├── locale_loaders
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── json_loader.py
+│       │   │   │   ├── laravel_php_loader.py
+│       │   │   │   └── loader_factory.py
+│       │   │   ├── mock_ai_provider.py
+│       │   │   ├── profile_detection.py
+│       │   │   ├── resources
+│       │   │   │   ├── __init__.py
+│       │   │   │   └── project_profiles.json
+│       │   │   ├── results_manager.py
+│       │   │   ├── schema_validation.py
+│       │   │   ├── usage_scanner.py
+│       │   │   ├── utils.py
+│       │   │   ├── validators.py
+│       │   │   └── workspace.py
+│       │   ├── exceptions.py
+│       │   ├── fixes
+│       │   │   ├── __init__.py
+│       │   │   ├── apply_glossary_fixes.py
+│       │   │   ├── apply_review_fixes.py
+│       │   │   ├── apply_safe_fixes.py
+│       │   │   └── fix_merger.py
+│       │   ├── models.py
+│       │   └── reports
+│       │       ├── __init__.py
+│       │       └── report_aggregator.py
+│       └── reports
+│           ├── __init__.py
+│           └── report_aggregator.py
+├── clean_project-v1.0.1.txt
+├── clean_project-v1.0.2.txt
+├── clean_project.txt
+├── config
+│   ├── config.example.json
+│   ├── config.json
+│   └── project_profiles.json
+├── config.json.example
+├── docs
+│   ├── ai_usage.md
+│   ├── audit_modules.md
+│   ├── ci_cd_integration.md
+│   ├── configuration.md
+│   ├── output_reports.md
+│   ├── overview.md
+│   ├── project_assets
+│   │   └── README.md
+│   ├── quickstart.md
+│   ├── review_workflow.md
+│   ├── terminology
+│   │   └── glossary.json
+│   ├── terminology_guide.md
+│   └── user_guides
+│       ├── HOW_TO_USE.md
+│       ├── INSTALL.md
+│       └── USAGE_AR.md
+├── examples
+│   ├── README.md
+│   ├── flutter_getx_json_sample
+│   │   └── README.md
+│   ├── laravel_json_sample
+│   │   └── README.md
+│   ├── laravel_php_sample
+│   │   └── README.md
+│   ├── react_i18next_json_sample
+│   │   └── README.md
+│   ├── samples
+│   │   ├── ar.json
+│   │   └── en.json
+│   └── vue_i18n_json_sample
+│       └── README.md
+├── http_api
+│   └── server.py
+├── l10n_audit
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   ├── __init__.cpython-314.pyc
+│   │   ├── api.cpython-314.pyc
+│   │   ├── exceptions.cpython-314.pyc
+│   │   └── models.cpython-314.pyc
+│   ├── ai
+│   │   ├── __pycache__
+│   │   │   ├── prompts.cpython-314.pyc
+│   │   │   ├── provider.cpython-314.pyc
+│   │   │   └── verification.cpython-314.pyc
+│   │   ├── prompts.py
+│   │   ├── provider.py
+│   │   └── verification.py
+│   ├── api.py
+│   ├── audits
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   │   ├── __init__.cpython-314.pyc
+│   │   │   ├── ai_review.cpython-314.pyc
+│   │   │   ├── ar_locale_qc.cpython-314.pyc
+│   │   │   ├── ar_semantic_qc.cpython-314.pyc
+│   │   │   ├── en_grammar_audit.cpython-314.pyc
+│   │   │   ├── en_locale_qc.cpython-314.pyc
+│   │   │   ├── icu_message_audit.cpython-314.pyc
+│   │   │   ├── l10n_audit_pro.cpython-314.pyc
+│   │   │   ├── placeholder_audit.cpython-314.pyc
+│   │   │   └── terminology_audit.cpython-314.pyc
+│   │   ├── ai_review.py
+│   │   ├── ar_locale_qc.py
+│   │   ├── ar_semantic_qc.py
+│   │   ├── en_grammar_audit.py
+│   │   ├── en_locale_qc.py
+│   │   ├── icu_message_audit.py
+│   │   ├── l10n_audit_pro.py
+│   │   ├── placeholder_audit.py
+│   │   └── terminology_audit.py
+│   ├── core
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   │   ├── __init__.cpython-314.pyc
+│   │   │   ├── ai_factory.cpython-314.pyc
+│   │   │   ├── ai_http_provider.cpython-314.pyc
+│   │   │   ├── artifact_resolver.cpython-314.pyc
+│   │   │   ├── audit_report_utils.cpython-314.pyc
+│   │   │   ├── audit_runtime.cpython-314.pyc
+│   │   │   ├── cli.cpython-314.pyc
+│   │   │   ├── context_evaluator.cpython-314.pyc
+│   │   │   ├── deprecation_registry.cpython-314.pyc
+│   │   │   ├── deprecation_warnings.cpython-314.pyc
+│   │   │   ├── engine.cpython-314.pyc
+│   │   │   ├── glossary_engine.cpython-314.pyc
+│   │   │   ├── languagetool_layer.cpython-314.pyc
+│   │   │   ├── languagetool_manager.cpython-314.pyc
+│   │   │   ├── profile_detection.cpython-314.pyc
+│   │   │   ├── results_manager.cpython-314.pyc
+│   │   │   ├── schema_validation.cpython-314.pyc
+│   │   │   ├── usage_scanner.cpython-314.pyc
+│   │   │   ├── utils.cpython-314.pyc
+│   │   │   ├── validators.cpython-314.pyc
+│   │   │   └── workspace.cpython-314.pyc
+│   │   ├── ai_factory.py
+│   │   ├── ai_http_provider.py
+│   │   ├── ai_protocol.py
+│   │   ├── ai_review.py
+│   │   ├── artifact_resolver.py
+│   │   ├── audit_report_utils.py
+│   │   ├── audit_runtime.py
+│   │   ├── cli.py
+│   │   ├── context_evaluator.py
+│   │   ├── deprecation_registry.py
+│   │   ├── deprecation_warnings.py
+│   │   ├── engine.py
+│   │   ├── glossary_engine.py
+│   │   ├── languagetool_layer.py
+│   │   ├── languagetool_manager.py
+│   │   ├── locale_exporters
+│   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
+│   │   │   │   ├── __init__.cpython-314.pyc
+│   │   │   │   ├── exporter_factory.cpython-314.pyc
+│   │   │   │   ├── json_exporter.cpython-314.pyc
+│   │   │   │   └── laravel_php_exporter.cpython-314.pyc
+│   │   │   ├── exporter_factory.py
+│   │   │   ├── json_exporter.py
+│   │   │   └── laravel_php_exporter.py
+│   │   ├── locale_loaders
+│   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
+│   │   │   │   ├── __init__.cpython-314.pyc
+│   │   │   │   ├── json_loader.cpython-314.pyc
+│   │   │   │   ├── laravel_php_loader.cpython-314.pyc
+│   │   │   │   └── loader_factory.cpython-314.pyc
+│   │   │   ├── json_loader.py
+│   │   │   ├── laravel_php_loader.py
+│   │   │   └── loader_factory.py
+│   │   ├── mock_ai_provider.py
+│   │   ├── profile_detection.py
+│   │   ├── resources
+│   │   │   ├── __init__.py
+│   │   │   ├── __pycache__
+│   │   │   │   └── __init__.cpython-314.pyc
+│   │   │   └── project_profiles.json
+│   │   ├── results_manager.py
+│   │   ├── schema_validation.py
+│   │   ├── usage_scanner.py
+│   │   ├── utils.py
+│   │   ├── validators.py
+│   │   └── workspace.py
+│   ├── exceptions.py
+│   ├── fixes
+│   │   ├── __init__.py
+│   │   ├── __pycache__
+│   │   │   ├── __init__.cpython-314.pyc
+│   │   │   ├── apply_glossary_fixes.cpython-314.pyc
+│   │   │   ├── apply_review_fixes.cpython-314.pyc
+│   │   │   ├── apply_safe_fixes.cpython-314.pyc
+│   │   │   └── fix_merger.cpython-314.pyc
+│   │   ├── apply_glossary_fixes.py
+│   │   ├── apply_review_fixes.py
+│   │   ├── apply_safe_fixes.py
+│   │   └── fix_merger.py
+│   ├── models.py
+│   └── reports
+│       ├── __init__.py
+│       ├── __pycache__
+│       │   ├── __init__.cpython-314.pyc
+│       │   └── report_aggregator.cpython-314.pyc
+│       └── report_aggregator.py
+├── l10n_audit_toolkit.egg-info
+│   ├── PKG-INFO
+│   ├── SOURCES.txt
+│   ├── dependency_links.txt
+│   ├── entry_points.txt
+│   ├── requires.txt
+│   └── top_level.txt
+├── logs
+│   ├── audit_errors.log
+│   └── temp
+├── pyproject.toml
+├── release_readiness_report.md
+├── repomix-output.txt
+├── requirements-dev.txt
+├── requirements-optional.txt
+├── requirements.txt
+├── schemas
+│   ├── config.schema.json
+│   ├── final_audit_report.schema.json
+│   ├── fix_plan.schema.json
+│   └── glossary.schema.json
+├── scratch_test
+│   ├── ar.json
+│   └── en.json
+├── test_proj
+│   ├── assets
+│   │   └── language
+│   │       ├── ar.json
+│   │       └── en.json
+│   └── lib
+│       └── main.dart
+├── tests
+│   ├── __pycache__
+│   │   ├── conftest.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_ai_factory.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_ai_logic.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_ai_review_fixes.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_api.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_ar_locale_qc.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_ar_semantic_qc.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_brand_protection.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_cli_apply.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_cli_workspace.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_config_schema.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_config_security.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_context_evaluator.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_en_locale_qc.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_final_report_schema.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_fix_plan_schema.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_glossary_cli_integration.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_glossary_discovery.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_glossary_engine.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_glossary_fixer.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_glossary_schema.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_icu_message_audit.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_java_guard.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_json_loader.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_languagetool_layer.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_languagetool_manager.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_laravel_php_loader.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_locale_exporters.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_localization_audit_pro.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_placeholder_audit.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_profile_detection.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_prompt_engineering.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_report_aggregator.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_report_dx_upgrades.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_results_manager.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_results_retention_models.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_safe_fixes.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_schema_validation_cli.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_semantic_heuristics.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_terminology_audit.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_universal_models.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_unused_key_improvements.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_usage_scanner.cpython-314-pytest-9.0.2.pyc
+│   │   ├── test_v1_3_0_logic.cpython-314-pytest-9.0.2.pyc
+│   │   └── test_v1_3_1_logic.cpython-314-pytest-9.0.2.pyc
+│   ├── conftest.py
+│   ├── fixtures
+│   │   ├── config
+│   │   │   ├── Results
+│   │   │   │   └── per_tool
+│   │   │   │       └── ar_locale_qc
+│   │   │   │           ├── ar_locale_qc_report.csv
+│   │   │   │           └── ar_locale_qc_report.xlsx
+│   │   │   ├── config.json
+│   │   │   ├── invalid_config.json
+│   │   │   └── valid_config.json
+│   │   ├── glossary
+│   │   │   ├── invalid_glossary.json
+│   │   │   └── valid_glossary.json
+│   │   ├── laravel_php
+│   │   │   ├── classic
+│   │   │   │   ├── ar
+│   │   │   │   │   └── lang.php
+│   │   │   │   └── en
+│   │   │   │       └── lang.php
+│   │   │   ├── commented
+│   │   │   │   ├── ar
+│   │   │   │   │   └── lang.php
+│   │   │   │   └── en
+│   │   │   │       └── lang.php
+│   │   │   ├── mixed_arrays
+│   │   │   │   ├── ar
+│   │   │   │   │   └── lang.php
+│   │   │   │   └── en
+│   │   │   │       └── lang.php
+│   │   │   ├── placeholder_mismatch
+│   │   │   │   ├── ar
+│   │   │   │   │   └── messages.php
+│   │   │   │   └── en
+│   │   │   │       └── messages.php
+│   │   │   ├── unsupported
+│   │   │   │   └── en
+│   │   │   │       └── messages.php
+│   │   │   └── valid
+│   │   │       ├── ar
+│   │   │       │   ├── messages.php
+│   │   │       │   └── validation.php
+│   │   │       └── en
+│   │   │           ├── messages.php
+│   │   │           └── validation.php
+│   │   ├── locale_samples
+│   │   │   ├── ar_qc.ar.json
+│   │   │   ├── ar_qc.en.json
+│   │   │   ├── en_qc.ar.json
+│   │   │   ├── en_qc.en.json
+│   │   │   ├── icu_invalid.ar.json
+│   │   │   ├── icu_invalid.en.json
+│   │   │   ├── icu_valid.ar.json
+│   │   │   ├── icu_valid.en.json
+│   │   │   ├── placeholder_count.ar.json
+│   │   │   ├── placeholder_count.en.json
+│   │   │   ├── placeholder_missing.ar.json
+│   │   │   ├── placeholder_missing.en.json
+│   │   │   ├── placeholder_renamed.ar.json
+│   │   │   ├── placeholder_renamed.en.json
+│   │   │   ├── placeholder_valid.ar.json
+│   │   │   ├── placeholder_valid.en.json
+│   │   │   ├── terminology.ar.json
+│   │   │   └── terminology.en.json
+│   │   ├── reports
+│   │   │   ├── final_audit_report.valid.json
+│   │   │   └── fix_plan.valid.json
+│   │   └── runtime_project
+│   │       ├── assets
+│   │       │   └── language
+│   │       │       ├── ar.json
+│   │       │       └── en.json
+│   │       └── lib
+│   │           └── app.dart
+│   ├── test_ai_factory.py
+│   ├── test_ai_logic.py
+│   ├── test_ai_review_fixes.py
+│   ├── test_api.py
+│   ├── test_ar_locale_qc.py
+│   ├── test_ar_semantic_qc.py
+│   ├── test_brand_protection.py
+│   ├── test_cli_apply.py
+│   ├── test_cli_workspace.py
+│   ├── test_config_schema.py
+│   ├── test_config_security.py
+│   ├── test_context_evaluator.py
+│   ├── test_en_locale_qc.py
+│   ├── test_final_report_schema.py
+│   ├── test_fix_plan_schema.py
+│   ├── test_glossary_cli_integration.py
+│   ├── test_glossary_discovery.py
+│   ├── test_glossary_engine.py
+│   ├── test_glossary_fixer.py
+│   ├── test_glossary_schema.py
+│   ├── test_icu_message_audit.py
+│   ├── test_java_guard.py
+│   ├── test_json_loader.py
+│   ├── test_languagetool_layer.py
+│   ├── test_languagetool_manager.py
+│   ├── test_laravel_php_loader.py
+│   ├── test_locale_exporters.py
+│   ├── test_localization_audit_pro.py
+│   ├── test_placeholder_audit.py
+│   ├── test_profile_detection.py
+│   ├── test_prompt_engineering.py
+│   ├── test_report_aggregator.py
+│   ├── test_report_dx_upgrades.py
+│   ├── test_results_manager.py
+│   ├── test_results_retention_models.py
+│   ├── test_safe_fixes.py
+│   ├── test_schema_validation_cli.py
+│   ├── test_semantic_heuristics.py
+│   ├── test_terminology_audit.py
+│   ├── test_universal_models.py
+│   ├── test_unused_key_improvements.py
+│   ├── test_usage_scanner.py
+│   ├── test_v1_3_0_logic.py
+│   └── test_v1_3_1_logic.py
+├── tree.txt
+├── vendor
+│   └── LanguageTool-6.6
+│       ├── CHANGES.md
+│       ├── CHANGES.txt
+│       ├── COPYING.txt
+│       ├── META-INF
+│       │   ├── MANIFEST.MF
+│       │   ├── maven
+│       │   │   └── org.languagetool
+│       │   │       ├── language-all
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ar
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ast
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-be
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-br
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ca
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-crh
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-da
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-de
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-de-DE-x-simple-language
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-el
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-en
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-eo
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-es
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-fa
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-fr
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ga
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-gl
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-it
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ja
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-km
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-nl
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-pl
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-pt
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ro
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ru
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-sk
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-sl
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-sv
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-ta
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-tl
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       ├── language-uk
+│       │   │       │   ├── pom.properties
+│       │   │       │   └── pom.xml
+│       │   │       └── language-zh
+│       │   │           ├── pom.properties
+│       │   │           └── pom.xml
+│       │   └── org
+│       │       └── languagetool
+│       │           └── language-module.properties
+│       ├── README.md
+│       ├── languagetool-commandline.jar
+│       ├── languagetool-server.jar
+│       ├── languagetool.jar
+│       ├── libs
+│       │   ├── HdrHistogram.jar
+│       │   ├── LatencyUtils.jar
+│       │   ├── aho-corasick-double-array-trie.jar
+│       │   ├── angus-activation.jar
+│       │   ├── annotations.jar
+│       │   ├── asturian-pos-dict.jar
+│       │   ├── bcrypt.jar
+│       │   ├── bytes.jar
+│       │   ├── caffeine.jar
+│       │   ├── catalan-pos-dict.jar
+│       │   ├── checker-qual.jar
+│       │   ├── commons-cli.jar
+│       │   ├── commons-codec.jar
+│       │   ├── commons-collections4.jar
+│       │   ├── commons-digester.jar
+│       │   ├── commons-io.jar
+│       │   ├── commons-lang3.jar
+│       │   ├── commons-logging.jar
+│       │   ├── commons-pool2.jar
+│       │   ├── commons-text.jar
+│       │   ├── commons-validator.jar
+│       │   ├── dutch-pos-dict.jar
+│       │   ├── ecs-logging-core.jar
+│       │   ├── english-pos-dict.jar
+│       │   ├── error_prone_annotations.jar
+│       │   ├── failureaccess.jar
+│       │   ├── fastutil-core.jar
+│       │   ├── french-pos-dict.jar
+│       │   ├── german-pos-dict.jar
+│       │   ├── grpc-api.jar
+│       │   ├── grpc-context.jar
+│       │   ├── grpc-core.jar
+│       │   ├── grpc-netty-shaded.jar
+│       │   ├── grpc-protobuf-lite.jar
+│       │   ├── grpc-protobuf.jar
+│       │   ├── grpc-stub.jar
+│       │   ├── grpc-util.jar
+│       │   ├── gson.jar
+│       │   ├── guava.jar
+│       │   ├── hamcrest-core.jar
+│       │   ├── hanlp.jar
+│       │   ├── hppc.jar
+│       │   ├── hunspell.jar
+│       │   ├── icu4j.jar
+│       │   ├── indriya.jar
+│       │   ├── istack-commons-runtime.jar
+│       │   ├── j2objc-annotations.jar
+│       │   ├── jackson-annotations.jar
+│       │   ├── jackson-core.jar
+│       │   ├── jackson-databind.jar
+│       │   ├── jakarta.activation-api.jar
+│       │   ├── jakarta.activation.jar
+│       │   ├── jakarta.xml.bind-api.jar
+│       │   ├── java-diff-utils.jar
+│       │   ├── javax.activation-api.jar
+│       │   ├── javax.annotation-api.jar
+│       │   ├── jaxb-api.jar
+│       │   ├── jaxb-core.jar
+│       │   ├── jaxb-impl.jar
+│       │   ├── jaxb-runtime.jar
+│       │   ├── jcl-over-slf4j.jar
+│       │   ├── jcommander.jar
+│       │   ├── jna-platform.jar
+│       │   ├── jna.jar
+│       │   ├── json.jar
+│       │   ├── jsonic.jar
+│       │   ├── jspecify.jar
+│       │   ├── jsr305.jar
+│       │   ├── junit.jar
+│       │   ├── jwordsplitter.jar
+│       │   ├── language-detector.jar
+│       │   ├── languagetool-core-tests.jar
+│       │   ├── languagetool-core.jar
+│       │   ├── languagetool-ga-dicts.jar
+│       │   ├── languagetool-gui-commons.jar
+│       │   ├── languagetool-tools.jar
+│       │   ├── lettuce-core.jar
+│       │   ├── linguistics.grammardb.spell.languagetool.jar
+│       │   ├── listenablefuture.jar
+│       │   ├── logback-classic.jar
+│       │   ├── logback-core.jar
+│       │   ├── logback-ecs-encoder.jar
+│       │   ├── lucene-backward-codecs.jar
+│       │   ├── lucene-core.jar
+│       │   ├── lucene-gosen-ipadic.jar
+│       │   ├── mariadb-java-client.jar
+│       │   ├── micrometer-core.jar
+│       │   ├── micrometer-registry-prometheus.jar
+│       │   ├── morfologik-crh-lt.jar
+│       │   ├── morfologik-fsa-builders.jar
+│       │   ├── morfologik-fsa.jar
+│       │   ├── morfologik-speller.jar
+│       │   ├── morfologik-stemming.jar
+│       │   ├── morfologik-tools.jar
+│       │   ├── morfologik-ukrainian-lt.jar
+│       │   ├── morphology-el.jar
+│       │   ├── mybatis.jar
+│       │   ├── netty-buffer.jar
+│       │   ├── netty-codec.jar
+│       │   ├── netty-common.jar
+│       │   ├── netty-handler.jar
+│       │   ├── netty-resolver.jar
+│       │   ├── netty-transport-native-unix-common.jar
+│       │   ├── netty-transport.jar
+│       │   ├── opennlp-chunk-models.jar
+│       │   ├── opennlp-postag-models.jar
+│       │   ├── opennlp-tokenize-models.jar
+│       │   ├── opennlp-tools.jar
+│       │   ├── openregex.jar
+│       │   ├── opentelemetry-api.jar
+│       │   ├── opentelemetry-context.jar
+│       │   ├── opentelemetry-semconv.jar
+│       │   ├── perfmark-api.jar
+│       │   ├── portuguese-pos-dict.jar
+│       │   ├── proto-google-common-protos.jar
+│       │   ├── protobuf-java.jar
+│       │   ├── reactive-streams.jar
+│       │   ├── reactor-core.jar
+│       │   ├── resilience4j-circuitbreaker.jar
+│       │   ├── resilience4j-core.jar
+│       │   ├── resilience4j-micrometer.jar
+│       │   ├── segment.jar
+│       │   ├── simpleclient.jar
+│       │   ├── simpleclient_common.jar
+│       │   ├── simpleclient_guava.jar
+│       │   ├── simpleclient_hotspot.jar
+│       │   ├── simpleclient_httpserver.jar
+│       │   ├── simpleclient_tracer_common.jar
+│       │   ├── simpleclient_tracer_otel.jar
+│       │   ├── simpleclient_tracer_otel_agent.jar
+│       │   ├── slf4j-api.jar
+│       │   ├── spanish-pos-dict.jar
+│       │   ├── txw2.jar
+│       │   ├── unit-api.jar
+│       │   ├── uom-lib-common.jar
+│       │   ├── vavr-match.jar
+│       │   ├── vavr.jar
+│       │   └── waffle-jna.jar
+│       ├── org
+│       │   └── languagetool
+│       │       ├── MessagesBundle_ar.properties
+│       │       ├── MessagesBundle_ast.properties
+│       │       ├── MessagesBundle_be.properties
+│       │       ├── MessagesBundle_br.properties
+│       │       ├── MessagesBundle_ca.properties
+│       │       ├── MessagesBundle_da.properties
+│       │       ├── MessagesBundle_de.properties
+│       │       ├── MessagesBundle_el.properties
+│       │       ├── MessagesBundle_eo.properties
+│       │       ├── MessagesBundle_es.properties
+│       │       ├── MessagesBundle_fa.properties
+│       │       ├── MessagesBundle_fr.properties
+│       │       ├── MessagesBundle_gl.properties
+│       │       ├── MessagesBundle_it.properties
+│       │       ├── MessagesBundle_ja.properties
+│       │       ├── MessagesBundle_km.properties
+│       │       ├── MessagesBundle_nl.properties
+│       │       ├── MessagesBundle_pl.properties
+│       │       ├── MessagesBundle_pt_BR.properties
+│       │       ├── MessagesBundle_pt_PT.properties
+│       │       ├── MessagesBundle_ro.properties
+│       │       ├── MessagesBundle_ru.properties
+│       │       ├── MessagesBundle_sk.properties
+│       │       ├── MessagesBundle_sl.properties
+│       │       ├── MessagesBundle_sv.properties
+│       │       ├── MessagesBundle_ta.properties
+│       │       ├── MessagesBundle_tl.properties
+│       │       ├── MessagesBundle_uk.properties
+│       │       ├── MessagesBundle_zh.properties
+│       │       ├── chunking
+│       │       │   ├── EnglishChunkFilter$ChunkType.class
+│       │       │   ├── EnglishChunkFilter.class
+│       │       │   ├── EnglishChunker.class
+│       │       │   ├── GermanChunker$AffectedSpans.class
+│       │       │   ├── GermanChunker$PhraseType.class
+│       │       │   ├── GermanChunker$RegularExpressionWithPhraseType.class
+│       │       │   ├── GermanChunker$Span.class
+│       │       │   ├── GermanChunker.class
+│       │       │   ├── RussianChunker$AffectedSpans.class
+│       │       │   ├── RussianChunker$PhraseType.class
+│       │       │   ├── RussianChunker$RegularExpressionWithPhraseType.class
+│       │       │   ├── RussianChunker$Span.class
+│       │       │   └── RussianChunker.class
+│       │       ├── language
+│       │       │   ├── AmericanEnglish.class
+│       │       │   ├── AngolaPortuguese.class
+│       │       │   ├── Arabic.class
+│       │       │   ├── Asturian.class
+│       │       │   ├── AustralianEnglish.class
+│       │       │   ├── AustrianGerman.class
+│       │       │   ├── BalearicCatalan.class
+│       │       │   ├── Belarusian.class
+│       │       │   ├── BelgianDutch.class
+│       │       │   ├── BelgianFrench.class
+│       │       │   ├── BrazilianPortuguese.class
+│       │       │   ├── Breton.class
+│       │       │   ├── BritishEnglish.class
+│       │       │   ├── CanadianEnglish.class
+│       │       │   ├── CanadianFrench.class
+│       │       │   ├── Catalan.class
+│       │       │   ├── Chinese.class
+│       │       │   ├── CrimeanTatar.class
+│       │       │   ├── Danish.class
+│       │       │   ├── Dutch.class
+│       │       │   ├── English$1.class
+│       │       │   ├── English.class
+│       │       │   ├── Esperanto.class
+│       │       │   ├── French.class
+│       │       │   ├── Galician.class
+│       │       │   ├── German.class
+│       │       │   ├── GermanyGerman.class
+│       │       │   ├── Greek.class
+│       │       │   ├── Irish.class
+│       │       │   ├── Italian.class
+│       │       │   ├── Japanese.class
+│       │       │   ├── Khmer.class
+│       │       │   ├── MozambiquePortuguese.class
+│       │       │   ├── NewZealandEnglish.class
+│       │       │   ├── NonSwissGerman.class
+│       │       │   ├── Persian.class
+│       │       │   ├── Polish.class
+│       │       │   ├── PortugalPortuguese.class
+│       │       │   ├── Portuguese.class
+│       │       │   ├── Romanian.class
+│       │       │   ├── Russian.class
+│       │       │   ├── SimpleGerman.class
+│       │       │   ├── Slovak.class
+│       │       │   ├── Slovenian.class
+│       │       │   ├── SouthAfricanEnglish.class
+│       │       │   ├── Spanish.class
+│       │       │   ├── SpanishVoseo.class
+│       │       │   ├── Swedish.class
+│       │       │   ├── SwissFrench.class
+│       │       │   ├── SwissGerman.class
+│       │       │   ├── Tagalog.class
+│       │       │   ├── Tamil.class
+│       │       │   ├── Ukrainian.class
+│       │       │   ├── ValencianCatalan.class
+│       │       │   ├── rules
+│       │       │   │   └── ast
+│       │       │   │       └── MorfologikAsturianSpellerRule.class
+│       │       │   ├── tagging
+│       │       │   │   └── TamilTagger.class
+│       │       │   ├── tl
+│       │       │   │   └── MorfologikTagalogSpellerRule.class
+│       │       │   └── tokenizers
+│       │       │       └── TagalogWordTokenizer.class
+│       │       ├── resource
+│       │       │   ├── ar
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── arabic.dict
+│       │       │   │   ├── arabic.info
+│       │       │   │   ├── arabic_synth.dict
+│       │       │   │   ├── arabic_synth.dict_tags.txt
+│       │       │   │   ├── arabic_synth.info
+│       │       │   │   ├── arabic_tags.txt
+│       │       │   │   ├── arabic_tags_description.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── confusion_set_candidates.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── AUTHORS
+│       │       │   │   │   ├── COPYING
+│       │       │   │   │   ├── THANKS
+│       │       │   │   │   ├── ar.aff
+│       │       │   │   │   ├── ar.dic
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   ├── prohibit_custom.txt
+│       │       │   │   │   ├── spelling.txt
+│       │       │   │   │   └── spelling_custom.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── wordlist-flat
+│       │       │   │       └── about.txt
+│       │       │   ├── ast
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── ast.profile
+│       │       │   │   ├── ast.profile.README
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── create_dict.sh
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   └── removed_custom.txt
+│       │       │   ├── be
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── specific_case.txt
+│       │       │   ├── br
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── breton.dict
+│       │       │   │   ├── breton.info
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── create-lexicon.pl
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README.txt
+│       │       │   │   │   ├── br_FR.dict
+│       │       │   │   │   ├── br_FR.info
+│       │       │   │   │   ├── create-fsa-spell-dictionary.sh
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   └── removed_custom.txt
+│       │       │   ├── ca
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── ca.sor
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── do-not-synthesize.txt
+│       │       │   │   ├── entities.ent
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── prohibit.txt
+│       │       │   │   ├── hyphenated_words.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── spelling-special.txt
+│       │       │   │   ├── spelling.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── crh
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   └── removed.txt
+│       │       │   ├── da
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── danish.dict
+│       │       │   │   ├── danish.info
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_da_DK.txt
+│       │       │   │   │   ├── da_DK.aff
+│       │       │   │   │   ├── da_DK.dic
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── de
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── alt_neu.csv
+│       │       │   │   ├── ambiguous_case.txt
+│       │       │   │   ├── case_rule_exceptions.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compound-cities.txt
+│       │       │   │   ├── compound_exceptions.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── confusion_set_candidates.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── de.sor
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── do-not-synthesize.txt
+│       │       │   │   ├── eigennamen_gross.txt
+│       │       │   │   ├── errors.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── COPYING_GPLv2.txt
+│       │       │   │   │   ├── COPYING_GPLv3.txt
+│       │       │   │   │   ├── create_dict.sh
+│       │       │   │   │   ├── de_AT.aff
+│       │       │   │   │   ├── de_AT.dic
+│       │       │   │   │   ├── de_AT.dic.header
+│       │       │   │   │   ├── de_AT.dict
+│       │       │   │   │   ├── de_AT.info
+│       │       │   │   │   ├── de_AT_frami_README.txt
+│       │       │   │   │   ├── de_CH.aff
+│       │       │   │   │   ├── de_CH.dic
+│       │       │   │   │   ├── de_CH.dic.header
+│       │       │   │   │   ├── de_CH.dict
+│       │       │   │   │   ├── de_CH.info
+│       │       │   │   │   ├── de_CH_frami_README.txt
+│       │       │   │   │   ├── de_DE.README
+│       │       │   │   │   ├── de_DE.aff
+│       │       │   │   │   ├── de_DE.dic
+│       │       │   │   │   ├── de_DE.dic.header
+│       │       │   │   │   ├── de_DE.dict
+│       │       │   │   │   ├── de_DE.info
+│       │       │   │   │   ├── de_DE_frami_README.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   ├── prohibit_custom.txt
+│       │       │   │   │   ├── spelling-de-AT.txt
+│       │       │   │   │   ├── spelling-de-CH.txt
+│       │       │   │   │   ├── spelling.txt
+│       │       │   │   │   ├── spelling_custom.txt
+│       │       │   │   │   ├── spelling_merged.txt
+│       │       │   │   │   └── spelling_recommendation.txt
+│       │       │   │   ├── multitoken-ignore.txt
+│       │       │   │   ├── multitoken-suggest.txt
+│       │       │   │   ├── other_prefixes.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── spelling_correction_model.bin
+│       │       │   │   ├── tagset.txt
+│       │       │   │   ├── verb_prefixes.txt
+│       │       │   │   ├── verb_stems.txt
+│       │       │   │   ├── word_definitions.txt
+│       │       │   │   └── words_infix_s.txt
+│       │       │   ├── el
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── greek.dict
+│       │       │   │   ├── greek.info
+│       │       │   │   ├── greek.txt
+│       │       │   │   ├── greek_synth.dict
+│       │       │   │   ├── greek_synth.info
+│       │       │   │   ├── greek_tags.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_el_GR.txt
+│       │       │   │   │   ├── el_GR.dict
+│       │       │   │   │   ├── el_GR.info
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── specific_case.txt
+│       │       │   ├── en
+│       │       │   │   ├── 12dicts-readme.html
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── agid-readme.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── confusion_set_candidates.txt
+│       │       │   │   ├── confusion_sets.README
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── confusion_sets_extended.txt
+│       │       │   │   ├── confusion_sets_l2_de.txt
+│       │       │   │   ├── confusion_sets_l2_es.txt
+│       │       │   │   ├── confusion_sets_l2_fr.txt
+│       │       │   │   ├── confusion_sets_l2_nl.txt
+│       │       │   │   ├── confusion_sets_l2_nl_wip.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── do-not-synthesize.txt
+│       │       │   │   ├── en-US-GB.txt
+│       │       │   │   ├── en.sor
+│       │       │   │   ├── errors.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   ├── prohibit_custom.txt
+│       │       │   │   │   ├── spelling.txt
+│       │       │   │   │   ├── spelling_custom.txt
+│       │       │   │   │   ├── spelling_en-AU.txt
+│       │       │   │   │   ├── spelling_en-CA.txt
+│       │       │   │   │   ├── spelling_en-GB.txt
+│       │       │   │   │   ├── spelling_en-NZ.txt
+│       │       │   │   │   ├── spelling_en-US.txt
+│       │       │   │   │   ├── spelling_en-ZA.txt
+│       │       │   │   │   └── spelling_merged.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── pos-readme.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── specific_case.txt
+│       │       │   │   ├── spelling_correction_model.bin
+│       │       │   │   ├── tagset.txt
+│       │       │   │   └── word_definitions.txt
+│       │       │   ├── eo
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── eo.profile
+│       │       │   │   ├── eo.profile.README
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_eo.txt
+│       │       │   │   │   ├── eo.aff
+│       │       │   │   │   ├── eo.dic
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── manual-tagger.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── es
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── confusion_set_candidates.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── entities.ent
+│       │       │   │   ├── es.sor
+│       │       │   │   ├── etiquetas-eagles.md
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── hyphenated_words.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── synthesis.awk
+│       │       │   │   ├── tagset.txt
+│       │       │   │   ├── test-tagged.txt
+│       │       │   │   ├── test.txt
+│       │       │   │   └── verb_noun.txt
+│       │       │   ├── fa
+│       │       │   │   └── common_words.txt
+│       │       │   ├── fr
+│       │       │   │   ├── README_lexique.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── fr.sor
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_fr.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   ├── spelling.txt
+│       │       │   │   │   └── spelling_custom.txt
+│       │       │   │   ├── hyphenated_words.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── ga
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── conv-gramadoir.pl
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── earraidi.txt
+│       │       │   │   ├── eile.txt
+│       │       │   │   ├── error_corpus.txt
+│       │       │   │   ├── filter-archaic.txt
+│       │       │   │   ├── homophones-connacht.txt
+│       │       │   │   ├── homophones-munster.txt
+│       │       │   │   ├── homophones-ulster.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── irish_tags.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── specific_case.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── gl
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── freeling2lt.pl
+│       │       │   │   ├── galician.dict
+│       │       │   │   ├── galician.info
+│       │       │   │   ├── galician_synth.dict
+│       │       │   │   ├── galician_synth.info
+│       │       │   │   ├── galician_tags.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── LICENCES-en.txt
+│       │       │   │   │   ├── README-gl-ES.txt
+│       │       │   │   │   ├── gl_ES.aff
+│       │       │   │   │   ├── gl_ES.dic
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── makedict-gl.sh
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── it
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_it_IT.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── it_IT.dict
+│       │       │   │   │   ├── it_IT.info
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── italian.dict
+│       │       │   │   ├── italian.info
+│       │       │   │   ├── italian_synth.dict
+│       │       │   │   ├── italian_synth.info
+│       │       │   │   ├── italian_tags.txt
+│       │       │   │   ├── morph_data_italian.awk
+│       │       │   │   ├── not_smi.awk
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── km
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── LICENCES-km.txt
+│       │       │   │   │   ├── LICENSES-en.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── km_KH.aff
+│       │       │   │   │   ├── km_KH.dic
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── khmer.dict
+│       │       │   │   ├── khmer.info
+│       │       │   │   ├── khmertags.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── nl
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compound_acceptor
+│       │       │   │   │   ├── acronym_exceptions.txt
+│       │       │   │   │   ├── always_needs_hyphen.txt
+│       │       │   │   │   ├── always_needs_s.txt
+│       │       │   │   │   ├── directions.txt
+│       │       │   │   │   ├── needs_s.txt
+│       │       │   │   │   ├── no_s.txt
+│       │       │   │   │   ├── part1_exceptions.txt
+│       │       │   │   │   └── part2_exceptions.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── multipartcompounds.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── nl.sor
+│       │       │   │   ├── preferredwords.csv
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── spelling
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   └── tagset.csv
+│       │       │   ├── pl
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_en.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── pl_PL.dict
+│       │       │   │   │   ├── pl_PL.info
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── polish.dict
+│       │       │   │   ├── polish.info
+│       │       │   │   ├── polish_synth.dict
+│       │       │   │   ├── polish_synth.info
+│       │       │   │   ├── polish_tags.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── pt
+│       │       │   │   ├── abbreviations.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── blacklist.txt
+│       │       │   │   ├── brazilian_municipalities
+│       │       │   │   │   ├── AC.tsv
+│       │       │   │   │   ├── AL.tsv
+│       │       │   │   │   ├── AM.tsv
+│       │       │   │   │   ├── AP.tsv
+│       │       │   │   │   ├── BA.tsv
+│       │       │   │   │   ├── CE.tsv
+│       │       │   │   │   ├── DF.tsv
+│       │       │   │   │   ├── ES.tsv
+│       │       │   │   │   ├── GO.tsv
+│       │       │   │   │   ├── MA.tsv
+│       │       │   │   │   ├── MG.tsv
+│       │       │   │   │   ├── MS.tsv
+│       │       │   │   │   ├── MT.tsv
+│       │       │   │   │   ├── PA.tsv
+│       │       │   │   │   ├── PB.tsv
+│       │       │   │   │   ├── PE.tsv
+│       │       │   │   │   ├── PI.tsv
+│       │       │   │   │   ├── PR.tsv
+│       │       │   │   │   ├── RJ.tsv
+│       │       │   │   │   ├── RN.tsv
+│       │       │   │   │   ├── RO.tsv
+│       │       │   │   │   ├── RR.tsv
+│       │       │   │   │   ├── RS.tsv
+│       │       │   │   │   ├── SC.tsv
+│       │       │   │   │   ├── SE.tsv
+│       │       │   │   │   ├── SP.tsv
+│       │       │   │   │   └── TO.tsv
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compound_colours.txt
+│       │       │   │   ├── confusion_set_candidates.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── dialect_alternations.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── do_not_suggest.txt
+│       │       │   │   ├── entities
+│       │       │   │   │   ├── abbrev.ent
+│       │       │   │   │   ├── chars.ent
+│       │       │   │   │   ├── datetime.ent
+│       │       │   │   │   ├── english.ent
+│       │       │   │   │   ├── hyphenised.ent
+│       │       │   │   │   ├── languages.ent
+│       │       │   │   │   ├── messages.ent
+│       │       │   │   │   ├── misc.ent
+│       │       │   │   │   ├── paronyms.ent
+│       │       │   │   │   ├── postal.ent
+│       │       │   │   │   └── verbs.ent
+│       │       │   │   ├── hyphenated_words.txt
+│       │       │   │   ├── ignore.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── post-reform-compounds-inactive.txt
+│       │       │   │   ├── post-reform-compounds.txt
+│       │       │   │   ├── pre-reform-compounds.txt
+│       │       │   │   ├── prohibit.txt
+│       │       │   │   ├── pt.sor
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── spelling.txt
+│       │       │   │   ├── state_name_mapping.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── ro
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── coduri.html
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── COPYING.GPL
+│       │       │   │   │   ├── COPYING.LGPL
+│       │       │   │   │   ├── COPYING.MPL
+│       │       │   │   │   ├── README_EN.txt
+│       │       │   │   │   ├── README_RO.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── ro_RO.dict
+│       │       │   │   │   ├── ro_RO.info
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── romanian.dict
+│       │       │   │   ├── romanian.info
+│       │       │   │   ├── romanian_synth.dict
+│       │       │   │   ├── romanian_synth.info
+│       │       │   │   ├── romanian_tags.txt
+│       │       │   │   ├── test_diacritics.dict
+│       │       │   │   └── test_diacritics.info
+│       │       │   ├── ru
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── confusion_sets.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README.txt
+│       │       │   │   │   ├── freq-wordlist.awk
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── make-freq-wordlist-ru.sh
+│       │       │   │   │   ├── make_ru_RU.sh
+│       │       │   │   │   ├── make_spell_dict.awk
+│       │       │   │   │   ├── prohibit.txt
+│       │       │   │   │   ├── ru_RU.dict
+│       │       │   │   │   ├── ru_RU.info
+│       │       │   │   │   ├── ru_RU_yo.dict
+│       │       │   │   │   ├── ru_RU_yo.info
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── make_dict_ru.sh
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── russian.dict
+│       │       │   │   ├── russian.info
+│       │       │   │   ├── russian_manual_add.txt
+│       │       │   │   ├── russian_synth.dict
+│       │       │   │   ├── russian_synth.info
+│       │       │   │   ├── specific_case.txt
+│       │       │   │   ├── tags_russian.txt
+│       │       │   │   ├── tagset.txt
+│       │       │   │   └── yo.awk
+│       │       │   ├── sk
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── bin
+│       │       │   │   │   └── filter_lft.py
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── create_dictionary.sh
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_en.txt
+│       │       │   │   │   ├── README_sk.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── sk_SK.dict
+│       │       │   │   │   ├── sk_SK.info
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── slovak.dict
+│       │       │   │   ├── slovak.info
+│       │       │   │   ├── slovak_synth.dict
+│       │       │   │   ├── slovak_synth.info
+│       │       │   │   ├── slovak_tags.txt
+│       │       │   │   └── tagset.txt
+│       │       │   ├── sl
+│       │       │   │   ├── common_words.txt
+│       │       │   │   └── hunspell
+│       │       │   │       ├── README_sl_SI.txt
+│       │       │   │       ├── ignore.txt
+│       │       │   │       ├── sl_SI.dict
+│       │       │   │       ├── sl_SI.info
+│       │       │   │       └── spelling.txt
+│       │       │   ├── sv
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── compounds.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── LICENSE_en_US.txt
+│       │       │   │   │   ├── LICENSE_sv_SE.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── spelling.txt
+│       │       │   │   │   ├── sv_SE.aff
+│       │       │   │   │   └── sv_SE.dic
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── sv.sor
+│       │       │   │   ├── swedish.dict
+│       │       │   │   ├── swedish.info
+│       │       │   │   ├── swedish_synth.dict
+│       │       │   │   ├── swedish_synth.dict_tags.txt
+│       │       │   │   ├── swedish_synth.info
+│       │       │   │   └── tagset.txt
+│       │       │   ├── ta
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── tagset.txt
+│       │       │   │   ├── tamil.dict
+│       │       │   │   └── tamil.info
+│       │       │   ├── tl
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── README_frequencies.txt
+│       │       │   │   │   ├── README_tl_PH.txt
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   ├── spelling.txt
+│       │       │   │   │   ├── tl_PH.dict
+│       │       │   │   │   └── tl_PH.info
+│       │       │   │   ├── removed.txt
+│       │       │   │   ├── removed_custom.txt
+│       │       │   │   ├── tagalog.dict
+│       │       │   │   ├── tagalog.info
+│       │       │   │   └── tagset.txt
+│       │       │   ├── uk
+│       │       │   │   ├── README.txt
+│       │       │   │   ├── added.txt
+│       │       │   │   ├── added_custom.txt
+│       │       │   │   ├── case_government.txt
+│       │       │   │   ├── common_words.txt
+│       │       │   │   ├── dash_follower.txt
+│       │       │   │   ├── dash_left_master.txt
+│       │       │   │   ├── dash_prefixes.txt
+│       │       │   │   ├── dash_prefixes_invalid.txt
+│       │       │   │   ├── derivats.txt
+│       │       │   │   ├── disambig_dups.txt
+│       │       │   │   ├── disambig_remove.txt
+│       │       │   │   ├── disambiguation.xml
+│       │       │   │   ├── entities.txt
+│       │       │   │   ├── hunspell
+│       │       │   │   │   ├── ignore.txt
+│       │       │   │   │   └── spelling.txt
+│       │       │   │   ├── masc_fem.txt
+│       │       │   │   ├── multiwords.txt
+│       │       │   │   ├── removed.txt
+│       │       │   │   └── removed_custom.txt
+│       │       │   └── zh
+│       │       │       ├── common_words.txt
+│       │       │       └── confusion_sets.txt
+│       │       ├── rules
+│       │       │   ├── ar
+│       │       │   │   ├── ArabicCommaWhitespaceRule.class
+│       │       │   │   ├── ArabicConfusionProbabilityRule.class
+│       │       │   │   ├── ArabicDarjaRule.class
+│       │       │   │   ├── ArabicDiacriticsRule.class
+│       │       │   │   ├── ArabicDoublePunctuationRule.class
+│       │       │   │   ├── ArabicHomophonesRule.class
+│       │       │   │   ├── ArabicHunspellSpellerRule.class
+│       │       │   │   ├── ArabicInflectedOneWordReplaceRule.class
+│       │       │   │   ├── ArabicQuestionMarkWhitespaceRule.class
+│       │       │   │   ├── ArabicRedundancyRule.class
+│       │       │   │   ├── ArabicSemiColonWhitespaceRule.class
+│       │       │   │   ├── ArabicSimpleReplaceRule.class
+│       │       │   │   ├── ArabicTransVerbRule.class
+│       │       │   │   ├── ArabicWordCoherencyRule.class
+│       │       │   │   ├── ArabicWordRepeatRule.class
+│       │       │   │   ├── ArabicWordinessRule.class
+│       │       │   │   ├── ArabicWrongWordInContextRule.class
+│       │       │   │   ├── arabic_adjective_exclamation.txt
+│       │       │   │   ├── arabic_masdar_verb.txt
+│       │       │   │   ├── arabic_verb_masdar.txt
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── darja.txt
+│       │       │   │   ├── diacritics.txt
+│       │       │   │   ├── filters
+│       │       │   │   │   ├── ArabicAdjectiveToExclamationFilter$1.class
+│       │       │   │   │   ├── ArabicAdjectiveToExclamationFilter.class
+│       │       │   │   │   ├── ArabicAdvancedSynthesizerFilter.class
+│       │       │   │   │   ├── ArabicDMYDateCheckFilter.class
+│       │       │   │   │   ├── ArabicDateCheckFilter.class
+│       │       │   │   │   ├── ArabicDateFilterHelper.class
+│       │       │   │   │   ├── ArabicMasdarToVerbFilter$1.class
+│       │       │   │   │   ├── ArabicMasdarToVerbFilter$2.class
+│       │       │   │   │   ├── ArabicMasdarToVerbFilter.class
+│       │       │   │   │   ├── ArabicNumberPhraseFilter.class
+│       │       │   │   │   ├── ArabicVerbToMafoulMutlaqFilter$1.class
+│       │       │   │   │   └── ArabicVerbToMafoulMutlaqFilter.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── homophones.txt
+│       │       │   │   ├── indent.sh
+│       │       │   │   ├── inflected_one_word.txt
+│       │       │   │   ├── redundancies.txt
+│       │       │   │   ├── replaces.txt
+│       │       │   │   ├── verb_trans_to_untrans2.txt
+│       │       │   │   ├── wordiness.txt
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── ast
+│       │       │   │   └── grammar.xml
+│       │       │   ├── be
+│       │       │   │   ├── BelarusianSpecificCaseRule.class
+│       │       │   │   ├── MorfologikBelarusianSpellerRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   └── replace.txt
+│       │       │   ├── br
+│       │       │   │   ├── BretonCompoundRule.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── MorfologikBretonSpellerRule.class
+│       │       │   │   ├── TopoReplaceRule.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   └── topo.txt
+│       │       │   ├── ca
+│       │       │   │   ├── AbstractSimpleReplaceLemmasRule.class
+│       │       │   │   ├── AdjustPronounsFilter.class
+│       │       │   │   ├── AdjustVerbSuggestionsFilter.class
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── AnarASuggestionsFilter.class
+│       │       │   │   ├── ApostophationHelper.class
+│       │       │   │   ├── CatalanMultitokenSpeller.class
+│       │       │   │   ├── CatalanNumberInWordFilter.class
+│       │       │   │   ├── CatalanNumberSpellerFilter.class
+│       │       │   │   ├── CatalanRepeatedWordsRule.class
+│       │       │   │   ├── CatalanSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── CatalanUnpairedBracketsRule.class
+│       │       │   │   ├── CatalanUnpairedExclamationMarksRule.class
+│       │       │   │   ├── CatalanUnpairedQuestionMarksRule.class
+│       │       │   │   ├── CatalanWordRepeatBeginningRule.class
+│       │       │   │   ├── CatalanWordRepeatRule.class
+│       │       │   │   ├── CatalanWrongWordInContextRule.class
+│       │       │   │   ├── CheckCaseRule.class
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── ConfusionPairsDataLoader.class
+│       │       │   │   ├── ConvertToGenderAndNumberFilter.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── DiacriticsCheckFilter.class
+│       │       │   │   ├── DonarTempsSuggestionsFilter.class
+│       │       │   │   ├── FindSuggestionsEsFilter.class
+│       │       │   │   ├── FindSuggestionsFilter.class
+│       │       │   │   ├── MorfologikCatalanSpellerRule.class
+│       │       │   │   ├── NewYearDateFilter.class
+│       │       │   │   ├── OblidarseSugestionsFilter.class
+│       │       │   │   ├── PortarGerundiSuggestionsFilter.class
+│       │       │   │   ├── PortarTempsSuggestionsFilter.class
+│       │       │   │   ├── PossessiusRedundantsFilter.class
+│       │       │   │   ├── PostponedAdjectiveConcordanceFilter.class
+│       │       │   │   ├── PronomFebleDuplicateRule.class
+│       │       │   │   ├── PronomsFeblesHelper$PronounPosition.class
+│       │       │   │   ├── PronomsFeblesHelper.class
+│       │       │   │   ├── ReplaceOperationNamesRule.class
+│       │       │   │   ├── SimpleReplaceAdverbsMent.class
+│       │       │   │   ├── SimpleReplaceAnglicism.class
+│       │       │   │   ├── SimpleReplaceBalearicRule.class
+│       │       │   │   ├── SimpleReplaceDNVColloquialRule$1.class
+│       │       │   │   ├── SimpleReplaceDNVColloquialRule.class
+│       │       │   │   ├── SimpleReplaceDNVRule$1.class
+│       │       │   │   ├── SimpleReplaceDNVRule.class
+│       │       │   │   ├── SimpleReplaceDNVSecondaryRule$1.class
+│       │       │   │   ├── SimpleReplaceDNVSecondaryRule.class
+│       │       │   │   ├── SimpleReplaceDiacriticsIEC.class
+│       │       │   │   ├── SimpleReplaceMultiwordsRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── SimpleReplaceVerbsRule.class
+│       │       │   │   ├── SynthesizeWithDeterminerFilter.class
+│       │       │   │   ├── TextToNumberFilter.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── WordCoherencyValencianRule.class
+│       │       │   │   ├── ca-ES-valencia
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── check_case.txt
+│       │       │   │   ├── coherency-valencia.txt
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── confusion_pairs.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_adverbs_ment.txt
+│       │       │   │   ├── replace_anglicism.txt
+│       │       │   │   ├── replace_balearic.txt
+│       │       │   │   ├── replace_custom.txt
+│       │       │   │   ├── replace_diacritics_iec.txt
+│       │       │   │   ├── replace_dnv.txt
+│       │       │   │   ├── replace_dnv_colloquial.txt
+│       │       │   │   ├── replace_dnv_secondary.txt
+│       │       │   │   ├── replace_multiwords.txt
+│       │       │   │   ├── replace_operationnames.txt
+│       │       │   │   ├── replace_verbs.txt
+│       │       │   │   ├── synonyms.txt
+│       │       │   │   ├── verb_senseaccent_adj_ambaccent.txt
+│       │       │   │   ├── verb_senseaccent_nom_ambaccent.txt
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── crh
+│       │       │   │   ├── MorfologikCrimeanTatarSpellerRule.class
+│       │       │   │   └── grammar.xml
+│       │       │   ├── da
+│       │       │   │   └── grammar.xml
+│       │       │   ├── de
+│       │       │   │   ├── AdaptSuggestionFilter.class
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── AgreementRule$GrammarCategory.class
+│       │       │   │   ├── AgreementRule$ReplacementType.class
+│       │       │   │   ├── AgreementRule.class
+│       │       │   │   ├── AgreementRule2.class
+│       │       │   │   ├── AgreementRuleAntiPatterns1.class
+│       │       │   │   ├── AgreementRuleAntiPatterns2.class
+│       │       │   │   ├── AgreementRuleAntiPatterns3.class
+│       │       │   │   ├── AgreementSuggestor2$Suggestion.class
+│       │       │   │   ├── AgreementSuggestor2.class
+│       │       │   │   ├── AgreementTools.class
+│       │       │   │   ├── AustrianGermanSpellerRule.class
+│       │       │   │   ├── CaseRule.class
+│       │       │   │   ├── CaseRuleAntiPatterns.class
+│       │       │   │   ├── CaseRuleExceptions.class
+│       │       │   │   ├── CompoundCheckFilter$Lazy.class
+│       │       │   │   ├── CompoundCheckFilter.class
+│       │       │   │   ├── CompoundCoherencyRule.class
+│       │       │   │   ├── CompoundInfinitivRule.class
+│       │       │   │   ├── ConjunctionAtBeginOfSentenceRule.class
+│       │       │   │   ├── DashRule.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── DuUpperLowerCaseRule.class
+│       │       │   │   ├── FutureDateFilter.class
+│       │       │   │   ├── GermanCommaWhitespaceRule.class
+│       │       │   │   ├── GermanCompoundRule.class
+│       │       │   │   ├── GermanConfusionProbabilityRule.class
+│       │       │   │   ├── GermanDoublePunctuationRule.class
+│       │       │   │   ├── GermanFillerWordsRule.class
+│       │       │   │   ├── GermanHelper.class
+│       │       │   │   ├── GermanMultitokenSpeller.class
+│       │       │   │   ├── GermanNumberInWordFilter.class
+│       │       │   │   ├── GermanParagraphRepeatBeginningRule.class
+│       │       │   │   ├── GermanReadabilityRule.class
+│       │       │   │   ├── GermanRepeatedWordsRule.class
+│       │       │   │   ├── GermanSpellerRule$ExpandingReader.class
+│       │       │   │   ├── GermanSpellerRule.class
+│       │       │   │   ├── GermanStyleRepeatedWordRule.class
+│       │       │   │   ├── GermanSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── GermanTools.class
+│       │       │   │   ├── GermanUnpairedBracketsRule.class
+│       │       │   │   ├── GermanUnpairedQuotesRule.class
+│       │       │   │   ├── GermanWordRepeatBeginningRule.class
+│       │       │   │   ├── GermanWordRepeatRule.class
+│       │       │   │   ├── GermanWrongWordInContextRule.class
+│       │       │   │   ├── InsertCommaFilter.class
+│       │       │   │   ├── LanguageNames.class
+│       │       │   │   ├── LineExpander$1.class
+│       │       │   │   ├── LineExpander.class
+│       │       │   │   ├── LongSentenceRule.class
+│       │       │   │   ├── MissingCommaRelativeClauseRule.class
+│       │       │   │   ├── MissingVerbRule.class
+│       │       │   │   ├── MorfologikGermanyGermanSpellerRule.class
+│       │       │   │   ├── NewYearDateFilter.class
+│       │       │   │   ├── NonSignificantVerbsRule.class
+│       │       │   │   ├── OldSpellingRule.class
+│       │       │   │   ├── PassiveSentenceRule.class
+│       │       │   │   ├── PotentialCompoundFilter.class
+│       │       │   │   ├── PrepositionToCases$Case.class
+│       │       │   │   ├── PrepositionToCases.class
+│       │       │   │   ├── ProhibitedCompoundRule$1.class
+│       │       │   │   ├── ProhibitedCompoundRule$Pair.class
+│       │       │   │   ├── ProhibitedCompoundRule$WeightedRuleMatch.class
+│       │       │   │   ├── ProhibitedCompoundRule.class
+│       │       │   │   ├── RecentYearFilter.class
+│       │       │   │   ├── RedundantModalOrAuxiliaryVerb.class
+│       │       │   │   ├── RemoveUnknownCompoundsFilter.class
+│       │       │   │   ├── SentenceWhitespaceRule.class
+│       │       │   │   ├── SentenceWithManRule.class
+│       │       │   │   ├── SentenceWithModalVerbRule.class
+│       │       │   │   ├── SimilarNameRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── SpellingData.class
+│       │       │   │   ├── StyleRepeatedSentenceBeginning.class
+│       │       │   │   ├── StyleRepeatedVeryShortSentences.class
+│       │       │   │   ├── StyleTooOftenUsedAdjectiveRule.class
+│       │       │   │   ├── StyleTooOftenUsedNounRule.class
+│       │       │   │   ├── StyleTooOftenUsedVerbRule.class
+│       │       │   │   ├── SubjectVerbAgreementRule$SingularPluralPair.class
+│       │       │   │   ├── SubjectVerbAgreementRule.class
+│       │       │   │   ├── SwissCompoundRule$SwissExpander.class
+│       │       │   │   ├── SwissCompoundRule.class
+│       │       │   │   ├── SwissGermanSpellerRule.class
+│       │       │   │   ├── UnitConversionRule$1.class
+│       │       │   │   ├── UnitConversionRule.class
+│       │       │   │   ├── UnnecessaryPhraseRule.class
+│       │       │   │   ├── UpperCaseNgramRule.class
+│       │       │   │   ├── UppercaseNounReadingFilter.class
+│       │       │   │   ├── ValidWordFilter.class
+│       │       │   │   ├── VerbAgreementRule$BooleanAndFiniteVerb.class
+│       │       │   │   ├── VerbAgreementRule.class
+│       │       │   │   ├── WiederVsWiderRule.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── YMDDateCheckFilter.class
+│       │       │   │   ├── YMDNewYearDateFilter.class
+│       │       │   │   ├── addedCompound.txt
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── de-CH
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── de-DE-AT
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── remote-rule-filters.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_custom.txt
+│       │       │   │   ├── style.xml
+│       │       │   │   ├── synonyms.txt
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── de-DE-x-simple-language
+│       │       │   │   └── grammar.xml
+│       │       │   ├── el
+│       │       │   │   ├── GreekRedundancyRule.class
+│       │       │   │   ├── GreekSpecificCaseRule.class
+│       │       │   │   ├── GreekWordRepeatBeginningRule.class
+│       │       │   │   ├── MorfologikGreekSpellerRule.class
+│       │       │   │   ├── NumeralStressRule.class
+│       │       │   │   ├── ReplaceHomonymsRule.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── redundancies.txt
+│       │       │   │   └── replace.txt
+│       │       │   ├── en
+│       │       │   │   ├── AbstractEnglishSpellerRule$IrregularForms.class
+│       │       │   │   ├── AbstractEnglishSpellerRule.class
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── AdverbFilter$1.class
+│       │       │   │   ├── AdverbFilter.class
+│       │       │   │   ├── AmericanReplaceRule.class
+│       │       │   │   ├── AvsAnData.class
+│       │       │   │   ├── AvsAnRule$Determiner.class
+│       │       │   │   ├── AvsAnRule.class
+│       │       │   │   ├── BritishReplaceRule.class
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── ConsistentApostrophesRule.class
+│       │       │   │   ├── ContractionSpellingRule.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── EnglishConfusionProbabilityRule.class
+│       │       │   │   ├── EnglishConvertToSentenceCaseFilter.class
+│       │       │   │   ├── EnglishDashRule.class
+│       │       │   │   ├── EnglishDiacriticsRule.class
+│       │       │   │   ├── EnglishForDutchmenFalseFriendRule.class
+│       │       │   │   ├── EnglishForFrenchFalseFriendRule.class
+│       │       │   │   ├── EnglishForGermansFalseFriendRule.class
+│       │       │   │   ├── EnglishForL2SpeakersFalseFriendRule.class
+│       │       │   │   ├── EnglishForSpaniardsFalseFriendRule.class
+│       │       │   │   ├── EnglishMultitokenSpeller.class
+│       │       │   │   ├── EnglishNgramProbabilityRule.class
+│       │       │   │   ├── EnglishNumberInWordFilter.class
+│       │       │   │   ├── EnglishPartialPosTagFilter.class
+│       │       │   │   ├── EnglishPlainEnglishRule.class
+│       │       │   │   ├── EnglishRedundancyRule.class
+│       │       │   │   ├── EnglishRepeatedWordsRule.class
+│       │       │   │   ├── EnglishSpecificCaseRule.class
+│       │       │   │   ├── EnglishSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── EnglishUnpairedBracketsRule.class
+│       │       │   │   ├── EnglishUnpairedQuotesRule.class
+│       │       │   │   ├── EnglishWordRepeatBeginningRule.class
+│       │       │   │   ├── EnglishWordRepeatRule.class
+│       │       │   │   ├── EnglishWrongWordInContextRule.class
+│       │       │   │   ├── FindSuggestionsFilter.class
+│       │       │   │   ├── FutureDateFilter.class
+│       │       │   │   ├── GoogleStyleWordTokenizer.class
+│       │       │   │   ├── LongSentenceRule.class
+│       │       │   │   ├── MorfologikAmericanSpellerRule.class
+│       │       │   │   ├── MorfologikAustralianSpellerRule.class
+│       │       │   │   ├── MorfologikBritishSpellerRule.class
+│       │       │   │   ├── MorfologikCanadianSpellerRule.class
+│       │       │   │   ├── MorfologikNewZealandSpellerRule.class
+│       │       │   │   ├── MorfologikSouthAfricanSpellerRule.class
+│       │       │   │   ├── NewYearDateFilter.class
+│       │       │   │   ├── NewZealandReplaceRule.class
+│       │       │   │   ├── NoDisambiguationEnglishPartialPosTagFilter.class
+│       │       │   │   ├── OrdinalSuffixFilter.class
+│       │       │   │   ├── SimpleReplaceProfanityRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── StyleTooOftenUsedAdjectiveRule.class
+│       │       │   │   ├── StyleTooOftenUsedNounRule.class
+│       │       │   │   ├── StyleTooOftenUsedVerbRule.class
+│       │       │   │   ├── UnitConversionRule.class
+│       │       │   │   ├── UnitConversionRuleImperial.class
+│       │       │   │   ├── UnitConversionRuleUS.class
+│       │       │   │   ├── UpperCaseNgramRule.class
+│       │       │   │   ├── VariantInfo.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── YMDDateCheckFilter.class
+│       │       │   │   ├── YMDNewYearDateFilter.class
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── contractions.txt
+│       │       │   │   ├── det_a.txt
+│       │       │   │   ├── det_an.txt
+│       │       │   │   ├── diacritics.txt
+│       │       │   │   ├── en-AU
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── en-CA
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── en-GB
+│       │       │   │   │   ├── grammar.xml
+│       │       │   │   │   ├── replace.txt
+│       │       │   │   │   └── style.xml
+│       │       │   │   ├── en-NZ
+│       │       │   │   │   ├── grammar.xml
+│       │       │   │   │   └── replace.txt
+│       │       │   │   ├── en-US
+│       │       │   │   │   ├── grammar.xml
+│       │       │   │   │   ├── replace.txt
+│       │       │   │   │   └── style.xml
+│       │       │   │   ├── grammar-l2-de.xml
+│       │       │   │   ├── grammar-l2-fr.xml
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── indent.sh
+│       │       │   │   ├── redundancies.txt
+│       │       │   │   ├── remote-rule-filters.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_custom.txt
+│       │       │   │   ├── replace_profanity.txt
+│       │       │   │   ├── style.xml
+│       │       │   │   ├── synonyms.txt
+│       │       │   │   ├── translation
+│       │       │   │   │   ├── BeoLingusTranslator.class
+│       │       │   │   │   └── Inflector.class
+│       │       │   │   ├── wordiness.txt
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── eo
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── root-ant-at.txt
+│       │       │   │   ├── verb-ntr.txt
+│       │       │   │   └── verb-tr.txt
+│       │       │   ├── es
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── ConfusionCheckFilter.class
+│       │       │   │   ├── ConfusionPairsDataLoader.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── FindSuggestionsFilter.class
+│       │       │   │   ├── MorfologikSpanishSpellerRule.class
+│       │       │   │   ├── NewYearDateFilter.class
+│       │       │   │   ├── PostponedAdjectiveConcordanceFilter.class
+│       │       │   │   ├── QuestionMarkRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── SimpleReplaceVerbsRule.class
+│       │       │   │   ├── SpanishConfusionProbabilityRule.class
+│       │       │   │   ├── SpanishMultitokenSpeller.class
+│       │       │   │   ├── SpanishNumberInWordFilter.class
+│       │       │   │   ├── SpanishRepeatedWordsRule.class
+│       │       │   │   ├── SpanishSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── SpanishUnpairedBracketsRule.class
+│       │       │   │   ├── SpanishWikipediaRule.class
+│       │       │   │   ├── SpanishWordRepeatBeginningRule.class
+│       │       │   │   ├── SpanishWordRepeatRule.class
+│       │       │   │   ├── SpanishWrongWordInContextRule.class
+│       │       │   │   ├── TextToNumberFilter.class
+│       │       │   │   ├── confusion_pairs.txt
+│       │       │   │   ├── el.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── remote-rule-filters.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_custom.txt
+│       │       │   │   ├── replace_verbs.txt
+│       │       │   │   ├── style.xml
+│       │       │   │   ├── synonyms.txt
+│       │       │   │   ├── wikipedia.txt
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── fa
+│       │       │   │   ├── PersianCommaWhitespaceRule.class
+│       │       │   │   ├── PersianDoublePunctuationRule.class
+│       │       │   │   ├── PersianSpaceBeforeRule.class
+│       │       │   │   ├── PersianWordRepeatBeginningRule.class
+│       │       │   │   ├── PersianWordRepeatRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   └── replace.txt
+│       │       │   ├── fr
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── DMYDateCheckFilter.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── FindSuggestionsFilter.class
+│       │       │   │   ├── FrenchConfusionProbabilityRule.class
+│       │       │   │   ├── FrenchMultitokenSpeller.class
+│       │       │   │   ├── FrenchNumberInWordFilter.class
+│       │       │   │   ├── FrenchPartialPosTagFilter.class
+│       │       │   │   ├── FrenchRepeatedWordsRule.class
+│       │       │   │   ├── FrenchSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── GrammalecteRule$GrammalecteInternalRule.class
+│       │       │   │   ├── GrammalecteRule.class
+│       │       │   │   ├── InterrogativeVerbFilter.class
+│       │       │   │   ├── MakeContractionsFilter.class
+│       │       │   │   ├── MorfologikFrenchSpellerRule.class
+│       │       │   │   ├── NewYearDateFilter.class
+│       │       │   │   ├── PostponedAdjectiveConcordanceFilter.class
+│       │       │   │   ├── QuestionWhitespaceRule.class
+│       │       │   │   ├── QuestionWhitespaceStrictRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── SuggestionsFilter.class
+│       │       │   │   ├── WordWithDeterminerFilter.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── remote-rule-filters.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_custom.txt
+│       │       │   │   ├── style.xml
+│       │       │   │   └── synonyms.txt
+│       │       │   ├── ga
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── DativePluralStandardReplaceRule.class
+│       │       │   │   ├── DativePluralsData.class
+│       │       │   │   ├── DativePluralsEntry.class
+│       │       │   │   ├── DhaNoBeirtData.class
+│       │       │   │   ├── DhaNoBeirtRule.class
+│       │       │   │   ├── EnglishHomophoneRule.class
+│       │       │   │   ├── IrishFGBEqReplaceRule.class
+│       │       │   │   ├── IrishPartialPosTagFilter.class
+│       │       │   │   ├── IrishReplaceRule.class
+│       │       │   │   ├── IrishSpecificCaseRule.class
+│       │       │   │   ├── LogainmRule.class
+│       │       │   │   ├── MorfologikIrishSpellerRule.class
+│       │       │   │   ├── NoDisambiguationIrishPartialPosTagFilter.class
+│       │       │   │   ├── PeopleRule.class
+│       │       │   │   ├── PrestandardReplaceRule.class
+│       │       │   │   ├── SpacesRule.class
+│       │       │   │   ├── dative-plurals.txt
+│       │       │   │   ├── english-homophones.txt
+│       │       │   │   ├── gen-pronouns.pl
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── names.txt
+│       │       │   │   ├── people.txt
+│       │       │   │   ├── placenames.txt
+│       │       │   │   ├── replace-fgb-eq.txt
+│       │       │   │   ├── replace-prestandard.txt
+│       │       │   │   ├── replace.txt
+│       │       │   │   └── spaces.txt
+│       │       │   ├── gl
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── CastWordsRule.class
+│       │       │   │   ├── GalicianBarbarismsRule.class
+│       │       │   │   ├── GalicianRedundancyRule.class
+│       │       │   │   ├── GalicianWikipediaRule.class
+│       │       │   │   ├── GalicianWordinessRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── barbarisms.txt
+│       │       │   │   ├── bitext.xml
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── redundancies.txt
+│       │       │   │   ├── spanish.txt
+│       │       │   │   ├── wikipedia.txt
+│       │       │   │   ├── wordiness.txt
+│       │       │   │   └── words.txt
+│       │       │   ├── it
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── ItalianConfusionProbabilityRule.class
+│       │       │   │   ├── ItalianWordRepeatRule.class
+│       │       │   │   ├── MorfologikItalianSpellerRule.class
+│       │       │   │   └── grammar.xml
+│       │       │   ├── ja
+│       │       │   │   └── grammar.xml
+│       │       │   ├── km
+│       │       │   │   ├── KhmerHunspellRule.class
+│       │       │   │   ├── KhmerSimpleReplaceRule.class
+│       │       │   │   ├── KhmerSpaceBeforeRule.class
+│       │       │   │   ├── KhmerUnpairedBracketsRule.class
+│       │       │   │   ├── KhmerWordRepeatRule.class
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   └── replace.txt
+│       │       │   ├── nl
+│       │       │   │   ├── CheckCaseRule.class
+│       │       │   │   ├── CompoundAcceptor.class
+│       │       │   │   ├── CompoundFilter.class
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DutchConfusionProbabilityRule.class
+│       │       │   │   ├── DutchMultitokenSpeller.class
+│       │       │   │   ├── DutchNumberInWordFilter.class
+│       │       │   │   ├── DutchSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── DutchWrongWordInContextRule.class
+│       │       │   │   ├── MorfologikDutchSpellerRule.class
+│       │       │   │   ├── PreferredWordData.class
+│       │       │   │   ├── PreferredWordRule.class
+│       │       │   │   ├── PreferredWordRuleWithSuggestion.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── SpaceInCompoundRule.class
+│       │       │   │   ├── Tools.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── check_case.txt
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── nl-BE
+│       │       │   │   │   ├── grammar.xml
+│       │       │   │   │   └── style.xml
+│       │       │   │   ├── nl-NL
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── remote-rule-filters.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── style.xml
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── pl
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── DashRule.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DecadeSpellingFilter.class
+│       │       │   │   ├── MorfologikPolishSpellerRule.class
+│       │       │   │   ├── PolishUnpairedBracketsRule.class
+│       │       │   │   ├── PolishWordRepeatRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── bitext.xml
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   └── replace.txt
+│       │       │   ├── pt
+│       │       │   │   ├── AOreplace.txt
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── BrazilianPortugueseReplaceRule.class
+│       │       │   │   ├── BrazilianToponymFilter.class
+│       │       │   │   ├── BrazilianToponymMap.class
+│       │       │   │   ├── BrazilianToponymMapLoader.class
+│       │       │   │   ├── ConfusionCheckFilter.class
+│       │       │   │   ├── ConfusionPairsDataLoader.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── EnglishContractionSpellingRule.class
+│       │       │   │   ├── FutureDateFilter.class
+│       │       │   │   ├── MorfologikPortugueseSpellerRule.class
+│       │       │   │   ├── NewYearDateFilter.class
+│       │       │   │   ├── NoDisambiguationPortuguesePartialPosTagFilter.class
+│       │       │   │   ├── PortugalPortugueseReplaceRule.class
+│       │       │   │   ├── PortugueseAccentuationCheckRule.class
+│       │       │   │   ├── PortugueseAccentuationDataLoader.class
+│       │       │   │   ├── PortugueseAgreementReplaceRule.class
+│       │       │   │   ├── PortugueseArchaismsRule.class
+│       │       │   │   ├── PortugueseBarbarismsRule.class
+│       │       │   │   ├── PortugueseClicheRule.class
+│       │       │   │   ├── PortugueseColourHyphenationRule.class
+│       │       │   │   ├── PortugueseConfusionProbabilityRule.class
+│       │       │   │   ├── PortugueseDiacriticsRule.class
+│       │       │   │   ├── PortugueseEnclisisFilter.class
+│       │       │   │   ├── PortugueseFillerWordsRule.class
+│       │       │   │   ├── PortugueseMultitokenSpeller.class
+│       │       │   │   ├── PortugueseOrthographyReplaceRule.class
+│       │       │   │   ├── PortugueseProclisisFilter.class
+│       │       │   │   ├── PortugueseReadabilityRule.class
+│       │       │   │   ├── PortugueseRedundancyRule.class
+│       │       │   │   ├── PortugueseReplaceRule.class
+│       │       │   │   ├── PortugueseSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── PortugueseUnitConversionRule$1.class
+│       │       │   │   ├── PortugueseUnitConversionRule.class
+│       │       │   │   ├── PortugueseWeaselWordsRule.class
+│       │       │   │   ├── PortugueseWikipediaRule.class
+│       │       │   │   ├── PortugueseWordCoherencyRule.class
+│       │       │   │   ├── PortugueseWordRepeatBeginningRule.class
+│       │       │   │   ├── PortugueseWordRepeatRule.class
+│       │       │   │   ├── PortugueseWordinessRule.class
+│       │       │   │   ├── PortugueseWrongWordInContextRule.class
+│       │       │   │   ├── PostReformPortugueseCompoundRule.class
+│       │       │   │   ├── PostReformPortugueseDashRule.class
+│       │       │   │   ├── PreReformPortugueseCompoundRule.class
+│       │       │   │   ├── PreReformPortugueseDashRule.class
+│       │       │   │   ├── RegularIrregularParticipleFilter.class
+│       │       │   │   ├── RomanNumeralFilter.class
+│       │       │   │   ├── YMDDateCheckFilter.class
+│       │       │   │   ├── YMDNewYearDateFilter.class
+│       │       │   │   ├── archaisms.txt
+│       │       │   │   ├── barbarisms.txt
+│       │       │   │   ├── cliches.txt
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── confusion_pairs.txt
+│       │       │   │   ├── diacritics.txt
+│       │       │   │   ├── english_contractions.txt
+│       │       │   │   ├── gentilicos.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── indent.sh
+│       │       │   │   ├── not_optimized_regexps.lib
+│       │       │   │   ├── pt-AO
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── pt-BR
+│       │       │   │   │   ├── archaisms.txt
+│       │       │   │   │   ├── barbarisms.txt
+│       │       │   │   │   ├── cliches.txt
+│       │       │   │   │   ├── confusion_pairs.txt
+│       │       │   │   │   ├── grammar.xml
+│       │       │   │   │   ├── redundancies.txt
+│       │       │   │   │   ├── replace.txt
+│       │       │   │   │   ├── style.xml
+│       │       │   │   │   ├── wikipedia.txt
+│       │       │   │   │   └── wordiness.txt
+│       │       │   │   ├── pt-MZ
+│       │       │   │   │   └── grammar.xml
+│       │       │   │   ├── pt-PT
+│       │       │   │   │   ├── archaisms.txt
+│       │       │   │   │   ├── barbarisms.txt
+│       │       │   │   │   ├── cliches.txt
+│       │       │   │   │   ├── confusion_pairs.txt
+│       │       │   │   │   ├── grammar.xml
+│       │       │   │   │   ├── redundancies.txt
+│       │       │   │   │   ├── replace.txt
+│       │       │   │   │   ├── style.xml
+│       │       │   │   │   ├── wikipedia.txt
+│       │       │   │   │   └── wordiness.txt
+│       │       │   │   ├── redundancies.txt
+│       │       │   │   ├── remote-rule-filters.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_orthography.txt
+│       │       │   │   ├── style.xml
+│       │       │   │   ├── tagset_PT.txt
+│       │       │   │   ├── verbos_sem_acento_adj_com_acento.txt
+│       │       │   │   ├── verbos_sem_acento_nomes_com_acento.txt
+│       │       │   │   ├── weaselwords.txt
+│       │       │   │   ├── wikipedia.txt
+│       │       │   │   ├── wordiness.txt
+│       │       │   │   └── wrongWordInContext.txt
+│       │       │   ├── ro
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── MorfologikRomanianSpellerRule.class
+│       │       │   │   ├── RomanianWordRepeatBeginningRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── grammar.xml
+│       │       │   │   └── replace.txt
+│       │       │   ├── ru
+│       │       │   │   ├── AdvancedSynthesizerFilter.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── DateFilterHelper.class
+│       │       │   │   ├── FutureDateFilter.class
+│       │       │   │   ├── INNNumberFilter.class
+│       │       │   │   ├── MorfologikRussianSpellerRule.class
+│       │       │   │   ├── MorfologikRussianYOSpellerRule.class
+│       │       │   │   ├── NoDisambiguationRussianPartialPosTagFilter.class
+│       │       │   │   ├── RussianCompoundRule.class
+│       │       │   │   ├── RussianConfusionProbabilityRule.class
+│       │       │   │   ├── RussianDashRule.class
+│       │       │   │   ├── RussianFillerWordsRule.class
+│       │       │   │   ├── RussianPartialPosTagFilter.class
+│       │       │   │   ├── RussianSimpleReplaceRule.class
+│       │       │   │   ├── RussianSimpleWordRepeatRule.class
+│       │       │   │   ├── RussianSpecificCaseRule.class
+│       │       │   │   ├── RussianSuppressMisspelledSuggestionsFilter.class
+│       │       │   │   ├── RussianUnpairedBracketsRule.class
+│       │       │   │   ├── RussianVerbConjugationRule.class
+│       │       │   │   ├── RussianWordCoherencyRule.class
+│       │       │   │   ├── RussianWordRepeatRule.class
+│       │       │   │   ├── RussianWordRootRepeatRule.class
+│       │       │   │   ├── bitext.xml
+│       │       │   │   ├── coherency.txt
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   └── wordrootrep.txt
+│       │       │   ├── sk
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── MorfologikSlovakSpellerRule.class
+│       │       │   │   ├── grammar-nezaradene.xml
+│       │       │   │   ├── grammar-typography.xml
+│       │       │   │   └── grammar.xml
+│       │       │   ├── sl
+│       │       │   │   ├── MorfologikSlovenianSpellerRule.class
+│       │       │   │   └── grammar.xml
+│       │       │   ├── sv
+│       │       │   │   ├── CompoundRule.class
+│       │       │   │   ├── WordCoherencyRule.class
+│       │       │   │   ├── coherency.txt
+│       │       │   │   └── grammar.xml
+│       │       │   ├── ta
+│       │       │   │   └── grammar.xml
+│       │       │   ├── tl
+│       │       │   │   └── grammar.xml
+│       │       │   ├── uk
+│       │       │   │   ├── CaseGovernmentHelper.class
+│       │       │   │   ├── DateCheckFilter.class
+│       │       │   │   ├── ExtraDictionaryLoader.class
+│       │       │   │   ├── HiddenCharacterRule.class
+│       │       │   │   ├── InflectionHelper$Inflection.class
+│       │       │   │   ├── InflectionHelper.class
+│       │       │   │   ├── LemmaHelper$Dir.class
+│       │       │   │   ├── LemmaHelper.class
+│       │       │   │   ├── MissingHyphenRule.class
+│       │       │   │   ├── MixedAlphabetsRule.class
+│       │       │   │   ├── MorfologikUkrainianSpellerRule.class
+│       │       │   │   ├── PunctuationCheckRule.class
+│       │       │   │   ├── RuleException$Type.class
+│       │       │   │   ├── RuleException.class
+│       │       │   │   ├── SearchHelper$Condition.class
+│       │       │   │   ├── SearchHelper$Context.class
+│       │       │   │   ├── SearchHelper$Match.class
+│       │       │   │   ├── SearchHelper.class
+│       │       │   │   ├── SimpleReplaceRenamedRule.class
+│       │       │   │   ├── SimpleReplaceRule.class
+│       │       │   │   ├── SimpleReplaceSoftRule$ContextRepl.class
+│       │       │   │   ├── SimpleReplaceSoftRule.class
+│       │       │   │   ├── SimpleReplaceSpelling1992Rule.class
+│       │       │   │   ├── SimpleReplaceSpelling2019Rule.class
+│       │       │   │   ├── TokenAgreementAdjNounExceptionHelper.class
+│       │       │   │   ├── TokenAgreementAdjNounRule$State.class
+│       │       │   │   ├── TokenAgreementAdjNounRule.class
+│       │       │   │   ├── TokenAgreementNounVerbExceptionHelper.class
+│       │       │   │   ├── TokenAgreementNounVerbRule$State.class
+│       │       │   │   ├── TokenAgreementNounVerbRule.class
+│       │       │   │   ├── TokenAgreementNumrNounExceptionHelper.class
+│       │       │   │   ├── TokenAgreementNumrNounRule$State.class
+│       │       │   │   ├── TokenAgreementNumrNounRule.class
+│       │       │   │   ├── TokenAgreementPrepNounExceptionHelper.class
+│       │       │   │   ├── TokenAgreementPrepNounRule$1.class
+│       │       │   │   ├── TokenAgreementPrepNounRule$State.class
+│       │       │   │   ├── TokenAgreementPrepNounRule.class
+│       │       │   │   ├── TokenAgreementVerbNounExceptionHelper.class
+│       │       │   │   ├── TokenAgreementVerbNounRule$State.class
+│       │       │   │   ├── TokenAgreementVerbNounRule.class
+│       │       │   │   ├── TypographyRule.class
+│       │       │   │   ├── UkrainianCommaWhitespaceRule.class
+│       │       │   │   ├── UkrainianUppercaseSentenceStartRule.class
+│       │       │   │   ├── UkrainianWordRepeatRule.class
+│       │       │   │   ├── VerbInflectionHelper$Inflection.class
+│       │       │   │   ├── VerbInflectionHelper.class
+│       │       │   │   ├── grammar-barbarism.xml
+│       │       │   │   ├── grammar-grammar.xml
+│       │       │   │   ├── grammar-punctuation.xml
+│       │       │   │   ├── grammar-spelling.xml
+│       │       │   │   ├── grammar-style.xml
+│       │       │   │   ├── grammar.xml
+│       │       │   │   ├── replace.txt
+│       │       │   │   ├── replace_renamed.txt
+│       │       │   │   ├── replace_soft.txt
+│       │       │   │   └── replace_spelling_2019.txt
+│       │       │   └── zh
+│       │       │       ├── ChineseConfusionProbabilityRule.class
+│       │       │       └── grammar.xml
+│       │       ├── synthesis
+│       │       │   ├── FrenchSynthesizer.class
+│       │       │   ├── GermanSynthesizer.class
+│       │       │   ├── ar
+│       │       │   │   └── ArabicSynthesizer.class
+│       │       │   ├── ca
+│       │       │   │   ├── CatalanSynthesizer$PostagComparator.class
+│       │       │   │   └── CatalanSynthesizer.class
+│       │       │   ├── crh
+│       │       │   │   └── CrimeanTatarSynthesizer.class
+│       │       │   ├── el
+│       │       │   │   └── GreekSynthesizer.class
+│       │       │   ├── en
+│       │       │   │   └── EnglishSynthesizer.class
+│       │       │   ├── es
+│       │       │   │   ├── SpanishSynthesizer$PostagComparator.class
+│       │       │   │   └── SpanishSynthesizer.class
+│       │       │   ├── ga
+│       │       │   │   └── IrishSynthesizer.class
+│       │       │   ├── gl
+│       │       │   │   └── GalicianSynthesizer.class
+│       │       │   ├── it
+│       │       │   │   └── ItalianSynthesizer.class
+│       │       │   ├── nl
+│       │       │   │   └── DutchSynthesizer.class
+│       │       │   ├── pl
+│       │       │   │   └── PolishSynthesizer.class
+│       │       │   ├── pt
+│       │       │   │   └── PortugueseSynthesizer.class
+│       │       │   ├── ro
+│       │       │   │   └── RomanianSynthesizer.class
+│       │       │   ├── ru
+│       │       │   │   └── RussianSynthesizer.class
+│       │       │   ├── sk
+│       │       │   │   └── SlovakSynthesizer.class
+│       │       │   ├── sv
+│       │       │   │   └── SwedishSynthesizer.class
+│       │       │   └── uk
+│       │       │       └── UkrainianSynthesizer.class
+│       │       ├── tagging
+│       │       │   ├── ar
+│       │       │   │   ├── ArabicHybridDisambiguator.class
+│       │       │   │   ├── ArabicTagManager.class
+│       │       │   │   └── ArabicTagger.class
+│       │       │   ├── ast
+│       │       │   │   └── AsturianTagger.class
+│       │       │   ├── br
+│       │       │   │   └── BretonTagger.class
+│       │       │   ├── ca
+│       │       │   │   └── CatalanTagger.class
+│       │       │   ├── crh
+│       │       │   │   └── CrimeanTatarTagger.class
+│       │       │   ├── da
+│       │       │   │   └── DanishTagger.class
+│       │       │   ├── de
+│       │       │   │   ├── AdjectiveTags.class
+│       │       │   │   ├── AnalyzedGermanToken.class
+│       │       │   │   ├── GermanTagger$AdjInfo.class
+│       │       │   │   ├── GermanTagger$ExpansionInfos.class
+│       │       │   │   ├── GermanTagger$NominalizedGenitiveVerb.class
+│       │       │   │   ├── GermanTagger$NominalizedVerb.class
+│       │       │   │   ├── GermanTagger$PrefixInfixVerb.class
+│       │       │   │   ├── GermanTagger.class
+│       │       │   │   ├── GermanToken$Determination.class
+│       │       │   │   ├── GermanToken$Genus.class
+│       │       │   │   ├── GermanToken$Kasus.class
+│       │       │   │   ├── GermanToken$Numerus.class
+│       │       │   │   ├── GermanToken$POSType.class
+│       │       │   │   ├── GermanToken.class
+│       │       │   │   ├── SwissGermanTagger.class
+│       │       │   │   └── VerbPrefixes.class
+│       │       │   ├── disambiguation
+│       │       │   │   ├── ca
+│       │       │   │   │   └── CatalanHybridDisambiguator.class
+│       │       │   │   ├── es
+│       │       │   │   │   └── SpanishHybridDisambiguator.class
+│       │       │   │   ├── fr
+│       │       │   │   │   └── FrenchHybridDisambiguator.class
+│       │       │   │   ├── ga
+│       │       │   │   │   └── IrishHybridDisambiguator.class
+│       │       │   │   ├── gl
+│       │       │   │   │   └── GalicianHybridDisambiguator.class
+│       │       │   │   ├── pl
+│       │       │   │   │   └── PolishHybridDisambiguator.class
+│       │       │   │   ├── pt
+│       │       │   │   │   └── PortugueseHybridDisambiguator.class
+│       │       │   │   ├── ru
+│       │       │   │   │   └── RussianHybridDisambiguator.class
+│       │       │   │   ├── rules
+│       │       │   │   │   ├── de
+│       │       │   │   │   │   └── GermanRuleDisambiguator.class
+│       │       │   │   │   └── it
+│       │       │   │   │       └── ItalianRuleDisambiguator.class
+│       │       │   │   ├── sv
+│       │       │   │   │   └── SwedishHybridDisambiguator.class
+│       │       │   │   └── uk
+│       │       │   │       ├── SimpleDisambiguator$MatcherEntry.class
+│       │       │   │       ├── SimpleDisambiguator$TokenMatcher.class
+│       │       │   │       ├── SimpleDisambiguator.class
+│       │       │   │       ├── UkrainianHybridDisambiguator.class
+│       │       │   │       └── UkrainianMultiwordChunker.class
+│       │       │   ├── el
+│       │       │   │   └── GreekTagger.class
+│       │       │   ├── en
+│       │       │   │   ├── EnglishHybridDisambiguator.class
+│       │       │   │   └── EnglishTagger.class
+│       │       │   ├── eo
+│       │       │   │   └── EsperantoTagger.class
+│       │       │   ├── es
+│       │       │   │   └── SpanishTagger.class
+│       │       │   ├── fr
+│       │       │   │   └── FrenchTagger.class
+│       │       │   ├── ga
+│       │       │   │   ├── IrishTagger.class
+│       │       │   │   ├── Retaggable.class
+│       │       │   │   ├── Utils$SuffixGuess.class
+│       │       │   │   └── Utils.class
+│       │       │   ├── gl
+│       │       │   │   └── GalicianTagger.class
+│       │       │   ├── it
+│       │       │   │   └── ItalianTagger.class
+│       │       │   ├── ja
+│       │       │   │   └── JapaneseTagger.class
+│       │       │   ├── km
+│       │       │   │   └── KhmerTagger.class
+│       │       │   ├── nl
+│       │       │   │   ├── DutchHybridDisambiguator.class
+│       │       │   │   └── DutchTagger.class
+│       │       │   ├── pl
+│       │       │   │   └── PolishTagger.class
+│       │       │   ├── pt
+│       │       │   │   └── PortugueseTagger.class
+│       │       │   ├── ro
+│       │       │   │   └── RomanianTagger.class
+│       │       │   ├── ru
+│       │       │   │   └── RussianTagger.class
+│       │       │   ├── sk
+│       │       │   │   └── SlovakTagger.class
+│       │       │   ├── sv
+│       │       │   │   └── SwedishTagger.class
+│       │       │   ├── tl
+│       │       │   │   └── TagalogTagger.class
+│       │       │   ├── uk
+│       │       │   │   ├── CompoundDebugLogger.class
+│       │       │   │   ├── CompoundTagger.class
+│       │       │   │   ├── IPOSTag.class
+│       │       │   │   ├── LetterEndingForNumericHelper$RegexToCaseList.class
+│       │       │   │   ├── LetterEndingForNumericHelper.class
+│       │       │   │   ├── PosTagHelper.class
+│       │       │   │   └── UkrainianTagger.class
+│       │       │   └── zh
+│       │       │       └── ChineseTagger.class
+│       │       ├── tokenizers
+│       │       │   ├── ArabicWordTokenizer.class
+│       │       │   ├── PersianWordTokenizer.class
+│       │       │   ├── be
+│       │       │   │   └── BelarusianWordTokenizer.class
+│       │       │   ├── br
+│       │       │   │   └── BretonWordTokenizer.class
+│       │       │   ├── ca
+│       │       │   │   └── CatalanWordTokenizer.class
+│       │       │   ├── crh
+│       │       │   │   └── CrimeanTatarWordTokenizer.class
+│       │       │   ├── de
+│       │       │   │   ├── GermanCompoundTokenizer$ExtendedGermanWordSplitter.class
+│       │       │   │   ├── GermanCompoundTokenizer.class
+│       │       │   │   └── GermanWordTokenizer.class
+│       │       │   ├── el
+│       │       │   │   ├── GreekWordTokenizer.class
+│       │       │   │   └── GreekWordTokenizerImpl.class
+│       │       │   ├── en
+│       │       │   │   └── EnglishWordTokenizer.class
+│       │       │   ├── eo
+│       │       │   │   └── EsperantoWordTokenizer.class
+│       │       │   ├── es
+│       │       │   │   └── SpanishWordTokenizer.class
+│       │       │   ├── fr
+│       │       │   │   └── FrenchWordTokenizer.class
+│       │       │   ├── gl
+│       │       │   │   └── GalicianWordTokenizer.class
+│       │       │   ├── ja
+│       │       │   │   └── JapaneseWordTokenizer.class
+│       │       │   ├── km
+│       │       │   │   └── KhmerWordTokenizer.class
+│       │       │   ├── nl
+│       │       │   │   └── DutchWordTokenizer.class
+│       │       │   ├── pl
+│       │       │   │   └── PolishWordTokenizer.class
+│       │       │   ├── pt
+│       │       │   │   └── PortugueseWordTokenizer.class
+│       │       │   ├── ro
+│       │       │   │   └── RomanianWordTokenizer.class
+│       │       │   ├── ru
+│       │       │   │   └── RussianWordTokenizer.class
+│       │       │   ├── uk
+│       │       │   │   └── UkrainianWordTokenizer.class
+│       │       │   └── zh
+│       │       │       ├── ChineseSentenceTokenizer.class
+│       │       │       └── ChineseWordTokenizer.class
+│       │       └── tools
+│       │           ├── ArabicConstants.class
+│       │           ├── ArabicConstantsMaps.class
+│       │           ├── ArabicNumbersWords.class
+│       │           ├── ArabicNumbersWordsConstants.class
+│       │           ├── ArabicStringTools.class
+│       │           ├── ArabicUnitsHelper.class
+│       │           └── ArabicWordMaps.class
+│       ├── testrules.bat
+│       ├── testrules.sh
+│       └── third-party-licenses
+│           ├── Apache-License.txt
+│           ├── BSD.txt
+│           ├── CC-Attr-SA-4.0.txt
+│           ├── CPL.txt
+│           ├── LGPL-2.1.txt
+│           ├── MIT-slf4j.txt
+│           ├── MIT.txt
+│           ├── Morfologik-license.txt
+│           ├── README.txt
+│           ├── icons.txt
+│           └── segment-license.txt
+└── مفاتيح
+    ├── RELEASE_NOTE.md
+    └── دليل_الأوامر.md
+
+344 directories, 2200 files

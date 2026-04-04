@@ -1,137 +1,118 @@
 # Output Reports
 
-## Purpose
+## Output Philosophy
 
-This document describes the generated report files and how they fit into the localization audit workflow.
+- **`audit_master.json`** = The absolute source of truth.
+- All other outputs are merely projections of this master data.
 
-## Output Locations
+```text
+audit_master.json
+   ↓
+review_queue.xlsx
+   ↓
+apply
+   ↓
+reconcile
+   ↓
+final_audit_report
+```
 
-### `Results/per_tool/`
+## Internal vs Public Outputs
 
-Raw outputs from individual audit modules.
+- **`.cache/`** → Internal use only. Contains raw data fragments and temporary generation files. Do not build tooling around these.
+- **`Results/`** → User-facing. Contains the final, stable, and intended artifacts for humans and CI/CD pipelines.
 
-Examples:
+---
 
-- placeholder audit JSON, CSV, XLSX
-- terminology audit JSON
-- locale QA reports
+## Output Types
+
+### Core Outputs (Always Generated)
+- `Results/artifacts/audit_master.json`
+- `Results/review/review_queue.xlsx` / `.json`
+- `Results/final/final_audit_report.json` / `.md`
+
+### Optional Outputs
+- per-tool CSV/XLSX (disabled by default, enabled via specific CLI flags)
+
+---
+
+## Detailed Locations
+
+### `.cache/raw_tools/`
+Internal storage for raw outputs from individual audit modules. Avoid referencing directly.
+- Placeholder audit JSON (CSV/XLSX disabled by default)
+- Terminology audit JSON
+- Locale QA reports
 - ICU audit reports
 
-### `Results/normalized/`
-
-Normalized machine-readable issue collections used by the report aggregator and downstream automation.
+### `Results/artifacts/`
+Contains the authoritative application state.
+- `audit_master.json`: The source of truth for the entire pipeline.
 
 ### `Results/review/`
-
-Human-review artifacts.
-
-- `review_queue.xlsx`
-- `review_queue.json`
+Human-review artifacts intended for translators and localization managers.
+- `review_queue.xlsx`: Excel sheet for human review.
+- `review_queue.json`: Machine-readable equivalent.
 
 ### `Results/fixes/`
-
-Safe-fix outputs.
-
+Safe-fix outputs and candidate logs.
 - `fix_plan.json`
-- `fix_plan.xlsx`
+- `fix_plan.xlsx` (Optional)
 - `safe_fixes_applied_report.json`
-- intermediate fixed locale candidates
 
 ### `Results/final/`
-
 Aggregated reporting outputs.
-
-- final Markdown dashboard
-- final report JSON
-- normalized issue summary
+- `final_audit_report.md`: Dashboard-style single main report.
+- `final_audit_report.json`
 
 ### `Results/final_locale/`
+Final locale outputs after approved fixes are applied back to your project.
 
-Final locale outputs after approved fixes are applied.
+---
 
-## Report Types
+## Common Artifact Details
 
-### JSON Reports
-
-Used for:
-
-- machine-readable findings
-- downstream tooling
-- schema validation
-- CI artifact inspection
-
-### XLSX Reports
-
-Used for:
-
-- reviewer-friendly audit review
-- fix plan browsing
-- manual approval workflow
-
-### Markdown Reports
-
-Used for:
-
-- dashboard-style summaries
-- prioritized issue review
-- repository-friendly human-readable outputs
-
-## Common Artifacts
-
-### Final audit dashboard
-
-- `Results/final/final_audit_report.md`
-
+### Final Audit Dashboard (`Results/final/final_audit_report.md`)
 Contains:
+- Total issue counts and review-required metrics
+- Prioritized findings
 
-- total issue counts
-- review-required counts
-- prioritized findings
-- output references
-
-### Review queue
-
-- `Results/review/review_queue.xlsx`
-
+### Review Queue (`Results/review/review_queue.xlsx`)
 Contains:
+- Reviewable findings (AI suggestions, stylistic issues)
+- Current locale value vs suggested fix
+- Integrity metadata
 
-- reviewable findings
-- current locale value
-- suggested fix
-- integrity metadata
-
-### Safe fix plan
-
-- `Results/fixes/fix_plan.json`
-
+### Safe Fix Plan (`Results/fixes/fix_plan.json`)
 Contains:
+- Deterministic candidate changes
+- Classification and provenance
 
-- candidate changes
-- classification
-- provenance
+---
 
-### Review fix report
-
-- `Results/final_locale/review_fixes_report.json`
-
-Contains:
-
-- applied fixes
-- skipped fixes
-- integrity-failure reasons
-
-## Manual Execution
-Normally handled by the `fast` or `full` stages, but you can trigger it manually:
+## Manual Execution (Advanced)
+Normally handled automatically by the `fast` or `full` stages:
 ```bash
 l10n-audit run --stage reports
 ```
 
-For developers building raw modules, the module can be invoked with specific sources:
+For developers building raw modules, the module can be invoked explicitly:
 ```bash
 python -m reports.report_aggregator --sources "localization,locale_qc,terminology"
 ```
 
-## Structure Output Summary
-- **`Results/final/final_audit_report.md`**: The main dashboard.
-- **`Results/review/review_queue.xlsx`**: Excel sheet for translators.
-- **`Results/fixes/`**: Logs of safe fixes applied.
+## Output Simplification (v1.4+)
+
+- Reduced redundant outputs
+- Removed duplicate markdown files
+- Focused on actionable artifacts
+
+---
+
+## Deprecation & Cleanup Notes
+
+- We have removed redundant multilingual markdown outputs (`_en.md`, `_ar.md`).
+- Some artifacts are currently retained *only* for CLI compatibility.
+- Future versions may remove:
+  - `per_tool` CSV/XLSX (CLI only)
+  - `fix_plan.xlsx` (CLI only)

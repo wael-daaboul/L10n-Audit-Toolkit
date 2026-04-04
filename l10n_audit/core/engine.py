@@ -287,4 +287,49 @@ def run_engine(
     logger.info("Engine starting stage=%s results_dir=%s", options.stage, options.output.results_dir)
     issues, reports = _dispatch_stage(options.stage, runtime, options, ai_provider)
     logger.info("Engine done: %d issues, %d report artifacts", len(issues), len(reports))
+
+    # Phase 13: Post-pipeline memory recording — feature-gated, read-only, zero pipeline impact.
+    # Enabled only when runtime.config["project_memory"]["enabled"] is True.
+    # Captures the returned LearningProfile so Phase 14 can consume it directly.
+    _pm_profile = None
+    _pm_config = (getattr(runtime, "config", {}) or {}).get("project_memory", {}) or {}
+    if _pm_config.get("enabled", False):
+        try:
+            from l10n_audit.core.project_memory import record_run_to_memory
+            _pm_profile = record_run_to_memory(runtime, issues, options)
+        except Exception as _pm_exc:
+            logger.debug("project_memory: recording skipped (%s)", _pm_exc)
+
+    # Phase 14: Controlled Adaptive Intelligence — feature-gated, read-only, non-behavioral.
+    # Consumes only the LearningProfile from Phase 13. Never reads per-finding data or
+    # routing internals. Stores result in runtime.metadata only — zero pipeline impact.
+    _adaptation_report = None
+    _ai_config = (getattr(runtime, "config", {}) or {}).get("adaptive_intelligence", {}) or {}
+    if _ai_config.get("enabled", False) and _pm_profile is not None:
+        try:
+            from l10n_audit.core.adaptation_intelligence import compute_adaptation_report
+            _adaptation_report = compute_adaptation_report(_pm_profile, _ai_config)
+            if _adaptation_report is not None and hasattr(runtime, "metadata"):
+                runtime.metadata["adaptation_report"] = _adaptation_report
+        except Exception as _ai_exc:
+            logger.debug("adaptation_intelligence: skipped (%s)", _ai_exc)
+
+    # Phase 15: Controlled Consumption — feature-gated, manifest-only, zero pipeline impact.
+    # Reads only the AdaptationReport from Phase 14. Produces a reviewable
+    # ConsumptionManifest. Never applies any change, never mutates any engine.
+    _cc_config = (getattr(runtime, "config", {}) or {}).get("controlled_consumption", {}) or {}
+    if _cc_config.get("enabled", False) and _adaptation_report is not None:
+        try:
+            from l10n_audit.core.controlled_consumption import generate_consumption_manifest
+            _manifest = generate_consumption_manifest(
+                _adaptation_report,
+                _cc_config,
+                getattr(runtime, "config", {}) or {},
+                getattr(runtime, "results_dir", None),
+            )
+            if _manifest is not None and hasattr(runtime, "metadata"):
+                runtime.metadata["consumption_manifest"] = _manifest
+        except Exception as _cc_exc:
+            logger.debug("controlled_consumption: skipped (%s)", _cc_exc)
+
     return issues, reports

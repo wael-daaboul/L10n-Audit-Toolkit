@@ -1,120 +1,33 @@
-# Project Overview
+# System Overview
 
-## Purpose
+L10n Audit Toolkit is designed to provide a robust, repeatable, and safe localization pipeline. This document explains the architecture, data flow, and the core philosophy behind the toolkit.
 
-L10n Audit Toolkit is a repository-oriented localization QA and translation validation toolkit. It scans locale sources and application code, produces audit findings, generates safe fix plans, and supports a review queue for fixes that require human approval.
+## Pipeline Stages
 
-The current implementation is centered on English source content and Arabic target review workflows, with support for several common JSON- and Laravel-based localization layouts.
+The toolkit operates in a strictly ordered pipeline to guarantee data integrity:
 
-## Pipeline Summary
+1. **Isolation (`init`)**: Project locales are loaded and safely copied into a `.l10n-audit/workspace/` environment. Your original files are never touched during the audit.
+2. **Execution (`run`)**: Audit modules (Fast, Full, AI) run in parallel over the isolated workspace files, generating raw findings.
+3. **Aggregation**: Raw findings are gathered, deductively merged, and written to the central master state.
+4. **Projection**: The master state is projected into human-friendly views, namely the `review_queue.xlsx` and standard Markdown dashboard.
+5. **Decisions (`apply`)**: Human reviewers mark suggestions as `approved` or `rejected` in the review queue. The toolkit reads these decisions.
+6. **Reconciliation**: Approved changes are generated as `.fix` files (e.g., `en.fix.json` or `ar.fix.php`). The toolkit reconciles these back to the master state, ensuring a perfect audit trail.
 
-The toolkit follows a staged pipeline:
+## Data Flow & The Master State
 
-1. Load project configuration and detect or confirm a supported project profile.
-2. Load locale data from JSON or Laravel PHP sources.
-3. Scan source code for translation key usage.
-4. Run audit modules on locale content and cross-locale consistency.
-5. Normalize findings and aggregate them into report outputs.
-6. Generate safe fix candidates and a review queue.
-7. Apply approved fixes and export final locale outputs.
+At the heart of the L10n Audit Toolkit is **`audit_master.json`**. 
 
-## Repository Structure
+**Why does the Master exist?**
+Historically, localization tools dumped dozens of scattered CSV and JSON files, forcing teams to manually stitch them together. If a file was missed, data was lost. 
 
-### `audits/`
+The `audit_master.json` acts as the **single source of truth** for the entire pipeline. 
+- **Idempotency:** Because all state is stored centrally, you can safely re-run stages without corrupting past results.
+- **Traceability:** Every finding—whether from a regex rule or an AI suggestion—maintains its provenance and history.
+- **Decoupling:** Output formats (like Excel or Markdown) are purely "dumb" projections. If an Excel file is deleted, it can be regenerated instantly from the master state without re-running the expensive AI review.
 
-Contains audit modules that inspect locale files and usage data. These modules emit structured findings that later feed the report and fix pipeline.
+## Modules & Roles
 
-Examples:
-
-- localization usage and missing key checks
-- placeholder validation
-- terminology and glossary checks
-- ICU message validation
-- English and Arabic locale quality checks
-- Arabic semantic review suggestions for reviewer-only meaning checks
-
-### `core/`
-
-Contains the shared runtime and infrastructure used by the rest of the project.
-
-Typical responsibilities:
-
-- config loading and path resolution
-- project profile detection
-- locale loading and exporting
-- report helpers
-- usage scanning
-- schema validation
-- XLSX and JSON utility functions
-
-### `fixes/`
-
-Contains the fix application pipeline.
-
-- `apply_safe_fixes.py`: generates and applies conservative auto-safe changes
-- `apply_review_fixes.py`: applies human-approved review queue changes after integrity checks
-
-### `reports/`
-
-Builds final aggregated outputs from individual audit results.
-
-Typical outputs include:
-
-- final Markdown dashboard
-- normalized issue JSON
-- XLSX review queue
-- final report JSON
-
-### `schemas/`
-
-JSON schemas for project configuration and generated artifacts. These help keep config and output contracts explicit and testable.
-
-### `config/`
-
-Contains:
-
-- project configuration
-- built-in project profile definitions
-
-This directory drives path discovery, profile selection, locale locations, and usage pattern selection.
-
-### `bin/`
-
-Shell entry points for common workflows.
-
-- `l10n_audit.sh`: basic localization usage audit
-- `run_all_audits.sh`: multi-stage orchestration script for the full audit workflow
-
-### `examples/`
-
-Framework-oriented sample layouts and documentation for supported project styles. These examples are intended to help users understand expected repository structure and toolkit configuration.
-
-### `tests/`
-
-Regression coverage for loaders, exporters, audits, fix safety, report generation, and schema validation.
-
-## How Audits and Fixes Interact
-
-Audit modules only report findings. They do not directly rewrite locale sources.
-
-The fix pipeline is separate:
-
-- deterministic low-risk changes can become auto-safe fix candidates
-- context-sensitive or risky changes are routed to the review queue
-- approved fixes are only applied after integrity validation against the source snapshot
-
-Arabic semantic suggestions stay on the review side of the workflow. They can propose a candidate rewrite for a reviewer, but they are not treated as auto-safe fixes.
-
-This separation keeps translation data integrity higher than aggressive auto-correction.
-
-## Key Terms
-
-- `audit finding`: a single issue emitted by an audit module
-- `violation`: a rule-specific finding, commonly used by terminology checks
-- `fix plan`: candidate changes generated for safe or reviewed application
-- `review queue`: XLSX sheet for human approval of risky changes
-- `approved fix`: a review-queue row explicitly marked for application
-- `final locale`: reviewed locale output written after approved fixes are applied
-- `semantic suggestion`: a review-only candidate rewrite produced for Arabic meaning-sensitive issues
-
-These terms are used consistently across the repository documentation and generated outputs.
+- **Engine (`l10n_audit/core/`)**: Handles path discovery, framework detection, workspace isolation, and master state reconciliation.
+- **Detectors (`l10n_audit/audits/`)**: Pure functions that take a string and return structured findings (e.g., missing placeholders, grammatical errors, semantic mismatch). They *never* write to your project directly.
+- **Resolvers (`l10n_audit/fixes/`)**: Read the human decisions and safely write exact `.fix` files formatted exactly like the host framework (Laravel PHP or standard JSON).
+- **Projections (`l10n_audit/reports/`)**: Turn the master dataset into user-friendly dashboards and queues downstream.

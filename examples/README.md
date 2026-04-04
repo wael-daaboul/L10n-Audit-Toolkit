@@ -64,7 +64,7 @@ For a full pass:
 
 Results are generated under:
 
-- `Results/per_tool/`
+- `Results/.cache/raw_tools/`
 - `Results/review/`
 - `Results/final/`
 - `Results/final_locale/`

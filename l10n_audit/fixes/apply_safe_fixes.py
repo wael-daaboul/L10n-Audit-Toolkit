@@ -13,6 +13,8 @@ from typing import Any
 from l10n_audit.core.locale_exporters import export_locale_mapping
 from l10n_audit.core.audit_report_utils import load_all_report_issues
 from l10n_audit.core.audit_runtime import is_risky_for_whitespace_normalization, load_locale_mapping, load_runtime, write_json, write_simple_xlsx
+from l10n_audit.core.decision_engine import is_routing_enabled
+from l10n_audit.core.routing_metrics import RoutingMetrics
 
 logger = logging.getLogger("l10n_audit.fixes")
 
@@ -104,7 +106,7 @@ def classify_issue(issue: dict[str, Any]) -> str:
     return "review_required"
 
 
-def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = None) -> list[dict[str, Any]]:
+def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = None, runtime: Any = None) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
     seen: dict[tuple[str, str, str], dict[str, Any]] = {}
     
@@ -142,8 +144,26 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
         except Exception as e:
             logger.warning("Failed to load persistent staged translations: %s", e)
 
+    from l10n_audit.core.enforcement_layer import EnforcementController
+    enforcer = EnforcementController(runtime)
+    
     # --- Priority 2: Audit Issues ---
     for issue in issues:
+        decision = issue.get("decision", {})
+        route = decision.get("route")
+
+        enforcer.record(route)
+        enforcer.record_adaptive(decision.get("confidence", 0.5), decision.get("risk", "low"))
+        
+        if not enforcer.should_process(route, "autofix"):
+            enforcer.record_skip("autofix")
+            logger.debug(
+                "AUTO-FIX OPTIMIZATION: Skipping key='%s' route='%s'",
+                issue.get("key"),
+                route
+            )
+            continue
+                
         # Strict security: AI suggestions MUST be verified to be included in the plan
         if issue.get("source") == "ai_review" or issue.get("code") == "AI_SUGGESTION" or issue.get("issue_type") == "ai_suggestion":
             is_verified = issue.get("verified") is True or issue.get("extra", {}).get("verified") is True
@@ -189,10 +209,16 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
         }
         seen[signature] = item
         plan.append(item)
+        
+    if is_routing_enabled(runtime):
+        # Expose legacy info message to ensure log format persists
+        logger.info("Routing Metrics [apply_safe_fixes]: %s", enforcer.metrics.to_dict())
+        enforcer.save_metrics(runtime)
+        
     return plan
 
 
-def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], locale: str, excluded_keys: set[str] | None = None) -> tuple[dict[str, object], list[dict[str, Any]]]:
+def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], locale: str, excluded_keys: set[str] | None = None, *, runtime: object = None) -> tuple[dict[str, object], list[dict[str, Any]]]:
     updated = dict(data)
     applied: list[dict[str, Any]] = []
     per_key: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -206,12 +232,20 @@ def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], loca
                 continue
             per_key[str(item["key"])].append(item)
 
+    rejected_items: list[dict[str, Any]] = []
+
+    resolver = None
+    if runtime is not None and locale != "ar":
+        from l10n_audit.core.conflict_resolution import get_conflict_resolver, MutationRecord
+        resolver = get_conflict_resolver(runtime)
+
     for key, items in per_key.items():
         candidates = {str(item["candidate_value"]) for item in items if item["candidate_value"]}
         if len(candidates) != 1:
             for item in items:
                 item["classification"] = "review_required"
                 item["message"] = f"{item['message']} Conflicting candidate values detected."
+                rejected_items.extend(items)
             continue
         current_value = data.get(key)
         if not isinstance(current_value, str):
@@ -219,6 +253,25 @@ def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], loca
         new_value = next(iter(candidates))
         if current_value == new_value:
             continue
+
+        # --- Phase 10: Conflict Resolution (Governance Layer) ---
+        if resolver is not None:
+            # We assume auto-fix items in this loop are Priority 3.
+            # If offset/length are missing in the item (common for dict-based fixes),
+            # MutationRecord will use fallback identity.
+            first_item = items[0]
+            record = MutationRecord(
+                key=key,
+                original_text=current_value,
+                new_text=new_value,
+                offset=first_item.get("offset", -1),
+                length=first_item.get("error_length", 0),
+                source="auto_fix",
+                priority=3
+            )
+            if not resolver.register(record):
+                logger.warning("CONFLICT DETECTED: Skipping safe fix for key '%s' due to priority overlap.", key)
+                continue
         
         updated[key] = new_value
         applied.extend(items)
@@ -226,6 +279,44 @@ def apply_safe_changes(data: dict[str, object], plan: list[dict[str, Any]], loca
         # Log success
         source_info = items[0]["source"]
         logger.info("Applied safe fix for key '%s' (%s) - verified by %s", key, locale, source_info)
+
+    # --- Phase 10: Metrics Injection ---
+    if resolver is not None and runtime is not None:
+        try:
+            if hasattr(runtime, "metadata"):
+                runtime.metadata["conflict_metrics"] = resolver.summarize()
+        except Exception:
+            pass
+
+    # --- Phase 8: Feedback Signal Capture (observational only) ---
+    try:
+        aggregator = getattr(runtime, "_feedback_aggregator", None) if runtime is not None else None
+        if aggregator is not None:
+            from l10n_audit.core.feedback_engine import FeedbackSignal
+            for item in applied:
+                decision = item.get("decision", {})
+                aggregator.record(FeedbackSignal(
+                    route=decision.get("route", "auto_fix"),
+                    confidence=float(decision.get("confidence", 0.5)),
+                    risk=str(decision.get("risk", "low")),
+                    was_accepted=True,
+                    was_modified=False,
+                    was_rejected=False,
+                    source="autofix",
+                ))
+            for item in rejected_items:
+                decision = item.get("decision", {})
+                aggregator.record(FeedbackSignal(
+                    route=decision.get("route", "auto_fix"),
+                    confidence=float(decision.get("confidence", 0.5)),
+                    risk=str(decision.get("risk", "low")),
+                    was_accepted=False,
+                    was_modified=False,
+                    was_rejected=True,
+                    source="autofix",
+                ))
+    except Exception:
+        pass  # Feedback capture is best-effort; never affects apply behavior
 
     return updated, applied
 
@@ -290,11 +381,11 @@ def add_direct_locale_safety_pass(data: dict[str, object], locale: str) -> list[
 def main() -> None:
     runtime = load_runtime(__file__)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out-plan-json", default=str(runtime.results_dir / "fixes" / "fix_plan.json"))
-    parser.add_argument("--out-plan-xlsx", default=str(runtime.results_dir / "fixes" / "fix_plan.xlsx"))
-    parser.add_argument("--out-applied-report", default=str(runtime.results_dir / "fixes" / "safe_fixes_applied_report.json"))
-    parser.add_argument("--out-en-fixed", default=str(runtime.results_dir / "fixes" / "en.fixed.json"))
-    parser.add_argument("--out-ar-fixed", default=str(runtime.results_dir / "fixes" / "ar.fixed.json"))
+    parser.add_argument("--out-plan-json", default=str(runtime.results_dir / ".cache" / "apply" / "fix_plan.json"))
+    parser.add_argument("--out-plan-xlsx", default=str(runtime.results_dir / ".cache" / "apply" / "fix_plan.xlsx"))
+    parser.add_argument("--out-applied-report", default=str(runtime.results_dir / ".cache" / "apply" / "safe_fixes_applied_report.json"))
+    parser.add_argument("--out-en-fixed", default=str(runtime.results_dir / ".cache" / "apply" / "en.fixed.json"))
+    parser.add_argument("--out-ar-fixed", default=str(runtime.results_dir / ".cache" / "apply" / "ar.fixed.json"))
     parser.add_argument("--out-exports-dir", default=str(runtime.results_dir / "exports"))
     args = parser.parse_args()
 
@@ -303,7 +394,7 @@ def main() -> None:
     ar_data = load_locale_mapping(runtime.ar_file, runtime, target_locale)
     _reports, issues, _missing = load_all_report_issues(runtime.results_dir)
 
-    plan = build_fix_plan(issues, runtime.project_root)
+    plan = build_fix_plan(issues, runtime.project_root, runtime)
     plan.extend(add_direct_locale_safety_pass(en_data, "en"))
     plan.extend(add_direct_locale_safety_pass(ar_data, "ar"))
 
@@ -401,7 +492,7 @@ def run_stage(runtime, options, **_) -> list:
     from l10n_audit.core.audit_runtime import load_locale_mapping, write_json, write_simple_xlsx
 
     results_dir = options.effective_output_dir(runtime.results_dir)
-    fixes_dir = results_dir / "fixes"
+    fixes_dir = results_dir / ".cache" / "apply"
     exports_dir = results_dir / "exports"
     fixes_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
@@ -412,7 +503,7 @@ def run_stage(runtime, options, **_) -> list:
     
     _reports, issues, _missing = load_all_report_issues(results_dir)
 
-    plan = build_fix_plan(issues, runtime.project_root)
+    plan = build_fix_plan(issues, runtime.project_root, runtime)
     plan.extend(add_direct_locale_safety_pass(en_data, "en"))
     plan.extend(add_direct_locale_safety_pass(ar_data, "ar"))
 
@@ -474,7 +565,11 @@ def run_stage(runtime, options, **_) -> list:
 
     write_json({"summary": {"total_items": len(unique)}, "plan": unique}, fixes_dir / "fix_plan.json")
     write_json({"keys_auto_fixed": applied_en + applied_ar}, fixes_dir / "safe_fixes_applied_report.json")
-    write_simple_xlsx(unique, ["key", "locale", "source", "issue_type", "severity", "classification", "message", "current_value", "candidate_value"], fixes_dir / "fix_plan.xlsx")
+    if options.suppression.include_fix_plan_xlsx:
+        write_simple_xlsx(unique, ["key", "locale", "source", "issue_type", "severity", "classification", "message", "current_value", "candidate_value"], fixes_dir / "fix_plan.xlsx")
+    else:
+        import logging as _logging
+        _logging.getLogger("l10n_audit.apply_safe_fixes").debug("Skipped writing fix_plan.xlsx (include_fix_plan_xlsx=False)")
 
     return []
 

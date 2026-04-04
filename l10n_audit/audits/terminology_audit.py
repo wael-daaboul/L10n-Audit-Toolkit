@@ -68,7 +68,7 @@ def main() -> None:
     parser.add_argument("--en", default=str(runtime.en_file))
     parser.add_argument("--ar", default=str(runtime.ar_file))
     parser.add_argument("--glossary", default=str(runtime.glossary_file))
-    parser.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "terminology" / "terminology_violations.json"))
+    parser.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "terminology" / "terminology_violations.json"))
     args = parser.parse_args()
 
     en_data = load_locale_mapping(Path(args.en), runtime, runtime.source_locale)
@@ -321,7 +321,7 @@ def run_stage(runtime, options) -> list:
 
     if options.write_reports:
         results_dir = options.effective_output_dir(runtime.results_dir)
-        out_dir = results_dir / "per_tool" / "terminology"
+        out_dir = results_dir / ".cache" / "raw_tools" / "terminology"
         payload = {"summary": {"findings": len(unique)}, "violations": unique}
         try:
             write_json(payload, out_dir / "terminology_violations.json")

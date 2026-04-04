@@ -170,9 +170,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default=str(runtime.ar_file))
     parser.add_argument("--en", default=str(runtime.en_file))
-    parser.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "ar_semantic_qc" / "ar_semantic_qc_report.json"))
-    parser.add_argument("--out-csv", default=str(runtime.results_dir / "per_tool" / "ar_semantic_qc" / "ar_semantic_qc_report.csv"))
-    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / "per_tool" / "ar_semantic_qc" / "ar_semantic_qc_report.xlsx"))
+    parser.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "ar_semantic_qc" / "ar_semantic_qc_report.json"))
+    parser.add_argument("--out-csv", default=str(runtime.results_dir / ".cache" / "raw_tools" / "ar_semantic_qc" / "ar_semantic_qc_report.csv"))
+    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / ".cache" / "raw_tools" / "ar_semantic_qc" / "ar_semantic_qc_report.xlsx"))
     args = parser.parse_args()
 
     ar_data = load_locale_mapping(Path(args.input), runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
@@ -215,6 +215,9 @@ def main() -> None:
             short_label_threshold=getattr(args, "short_label_threshold", 3)
         ))
 
+    from l10n_audit.core.decision_engine import apply_arabic_decision_routing
+    apply_arabic_decision_routing(rows, suggestion_key="candidate_value")
+    
     rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"]))
     payload = {
         "input_file": str(Path(args.input).resolve()),
@@ -323,12 +326,15 @@ def run_stage(runtime, options) -> list:
             short_label_threshold=options.ai_review.short_label_threshold,
             glossary_approved_pairs=glossary_approved_pairs
         ))
+    from l10n_audit.core.decision_engine import apply_arabic_decision_routing
+    apply_arabic_decision_routing(rows, suggestion_key="candidate_value")
+
     rows.sort(key=lambda item: (item["issue_type"], item["key"], item["message"]))
 
     if options.write_reports:
         from collections import Counter
         results_dir = options.effective_output_dir(runtime.results_dir)
-        out_dir = results_dir / "per_tool" / "ar_semantic_qc"
+        out_dir = results_dir / ".cache" / "raw_tools" / "ar_semantic_qc"
         payload = {"summary": {"keys_scanned": len(ar_data), "findings": len(rows),
                                "issue_types": dict(sorted(Counter(r["issue_type"] for r in rows).items()))},
                    "findings": rows}
@@ -337,11 +343,95 @@ def run_stage(runtime, options) -> list:
                       "action_hint","audience_hint","context_flags","semantic_risk","lt_signals","review_reason"]
         try:
             write_json(payload, out_dir / "ar_semantic_qc_report.json")
-            write_csv(rows, fieldnames, out_dir / "ar_semantic_qc_report.csv")
-            write_simple_xlsx(rows, fieldnames, out_dir / "ar_semantic_qc_report.xlsx", sheet_name="AR Semantic QC")
+            if options.suppression.include_per_tool_csv:
+                write_csv(rows, fieldnames, out_dir / "ar_semantic_qc_report.csv")
+            else:
+                logger.debug("Skipped writing per-tool CSV (include_per_tool_csv=False)")
+            if options.suppression.include_per_tool_xlsx:
+                write_simple_xlsx(rows, fieldnames, out_dir / "ar_semantic_qc_report.xlsx", sheet_name="AR Semantic QC")
+            else:
+                logger.debug("Skipped writing per-tool XLSX (include_per_tool_xlsx=False)")
         except Exception as exc:
             logger.warning("Failed to write AR semantic QC reports: %s", exc)
 
+    # -----------------------------------------------------------------------
+    # Phase 11 — Controlled Enforcement, Feedback & Conflict Governance
+    # Row preservation contract: len(output) == len(input) in ALL cases.
+    # Enforcement and conflict logic affect row annotations only — never
+    # remove rows from the output set.
+    # -----------------------------------------------------------------------
+    from l10n_audit.core.enforcement_layer import EnforcementController
+    from l10n_audit.core.feedback_engine import FeedbackAggregator, FeedbackSignal
+    from l10n_audit.core.conflict_resolution import get_conflict_resolver, MutationRecord
+
+    enforcer = EnforcementController(runtime)
+    feedback = FeedbackAggregator()
+    # Shared per-run resolver — same registry used across all stages
+    resolver = get_conflict_resolver(runtime)
+
+    for idx, row in enumerate(rows):
+        route = row.get("decision", {}).get("route")
+        confidence = float(row.get("decision", {}).get("confidence", 0.5))
+        risk = str(row.get("decision", {}).get("risk", "low"))
+
+        enforcer.record(route)
+
+        # --- Conflict governance (mutation authority only, row is never dropped) ---
+        fix_text = row.get("candidate_value", "")
+        mutation_blocked = False
+        if fix_text:
+            priority_map = {"auto_fix": 3, "ai_review": 2, "manual_review": 1}
+            priority = priority_map.get(route or "", 1)
+            mut = MutationRecord(
+                key=row.get("key", ""),
+                original_text=row.get("old", ""),
+                new_text=fix_text,
+                offset=-1,
+                length=0,
+                source="arabic",
+                priority=priority,
+                mutation_id=f"ar_semantic_qc:{idx}",
+            )
+            mutation_blocked = not resolver.register(mut)
+
+        # --- Enforcement check (affects actionability annotation, not row existence) ---
+        actionable = enforcer.should_process(route, "ai") and not mutation_blocked
+
+        if not actionable:
+            if not enforcer.should_process(route, "ai"):
+                enforcer.record_skip("ai")
+            row["enforcement_skipped"] = True
+            feedback.record(FeedbackSignal(
+                route=route or "unknown",
+                confidence=confidence,
+                risk=risk,
+                was_accepted=False,
+                was_modified=False,
+                was_rejected=True,
+                source="arabic",
+            ))
+        else:
+            row["enforcement_skipped"] = False
+            feedback.record(FeedbackSignal(
+                route=route or "unknown",
+                confidence=confidence,
+                risk=risk,
+                was_accepted=True,
+                was_modified=False,
+                was_rejected=False,
+                source="arabic",
+            ))
+
+    # Persist metrics — namespaced to avoid overwriting other stages
+    enforcer.save_metrics(runtime)
+    if hasattr(runtime, "metadata"):
+        runtime.metadata["feedback_metrics_ar_semantic_qc"] = feedback.summarize()
+        runtime.metadata["conflict_metrics_ar_semantic_qc"] = {
+            **resolver.summarize(),
+            "source": "arabic",
+            "stage": "ar_semantic_qc",
+        }
+
     normalised = [{**r, "source": "ar_semantic_qc", "issue_type": r.get("issue_type", "ar_semantic")} for r in rows]
-    logger.info("AR semantic QC: %d issues", len(normalised))
+    logger.info("AR semantic QC: %d issues (enforcement active=%s)", len(normalised), enforcer.enabled)
     return [issue_from_dict(r) for r in normalised]

@@ -319,7 +319,7 @@ class ResultsRetention:
 # AuditOptions
 # ---------------------------------------------------------------------------
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 
 @dataclass
@@ -387,17 +387,69 @@ class ARLocaleQC:
 
 
 @dataclass
+class OutputSuppression:
+    """Phase D/F — Feature flags that suppress optional artifact writes.
+
+    Phase D introduced these flags (all defaulting to True).
+    Phase F changes the defaults for artifacts classified as ``optional_legacy``
+    in the Phase E deprecation registry.  The four flags below now default to
+    ``False`` because:
+
+    - No active production code reads their outputs via ``run_stage()``.
+    - No ``run_stage()`` test depends on their presence.
+    - CLI ``main()`` paths pass explicit ``--out-*`` args and bypass these flags.
+    - Evidence: Phase E consumer audit, grep across tests/ confirmed zero
+      ``run_stage`` dependencies.
+
+    Phase F defaults applied:
+    - CSV/XLSX disabled by default
+    - multilingual markdown removed (Phase G2)
+
+    To restore full outputs (e.g. for debugging or extended CI artifacts)::
+
+        AuditOptions(suppression=OutputSuppression(
+            include_per_tool_csv=True,
+            include_per_tool_xlsx=True,
+            include_fix_plan_xlsx=True,
+        ))
+
+    Critical outputs (audit_master.json, review_queue.xlsx/json,
+    final_audit_report.json, final_audit_report.md) are NEVER controlled
+    by these flags and are always written.
+    """
+
+    # Per-tool CSV files (.cache/raw_tools/*/*.csv)
+    # Phase F default: False — no run_stage consumer; CLI main() is unaffected.
+    include_per_tool_csv: bool = False
+
+    # Per-tool XLSX files (.cache/raw_tools/*/*.xlsx)
+    # Phase F default: False — no run_stage consumer; CLI main() is unaffected.
+    include_per_tool_xlsx: bool = False
+
+    # fix_plan.xlsx (.cache/apply/fix_plan.xlsx)
+    # fix_plan.json is always written; XLSX is human-convenience only.
+    # Phase F default: False — test_safe_fixes.py exercises main() path only.
+    include_fix_plan_xlsx: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class AuditOptions:
     """Unified configuration for a single l10n-audit run / الإعدادات الموحدة لعملية التدقيق"""
 
     stage: str = "full"  # Audit stage to run (full|fast|terminology|...) / مرحلة التدقيق المطلوب تشغيلها
     write_reports: bool = True  # Generate file output (JSON/CSV/XLSX) / إنشاء ملفات التقارير
-    
+
     project_detection: ProjectDetection = field(default_factory=ProjectDetection)
     audit_rules: AuditRules = field(default_factory=AuditRules)
     ai_review: AIReview = field(default_factory=AIReview)
     output: OutputOptions = field(default_factory=OutputOptions)
     ar_locale_qc: ARLocaleQC = field(default_factory=ARLocaleQC)
+
+    # Phase D — output suppression flags (all default True = no change)
+    suppression: OutputSuppression = field(default_factory=OutputSuppression)
 
     # Environment paths (often overridden by runtime)
     project_root: str = ".."
@@ -406,11 +458,14 @@ class AuditOptions:
     out_xlsx: str | Path | None = None
     config_schema: str | Path | None = None
     languagetool_dir: str = "vendor"
-    
+
     # Internal injection for testing / Feedback
     ai_provider_override: Any | None = None
     verbose: bool = False
-    
+
+    # Phase G1 - Governs how strictly we enforce deprecations
+    strict_deprecations: bool = False
+
     # v1.3.1 - Hydration / Cache Loading
     input_report: str | Path | None = None
 
@@ -428,6 +483,7 @@ class AuditOptions:
             "ai_review": self.ai_review.to_dict(),
             "output": self.output.to_dict(),
             "ar_locale_qc": self.ar_locale_qc.to_dict(),
+            "suppression": self.suppression.to_dict(),
             "project_root": self.project_root,
             "glossary_file": self.glossary_file,
             "languagetool_dir": self.languagetool_dir,

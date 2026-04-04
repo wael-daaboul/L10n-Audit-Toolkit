@@ -5,20 +5,21 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from l10n_audit.core.deprecation_warnings import warn_deprecated_artifact
 from l10n_audit.core.audit_runtime import write_json, compute_text_hash
 
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 REPORT_FILE_MAP = {
-    "localization": "per_tool/localization/localization_audit_pro.json",
-    "locale_qc": "per_tool/en_locale_qc/en_locale_qc_report.json",
-    "ar_locale_qc": "per_tool/ar_locale_qc/ar_locale_qc_report.json",
-    "ar_semantic_qc": "per_tool/ar_semantic_qc/ar_semantic_qc_report.json",
-    "grammar": "per_tool/grammar/grammar_audit_report.json",
-    "terminology": "per_tool/terminology/terminology_violations.json",
-    "placeholders": "per_tool/placeholders/placeholder_audit_report.json",
-    "icu_message_audit": "per_tool/icu_message_audit/icu_message_audit_report.json",
-    "ai_review": "per_tool/ai_review/ai_review_report.json",
+    "localization": ".cache/raw_tools/localization/localization_audit_pro.json",
+    "locale_qc": ".cache/raw_tools/en_locale_qc/en_locale_qc_report.json",
+    "ar_locale_qc": ".cache/raw_tools/ar_locale_qc/ar_locale_qc_report.json",
+    "ar_semantic_qc": ".cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.json",
+    "grammar": ".cache/raw_tools/grammar/grammar_audit_report.json",
+    "terminology": ".cache/raw_tools/terminology/terminology_violations.json",
+    "placeholders": ".cache/raw_tools/placeholders/placeholder_audit_report.json",
+    "icu_message_audit": ".cache/raw_tools/icu_message_audit/icu_message_audit_report.json",
+    "ai_review": ".cache/raw_tools/ai_review/ai_review_report.json",
 }
 
 SOURCE_GROUPS = {
@@ -384,7 +385,11 @@ def sort_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-def load_all_report_issues(results_dir: Path, include_sources: set[str] | None = None) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+def load_all_report_issues(
+    results_dir: Path,
+    include_sources: set[str] | None = None,
+    options: Any | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
     reports: dict[str, Any] = {}
     issues: list[dict[str, Any]] = []
     missing: list[str] = []
@@ -392,9 +397,18 @@ def load_all_report_issues(results_dir: Path, include_sources: set[str] | None =
     for source, filename in REPORT_FILE_MAP.items():
         if include_sources is not None and source not in include_sources:
             continue
-        payload = load_json_report(results_dir / filename)
+        
+        file_path = results_dir / filename
+        if not file_path.exists() and ".cache/raw_tools" in filename:
+            legacy_path = results_dir / filename.replace(".cache/raw_tools", "per_tool")
+            if legacy_path.exists():
+                strict = getattr(options, "strict_deprecations", False) if options else False
+                warn_deprecated_artifact("per_tool_json", legacy_path, "read", strict_mode=strict)
+                file_path = legacy_path
+                
+        payload = load_json_report(file_path)
         if payload is None:
-            missing.append(filename)
+            missing.append(str(file_path.relative_to(results_dir)))
             continue
         reports[source] = payload
         issues.extend(NORMALIZERS[source](payload))

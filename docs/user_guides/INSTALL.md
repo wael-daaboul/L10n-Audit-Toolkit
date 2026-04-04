@@ -4,7 +4,7 @@ This guide covers environment setup, dependency installation, test setup, and fi
 
 ## English
 
-Current version: **1.3.1** (The Bulletproof Edition)
+Current version: **1.4.0** (The Master Architecture Edition)
 
 ### Purpose
 This guide covers system setup, optional dependencies, local LanguageTool, virtual environments, and first-run validation for the localization QA toolkit.
@@ -171,7 +171,7 @@ If you are onboarding a non-Flutter project, either set `project_profile` manual
 For Laravel PHP translations, use `project_profile = "laravel_php"` and configure `locale_root` if your project does not use the default `resources/lang`.
 
 Expected canonical outputs:
-- `Results/per_tool/...`
+- `.cache/raw_tools/...`
 - `Results/final/...`
 
 For full validation:
@@ -222,7 +222,7 @@ python3 -m pytest tests
 
 ### Canonical Output Locations
 - Per-tool raw outputs:
-  - `Results/per_tool/`
+  - `.cache/raw_tools/`
 - Normalized outputs:
   - `Results/normalized/`
 - Final aggregated outputs:
@@ -267,7 +267,7 @@ python3 -m pytest tests
 
 ## العربية
 
-الإصدار الحالي: **1.3.1** (The Bulletproof Edition)
+الإصدار الحالي: **1.4.0** (The Master Architecture Edition)
 
 ### الغرض من هذا الدليل
 يوضح هذا الدليل كيفية تثبيت الحزمة وتجهيز البيئة وتشغيل أول تحقق ناجح، مع توضيح التبعيات المطلوبة والاختيارية وكيفية التراجع الآمن عند غياب بعضها.
@@ -452,7 +452,7 @@ python3 -m pytest tests
 
 ### أماكن المخرجات المعتمدة
 - المخرجات الخام لكل أداة:
-  - `Results/per_tool/`
+  - `.cache/raw_tools/`
 - المخرجات الموحدة:
   - `Results/normalized/`
 - التقارير النهائية:

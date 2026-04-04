@@ -446,9 +446,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--en", default=str(runtime.en_file))
     parser.add_argument("--ar", default=str(runtime.ar_file))
-    parser.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "icu_message_audit" / "icu_message_audit_report.json"))
-    parser.add_argument("--out-csv", default=str(runtime.results_dir / "per_tool" / "icu_message_audit" / "icu_message_audit_report.csv"))
-    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / "per_tool" / "icu_message_audit" / "icu_message_audit_report.xlsx"))
+    parser.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "icu_message_audit" / "icu_message_audit_report.json"))
+    parser.add_argument("--out-csv", default=str(runtime.results_dir / ".cache" / "raw_tools" / "icu_message_audit" / "icu_message_audit_report.csv"))
+    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / ".cache" / "raw_tools" / "icu_message_audit" / "icu_message_audit_report.xlsx"))
     args = parser.parse_args()
 
     config = load_icu_config(runtime.config_dir / "config.json")
@@ -518,13 +518,19 @@ def run_stage(runtime, options) -> list:
 
     if options.write_reports:
         results_dir = options.effective_output_dir(runtime.results_dir)
-        out_dir = results_dir / "per_tool" / "icu_message_audit"
+        out_dir = results_dir / ".cache" / "raw_tools" / "icu_message_audit"
         payload = {"summary": {"keys_scanned": len(set(en_data) | set(ar_data)), "findings": len(findings)}, "findings": findings}
         fieldnames = ["key", "issue_type", "severity", "message", "old", "new", "related", "audit_source", "fix_mode"]
         try:
             write_json(payload, out_dir / "icu_message_audit_report.json")
-            write_csv(findings, fieldnames, out_dir / "icu_message_audit_report.csv")
-            write_simple_xlsx(findings, fieldnames, out_dir / "icu_message_audit_report.xlsx", sheet_name="ICU Audit")
+            if options.suppression.include_per_tool_csv:
+                write_csv(findings, fieldnames, out_dir / "icu_message_audit_report.csv")
+            else:
+                logger.debug("Skipped writing per-tool CSV (include_per_tool_csv=False)")
+            if options.suppression.include_per_tool_xlsx:
+                write_simple_xlsx(findings, fieldnames, out_dir / "icu_message_audit_report.xlsx", sheet_name="ICU Audit")
+            else:
+                logger.debug("Skipped writing per-tool XLSX (include_per_tool_xlsx=False)")
         except Exception as exc:
             logger.warning("Failed to write ICU audit reports: %s", exc)
 

@@ -207,7 +207,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         from l10n_audit.api import _stage_module_names
 
         if verbose:
-            version = getattr(l10n_audit, '__version__', '1.3.1')
+            version = getattr(l10n_audit, '__version__', '1.4.0')
             print(f"  [Engine] L10n Audit Engine v{version} loaded.")
             print(f"  [Stage] Target: {stage}")
 
@@ -316,6 +316,30 @@ def cmd_self_update(args: argparse.Namespace) -> int:
     """يعرض تعليمات تحديث الأداة عبر pipx."""
     print("\n🚀 لتحديث أداة l10n-audit لآخر إصدار، نفذ الأمر التالي:")
     print("   pipx upgrade l10n-audit-toolkit\n")
+    return 0
+
+
+def cmd_deprecations(args: argparse.Namespace) -> int:
+    """Show the Phase G1 deprecation registry status."""
+    from l10n_audit.core.deprecation_registry import summary_dict
+    
+    sd = summary_dict()
+    print("\n=== Deprecation Status ===\n")
+    
+    mapping = {
+        "active_required": "ACTIVE",
+        "compatibility_required": "COMPATIBILITY",
+        "optional_legacy": "OPTIONAL LEGACY",
+        "deprecated_candidate": "DEPRECATED",
+        "removed": "REMOVED",
+    }
+    
+    for class_key, title in mapping.items():
+        items = sd["by_classification"].get(class_key, [])
+        print(f"{title} ({len(items)})")
+        for item in items:
+            print(f"- {item}")
+        print()
     return 0
 
 
@@ -431,6 +455,9 @@ def build_parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("--review-queue", help="Path to review_queue.xlsx (optional)")
     apply_parser.add_argument("--all", action="store_true", help="Force-apply all suggestions (including AI) regardless of status")
     apply_parser.set_defaults(func=cmd_apply)
+
+    deprecations_parser = subparsers.add_parser("deprecations", help="Show the current state of legacy artifacts decommissioning.")
+    deprecations_parser.set_defaults(func=cmd_deprecations)
 
     return parser
 

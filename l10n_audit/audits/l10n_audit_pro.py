@@ -268,9 +268,9 @@ def main():
     ap.add_argument("--ar", default=str(runtime.ar_file))
     ap.add_argument("--en", default=str(runtime.en_file))
     ap.add_argument("--code", nargs="*", default=[str(path) for path in runtime.code_dirs])
-    ap.add_argument("--out-en", default=str(runtime.results_dir / "per_tool" / "localization" / "localization_audit_pro_en.md"))
-    ap.add_argument("--out-ar", default=str(runtime.results_dir / "per_tool" / "localization" / "localization_audit_pro_ar.md"))
-    ap.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "localization" / "localization_audit_pro.json"))
+    ap.add_argument("--out-en", default=str(runtime.results_dir / ".cache" / "raw_tools" / "localization" / "localization_audit_pro_en.md"))
+    ap.add_argument("--out-ar", default=str(runtime.results_dir / ".cache" / "raw_tools" / "localization" / "localization_audit_pro_ar.md"))
+    ap.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "localization" / "localization_audit_pro.json"))
     args = ap.parse_args()
 
     ar_path = Path(args.ar)

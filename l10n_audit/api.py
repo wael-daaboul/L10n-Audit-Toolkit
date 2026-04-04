@@ -287,7 +287,7 @@ def run_audit(
         fix_plan = build_fix_plan(issue_dicts, runtime.project_root)
         
         # Save the full plan for future reference (internal)
-        fixes_dir = results_dir / "fixes"
+        fixes_dir = results_dir / ".cache" / "apply"
         fixes_dir.mkdir(parents=True, exist_ok=True)
         write_json({"plan": fix_plan}, fixes_dir / "fix_plan.json")
         

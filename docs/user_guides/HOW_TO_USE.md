@@ -233,9 +233,9 @@ python -m audits.ar_semantic_qc
 
 This module writes:
 
-- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.json`
-- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.csv`
-- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.xlsx`
+- `.cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.json`
+- `.cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.csv`
+- `.cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.xlsx`
 
 Typical output includes:
 
@@ -256,9 +256,9 @@ python -m audits.ar_semantic_qc
 
 سيُنتج هذا الفحص الملفات التالية:
 
-- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.json`
-- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.csv`
-- `Results/per_tool/ar_semantic_qc/ar_semantic_qc_report.xlsx`
+- `.cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.json`
+- `.cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.csv`
+- `.cache/raw_tools/ar_semantic_qc/ar_semantic_qc_report.xlsx`
 
 ومن أمثلة النتائج:
 
@@ -427,7 +427,7 @@ python3 -m core.schema_validation --preset core
 
 ## Results Layout
 Canonical outputs are stored under:
-- `Results/per_tool/`
+- `.cache/raw_tools/`
 - `Results/normalized/`
 - `Results/final/`
 - `Results/fixes/`

@@ -11,7 +11,7 @@ Usage::
     print(result.to_dict())
 """
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
  
 from l10n_audit.api import (
     doctor_workspace,

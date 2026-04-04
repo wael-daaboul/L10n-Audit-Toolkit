@@ -9,7 +9,8 @@ from collections import Counter
 from pathlib import Path
 
 from l10n_audit.core.audit_runtime import load_locale_mapping, load_runtime, write_csv, write_json, write_simple_xlsx
-from l10n_audit.core.languagetool_manager import create_language_tool_session
+from l10n_audit.core.languagetool_layer import LTFinding, get_languagetool_layer
+from l10n_audit.core.decision_engine import DecisionContext, evaluate_findings
 
 CUSTOM_RULES = [
     (r"\bcan not\b", "cannot", "Style/grammar"),
@@ -54,48 +55,128 @@ def build_custom_findings(key: str, text: str) -> list[dict[str, object]]:
     return findings
 
 
+def _lt_finding_to_audit_dict(finding: LTFinding, route: str) -> dict[str, object]:
+    """Convert an :class:`~l10n_audit.core.languagetool_layer.LTFinding` to
+    the exact dict shape previously produced by ``build_languagetool_findings``.
+
+    Field-by-field notes
+    --------------------
+    * ``issue_type`` — uses ``finding.issue_category`` (lowercase).  The only
+      programmatic consumer, ``load_en_languagetool_signals``, immediately
+      lowercases this field when it reads the JSON (line 146 of
+      ``context_evaluator.py``), so the case change is behaviorally safe.
+    * ``replacements`` — carried through verbatim via
+      ``finding.replacements_str`` (populated in ``_normalize_match``).
+    * ``context`` — carried through verbatim via ``finding.match_context``
+      (populated in ``_normalize_match`` with the same ``clean_message``
+      whitespace-collapse logic as the original code).
+    * ``decision`` — (Phase 1 additive) informational routing metadata only.
+    """
+    return {
+        "key": finding.key,
+        "issue_type": finding.issue_category,   # lowercased; safe — see docstring
+        "rule_id": finding.rule_id,
+        "message": finding.message,
+        "old": finding.original_text,
+        "new": finding.suggested_text,
+        "replacements": finding.replacements_str,
+        "context": finding.match_context,
+        "offset": finding.offset,
+        "error_length": finding.error_length,
+        "decision": {
+            "route": route,
+            "confidence": round(finding.confidence_score, 2),
+            "risk": finding.risk_level,
+            "engine_version": "v3",
+        },
+    }
+
+
 def build_languagetool_findings(text_by_key: list[tuple[str, str]], runtime) -> tuple[str, list[dict[str, object]], str | None]:
+    """Run LanguageTool on English text and return normalised audit dicts.
+
+    Uses :func:`~l10n_audit.core.languagetool_layer.get_languagetool_layer`
+    for session lifecycle management (Phase 1 / Step 3 integration).
+    Falls back to rule-based mode if LT is unavailable.
+
+    Behavioral contract (preserved from original implementation)
+    ------------------------------------------------------------
+    * Returns ``(mode, findings, note)`` unconditionally.
+    * Aborts analysis on the first per-key ``check()`` exception and returns
+      findings accumulated so far plus an error note (identical to the
+      original abort-on-first-error semantics).
+    * Closes the LT session in a ``finally`` block regardless of outcome.
+    """
     from l10n_audit.core.utils import check_java_available, get_java_missing_warning
     if not check_java_available():
         return "rule-based", [], get_java_missing_warning("English")
-        
-    session = create_language_tool_session("en-US", runtime)
-    if session.tool is None:
-        return "rule-based", [], session.note or "LanguageTool session unavailable."
 
+    layer = get_languagetool_layer(runtime, "en-US")
+    if layer is None:
+        return "rule-based", [], "LanguageTool session unavailable."
+
+    # Build a key→text index so we can detect errors per-key in order.
     findings: list[dict[str, object]] = []
     try:
         for key, original_text in text_by_key:
+            # analyze_text_batch with strict=True re-raises on the first
+            # check() exception, preserving the abort-on-first-error semantics
+            # of the original implementation.
             try:
-                matches = session.tool.check(original_text)
+                batch = layer.analyze_text_batch([(key, original_text)], strict=True)
             except Exception as exc:
-                return "rule-based", findings, f"{session.note} LanguageTool check failed: {clean_message(str(exc))}".strip()
-            for match in matches:
-                replacements = [str(getattr(item, "value", item)) for item in getattr(match, "replacements", [])[:3]]
-                offset = int(getattr(match, "offset", 0))
-                error_length = int(getattr(match, "errorLength", getattr(match, "error_length", 0)))
-                suggested = ""
-                if replacements:
-                    suggested = original_text[:offset] + replacements[0] + original_text[offset + error_length :]
-                category = getattr(getattr(match, "category", None), "id", "") or "Unknown"
-                context = getattr(match, "context", original_text)
-                findings.append(
-                    {
-                        "key": key,
-                        "issue_type": str(category),
-                        "rule_id": str(getattr(match, "ruleId", "LANGUAGETOOL")),
-                        "message": clean_message(str(getattr(match, "message", ""))),
-                        "old": original_text,
-                        "new": suggested,
-                        "replacements": ", ".join(replacements),
-                        "context": clean_message(str(context)),
-                        "offset": offset,
-                        "error_length": error_length,
-                    }
-                )
+                note = f"{layer.session_note or ''} LanguageTool check failed: {clean_message(str(exc))}".strip()
+                return "rule-based", findings, note
+            
+            # Phase 1 / Step 5: Passive Decision Boundary Seam (Shadow Mode)
+            ctx = DecisionContext(findings=batch, source="en")
+            result = evaluate_findings(ctx, runtime=runtime)
+            
+            # Phase 2.1 / Step 5: English Invariant Conservation Check
+            total_in = len(batch)
+            total_out = (
+                len(result.auto_fix) +
+                len(result.ai_review) +
+                len(result.manual_review) +
+                len(result.dropped)
+            )
+            assert total_in == total_out, f"Routing invariant violated: in={total_in}, out={total_out}"
+            
+            # Combine all queues to guarantee zero findings are dropped.
+            indexed_batch = list(enumerate(batch))
+            
+            auto_fix = []
+            ai_review = []
+            manual_review = []
+            dropped = []
+
+            for index, finding in indexed_batch:
+                if finding in result.auto_fix:
+                    auto_fix.append((index, finding, "auto_fix"))
+                elif finding in result.ai_review:
+                    ai_review.append((index, finding, "ai_review"))
+                elif finding in result.manual_review:
+                    manual_review.append((index, finding, "manual_review"))
+                elif finding in result.dropped:
+                    dropped.append((index, finding, "dropped"))
+
+            all_findings = (
+                auto_fix +
+                ai_review +
+                manual_review +
+                dropped
+            )
+            
+            all_findings.sort(key=lambda x: x[0])
+            
+            findings.extend(
+                _lt_finding_to_audit_dict(f, route) for _, f, route in all_findings
+            )
     finally:
-        session.close()
-    return session.mode, findings, session.note or None
+        layer.close()
+
+    return layer.session_mode, findings, layer.session_note
+
 
 
 def dedupe_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -119,9 +200,9 @@ def main() -> None:
     runtime = load_runtime(__file__)
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default=str(runtime.en_file))
-    parser.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "grammar" / "grammar_audit_report.json"))
-    parser.add_argument("--out-csv", default=str(runtime.results_dir / "per_tool" / "grammar" / "grammar_audit_report.csv"))
-    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / "per_tool" / "grammar" / "grammar_audit_report.xlsx"))
+    parser.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "grammar" / "grammar_audit_report.json"))
+    parser.add_argument("--out-csv", default=str(runtime.results_dir / ".cache" / "raw_tools" / "grammar" / "grammar_audit_report.csv"))
+    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / ".cache" / "raw_tools" / "grammar" / "grammar_audit_report.xlsx"))
     args = parser.parse_args()
 
     data = load_locale_mapping(Path(args.input), runtime, runtime.source_locale)
@@ -194,13 +275,19 @@ def run_stage(runtime, options) -> list:
 
     if options.write_reports:
         results_dir = options.effective_output_dir(runtime.results_dir)
-        out_dir = results_dir / "per_tool" / "grammar"
+        out_dir = results_dir / ".cache" / "raw_tools" / "grammar"
         fieldnames = ["key", "issue_type", "rule_id", "message", "old", "new", "replacements", "context", "offset", "error_length"]
         payload = {"summary": {"keys_scanned": len(text_by_key), "findings": len(rows)}, "findings": rows}
         try:
             write_json(payload, out_dir / "grammar_audit_report.json")
-            write_csv(rows, fieldnames, out_dir / "grammar_audit_report.csv")
-            write_simple_xlsx(rows, fieldnames, out_dir / "grammar_audit_report.xlsx", sheet_name="Grammar Audit")
+            if options.suppression.include_per_tool_csv:
+                write_csv(rows, fieldnames, out_dir / "grammar_audit_report.csv")
+            else:
+                logger.debug("Skipped writing per-tool CSV (include_per_tool_csv=False)")
+            if options.suppression.include_per_tool_xlsx:
+                write_simple_xlsx(rows, fieldnames, out_dir / "grammar_audit_report.xlsx", sheet_name="Grammar Audit")
+            else:
+                logger.debug("Skipped writing per-tool XLSX (include_per_tool_xlsx=False)")
         except Exception as exc:
             logger.warning("Failed to write grammar audit reports: %s", exc)
 

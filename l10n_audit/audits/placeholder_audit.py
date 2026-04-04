@@ -185,9 +185,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--en", default=str(runtime.en_file))
     parser.add_argument("--ar", default=str(runtime.ar_file))
-    parser.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "placeholders" / "placeholder_audit_report.json"))
-    parser.add_argument("--out-csv", default=str(runtime.results_dir / "per_tool" / "placeholders" / "placeholder_audit_report.csv"))
-    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / "per_tool" / "placeholders" / "placeholder_audit_report.xlsx"))
+    parser.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "placeholders" / "placeholder_audit_report.json"))
+    parser.add_argument("--out-csv", default=str(runtime.results_dir / ".cache" / "raw_tools" / "placeholders" / "placeholder_audit_report.csv"))
+    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / ".cache" / "raw_tools" / "placeholders" / "placeholder_audit_report.xlsx"))
     args = parser.parse_args()
 
     en_data = load_locale_mapping(Path(args.en), runtime, runtime.source_locale)
@@ -255,7 +255,7 @@ def run_stage(runtime, options) -> list:
 
     if options.write_reports:
         results_dir = options.effective_output_dir(runtime.results_dir)
-        out_dir = results_dir / "per_tool" / "placeholders"
+        out_dir = results_dir / ".cache" / "raw_tools" / "placeholders"
         fieldnames = ["key", "issue_type", "severity", "message", "en_placeholders", "ar_placeholders", "suggestion"]
         payload = {
             "summary": {
@@ -266,8 +266,14 @@ def run_stage(runtime, options) -> list:
         }
         try:
             write_json(payload, out_dir / "placeholder_audit_report.json")
-            write_csv(findings, fieldnames, out_dir / "placeholder_audit_report.csv")
-            write_simple_xlsx(findings, fieldnames, out_dir / "placeholder_audit_report.xlsx", sheet_name="Placeholder Audit")
+            if options.suppression.include_per_tool_csv:
+                write_csv(findings, fieldnames, out_dir / "placeholder_audit_report.csv")
+            else:
+                logger.debug("Skipped writing per-tool CSV (include_per_tool_csv=False)")
+            if options.suppression.include_per_tool_xlsx:
+                write_simple_xlsx(findings, fieldnames, out_dir / "placeholder_audit_report.xlsx", sheet_name="Placeholder Audit")
+            else:
+                logger.debug("Skipped writing per-tool XLSX (include_per_tool_xlsx=False)")
         except Exception as exc:
             logger.warning("Failed to write placeholder audit reports: %s", exc)
 

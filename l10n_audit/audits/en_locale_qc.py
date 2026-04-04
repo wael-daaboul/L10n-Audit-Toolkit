@@ -144,9 +144,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default=str(runtime.en_file))
     parser.add_argument("--ar", default=str(runtime.ar_file))
-    parser.add_argument("--out-json", default=str(runtime.results_dir / "per_tool" / "en_locale_qc" / "en_locale_qc_report.json"))
-    parser.add_argument("--out-csv", default=str(runtime.results_dir / "per_tool" / "en_locale_qc" / "en_locale_qc_report.csv"))
-    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / "per_tool" / "en_locale_qc" / "en_locale_qc_report.xlsx"))
+    parser.add_argument("--out-json", default=str(runtime.results_dir / ".cache" / "raw_tools" / "en_locale_qc" / "en_locale_qc_report.json"))
+    parser.add_argument("--out-csv", default=str(runtime.results_dir / ".cache" / "raw_tools" / "en_locale_qc" / "en_locale_qc_report.csv"))
+    parser.add_argument("--out-xlsx", default=str(runtime.results_dir / ".cache" / "raw_tools" / "en_locale_qc" / "en_locale_qc_report.xlsx"))
     args = parser.parse_args()
 
     en_data = load_locale_mapping(Path(args.input), runtime, runtime.source_locale)
@@ -313,7 +313,7 @@ def run_stage(runtime, options) -> list:
         from collections import Counter
         from l10n_audit.core.audit_runtime import write_csv, write_json, write_simple_xlsx as _write_xlsx
         results_dir = options.effective_output_dir(runtime.results_dir)
-        out_dir = results_dir / "per_tool" / "locale_qc"
+        out_dir = results_dir / ".cache" / "raw_tools" / "locale_qc"
         fieldnames = ["key", "issue_type", "severity", "message", "old", "new", "related"]
         payload = {
             "summary": {"keys_scanned": len(en_data), "findings": len(rows),
@@ -322,8 +322,14 @@ def run_stage(runtime, options) -> list:
         }
         try:
             write_json(payload, out_dir / "en_locale_qc_report.json")
-            write_csv(rows, fieldnames, out_dir / "en_locale_qc_report.csv")
-            _write_xlsx(rows, fieldnames, out_dir / "en_locale_qc_report.xlsx", sheet_name="EN Locale QC")
+            if options.suppression.include_per_tool_csv:
+                write_csv(rows, fieldnames, out_dir / "en_locale_qc_report.csv")
+            else:
+                logger.debug("Skipped writing per-tool CSV (include_per_tool_csv=False)")
+            if options.suppression.include_per_tool_xlsx:
+                _write_xlsx(rows, fieldnames, out_dir / "en_locale_qc_report.xlsx", sheet_name="EN Locale QC")
+            else:
+                logger.debug("Skipped writing per-tool XLSX (include_per_tool_xlsx=False)")
         except Exception as exc:
             logger.warning("Failed to write EN locale QC reports: %s", exc)
 

@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import uuid
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from l10n_audit.core.audit_report_utils import load_all_report_issues, severity_rank, summarize_issues, write_unified_json
+from l10n_audit.core.artifact_resolver import resolve_master_path, resolve_final_report_path
 from l10n_audit.core.audit_runtime import compute_plan_id, compute_text_hash, load_locale_mapping, load_runtime, write_simple_xlsx
 from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
 
@@ -292,6 +294,179 @@ def render_markdown(
     return "\n".join(lines)
 
 
+def _build_deprecation_governance() -> dict:
+    """Return a JSON-safe summary of the Phase E deprecation registry.
+
+    Imported lazily so that cyclic-import risk is minimised and the registry
+    module can remain a pure-data file with no runtime side effects.
+    """
+    try:
+        from l10n_audit.core.deprecation_registry import summary_dict
+        from l10n_audit.core.deprecation_warnings import get_usage_tracking
+        sd = summary_dict()
+        sd["usage_tracking"] = get_usage_tracking()
+        return sd
+    except Exception:
+        return {"schema_version": "unavailable", "error": "deprecation_registry import failed"}
+
+
+def write_audit_master(
+    artifacts_dir: Path,
+    aggr_file: Path,
+    json_file: Path,
+    review_json: Path,
+    review_xlsx: Path,
+    issues: list,
+    review_rows: list,
+    payload: dict,
+    missing: list,
+    include_sources: list,
+    source_status: dict,
+    project_root: Path,
+    # Phase A optional enrichment args (callers need not pass these)
+    runtime=None,
+    options=None,
+) -> Path:
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    master_file = artifacts_dir / "audit_master.json"
+
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.resolve().relative_to(project_root.resolve()))
+        except ValueError:
+            return str(p)
+
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    summary = payload.get("summary", {})
+
+    # ── Phase A: enriched run_metadata ─────────────────────────────────────
+    def _safe_get(obj, *attrs, default=None):
+        """Walk a chain of attribute/dict lookups without crashing."""
+        cur = obj
+        for a in attrs:
+            if cur is None:
+                return default
+            try:
+                cur = getattr(cur, a) if not isinstance(cur, dict) else cur.get(a)
+            except Exception:
+                return default
+        return cur if cur is not None else default
+
+    run_meta = {
+        "generated_at": now_iso,
+        "run_id": str(uuid.uuid4()),
+        "pipeline_stage": "master_data_architecture",
+        "tool_version": None,
+        "input_mode": "master_hydrated" if (_safe_get(options, "input_report") is None) else "input_report",
+        "source_locale": _safe_get(runtime, "source_locale"),
+        "target_locales": list(_safe_get(runtime, "target_locales") or []),
+        "locale_format": _safe_get(runtime, "locale_format"),
+        "retention_mode": _safe_get(options, "retention_mode"),
+        "project_root": str(project_root) if project_root else None,
+        "results_dir": _rel(artifacts_dir.parent) if artifacts_dir else None,
+    }
+
+    # ── Phase A: summaries ──────────────────────────────────────────────────
+    from collections import Counter as _Counter
+    by_sev = dict(sorted(_Counter(str(i.get("severity","")) for i in issues).items())) if issues else {}
+    by_src = dict(sorted(_Counter(str(i.get("source",""))   for i in issues).items())) if issues else {}
+    by_typ = dict(sorted(_Counter(str(i.get("issue_type","")) for i in issues).items())) if issues else {}
+    # workflow summary — counts from review_rows
+    wf_total   = len(review_rows)
+    wf_approved= sum(1 for r in review_rows if str(r.get("status","")).strip().lower() == "approved")
+    wf_pending = sum(1 for r in review_rows if str(r.get("status","")).strip().lower() == "pending")
+    summaries_section = {
+        "issues": {
+            "total_issues":    len(issues),
+            "by_severity":     by_sev,
+            "by_source":       by_src,
+            "by_issue_type":   by_typ,
+        },
+        "workflow": {
+            "total_review_rows": wf_total,
+            "approved_rows":     wf_approved,
+            "pending_rows":      wf_pending,
+            # applied/not_approved resolved from workflow_state if it already exists
+            "applied_rows":     None,
+            "not_approved_rows": None,
+        },
+    }
+
+    # ── Phase A: review_projection_metadata ────────────────────────────────
+    rp_meta = {
+        "review_queue_columns":     list(REVIEW_QUEUE_COLUMNS),
+        "projection_generated_at": now_iso,
+        "projection_source":       "legacy_generated",
+        "projection_mode":         "build_review_queue",
+    }
+
+    # ── Phase A: apply_history (empty; entries appended by reconcile_master) 
+    apply_history: list = []
+
+    # ── Phase A: artifacts registry ────────────────────────────────────────
+    results_dir = artifacts_dir.parent
+    fix_plan = results_dir / ".cache" / "apply" / "fix_plan.json"
+    if not fix_plan.exists():
+        fix_plan = results_dir / "fixes" / "fix_plan.json"
+
+    raw_reports_root = results_dir / ".cache" / "raw_tools"
+    if not raw_reports_root.exists():
+        raw_reports_root = results_dir / "per_tool"
+
+    artifacts_reg = {
+        "master_path":               _rel(master_file),
+        "final_report_json_path":    _rel(json_file),
+        "review_queue_json_path":    _rel(review_json),
+        "review_queue_xlsx_path":    _rel(review_xlsx),
+        "aggregated_issues_path":    _rel(aggr_file),
+        "final_report_md_path":      _rel(results_dir / "final" / "final_audit_report.md"),
+        "final_report_en_md_path":   _rel(results_dir / "final" / "final_audit_report_en.md"),
+        "final_report_ar_md_path":   _rel(results_dir / "final" / "final_audit_report_ar.md"),
+        "raw_reports_root":          _rel(raw_reports_root),
+        "fix_plan_path":             _rel(fix_plan) if fix_plan.exists() else None,
+    }
+
+    # ── Compose full master payload (preserving all Phase 1-4 keys exactly) 
+    master_payload = {
+        # ── Existing keys (Phase 1) ── preserved exactly
+        "run_metadata": run_meta,
+        "sources": {
+            "aggregated_issues_path": _rel(aggr_file),
+            "final_audit_report_path": _rel(json_file),
+            "review_queue_json_path": _rel(review_json),
+            "review_queue_xlsx_path": _rel(review_xlsx)
+        },
+        "issue_inventory": issues,
+        "review_projection": {
+            "json_columns": list(REVIEW_QUEUE_COLUMNS),
+            "json_rows": review_rows,
+            "xlsx_columns_detected": list(REVIEW_QUEUE_COLUMNS)
+        },
+        "legacy_artifacts": {
+            "final_report_snapshot": {
+                "summary": summary,
+                "missing_reports": missing,
+                "included_sources": payload.get("included_sources", []) or include_sources,
+                "priority_order": payload.get("priority_order", []),
+                "recommendations": payload.get("recommendations", []),
+                "source_status": source_status,
+                "review_queue": review_rows
+            }
+        },
+        # ── Phase 3 key ── reconcile_master overwrites this after apply
+        "workflow_state": {},
+        # ── Phase A new sections ──────────────────────────────────────────
+        "summaries": summaries_section,
+        "review_projection_metadata": rp_meta,
+        "apply_history": apply_history,
+        "artifacts": artifacts_reg,
+        # ── Phase E: deprecation governance snapshot ────────────────────
+        "deprecation_governance": _build_deprecation_governance(),
+    }
+    write_unified_json(master_file, master_payload)
+    return master_file
+
+
 def main() -> None:
     runtime = load_runtime(__file__)
     parser = argparse.ArgumentParser()
@@ -351,6 +526,24 @@ def main() -> None:
     write_unified_json(Path(args.out_normalized), {"included_sources": payload["included_sources"], "issues": issues})
     write_unified_json(Path(args.out_review_json), {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
     write_simple_xlsx(review_rows, REVIEW_QUEUE_COLUMNS, Path(args.out_review_xlsx), sheet_name="Review Queue")
+
+    try:
+        write_audit_master(
+            artifacts_dir=runtime.results_dir / "artifacts",
+            aggr_file=Path(args.out_normalized),
+            json_file=Path(args.out_json),
+            review_json=Path(args.out_review_json),
+            review_xlsx=Path(args.out_review_xlsx),
+            issues=issues,
+            review_rows=review_rows,
+            payload=payload,
+            missing=missing,
+            include_sources=sorted(include_sources) if include_sources else sorted(reports.keys()),
+            source_status=source_status,
+            project_root=runtime.project_root
+        )
+    except Exception as exc:
+        print(f"Failed to write audit_master.json: {exc}")
 
     print(f"Done. Aggregated issues: {len(issues)}")
     print(f"Dashboard:   {args.out_md}")
@@ -477,6 +670,82 @@ def merge_issues_in_memory(issues: list[dict[str, Any]]) -> list[dict[str, Any]]
     return merged
 
 
+def _row_identity(row: dict) -> str:
+    """Stable identity for a review row — mirrors Phase 3 _stable_identity.
+
+    Primary key: ``plan_id`` (UUID written by build_review_queue).
+    Fallback: composite ``key|locale|source_hash`` when plan_id absent.
+
+    Must stay in sync with  apply_review_fixes._stable_identity.
+    """
+    pid = str(row.get("plan_id", "")).strip()
+    if pid:
+        return pid
+    return "|".join([
+        str(row.get("key", "")),
+        str(row.get("locale", "")),
+        str(row.get("source_hash", "")),
+    ])
+
+
+def apply_workflow_state_to_rows(review_rows: list[dict], workflow_state: dict) -> list[dict]:
+    """Overlay reconciled fields from workflow_state onto review rows.
+
+    For every row whose identity matches a workflow_state entry, merge in:
+    - ``approved_new``  (reflects the value that was approved/applied)
+    - ``status``        (reflects latest reconciled state)
+
+    Constraints:
+    - Returns a NEW list of dicts; originals are not mutated.
+    - Only the two fields above are merged; all other fields are preserved.
+    - Rows without a matching workflow_state entry are left exactly as-is.
+    - If workflow_state is empty or None, returns rows unchanged.
+    """
+    if not workflow_state:
+        return review_rows
+
+    result: list[dict] = []
+    for row in review_rows:
+        identity = _row_identity(row)
+        ws_entry = workflow_state.get(identity)
+        if ws_entry is None:
+            result.append(row)
+            continue
+        # Shallow-copy the row so we don't mutate the source list
+        merged = dict(row)
+        # approved_new: use reconciled value if non-empty
+        reconciled_approved = str(ws_entry.get("approved_new", "")).strip()
+        if reconciled_approved:
+            merged["approved_new"] = reconciled_approved
+        # status: always reflect reconciled state (applied / not_approved / etc.)
+        reconciled_status = str(ws_entry.get("status", "")).strip()
+        if reconciled_status:
+            merged["status"] = reconciled_status
+        result.append(merged)
+    return result
+
+
+def load_from_master(master_path: Path) -> tuple[dict, list, list, list]:
+    """Extract (reports_stub, issues, review_rows, missing) from audit_master.json.
+
+    Returns a 4-tuple compatible with the load_hydrated_report signature so it
+    can be used as a drop-in hydration source without touching downstream logic.
+    """
+    import json as _json
+    with open(master_path, encoding="utf-8") as fh:
+        master = _json.load(fh)
+
+    issues: list[dict] = master.get("issue_inventory", [])
+    review_rows: list[dict] = master.get("review_projection", {}).get("json_rows", [])
+    snapshot = master.get("legacy_artifacts", {}).get("final_report_snapshot", {})
+    missing: list = snapshot.get("missing_reports", [])
+    included = snapshot.get("included_sources", [])
+    # Build a minimal reports stub keyed by source name so the rest of the
+    # pipeline can compute source_status without re-scanning disk.
+    reports_stub: dict = {src: [] for src in included}
+    return reports_stub, issues, review_rows, missing
+
+
 def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     """Aggregate per-tool reports and write the final dashboard and review queue.
 
@@ -486,6 +755,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     """
     import logging
     from l10n_audit.models import ReportArtifact
+    from l10n_audit.core.deprecation_warnings import warn_deprecated_artifact
     from l10n_audit.core.audit_report_utils import load_all_report_issues, load_hydrated_report  # type: ignore[import]
 
     logger = logging.getLogger("l10n_audit.report_aggregator")
@@ -497,23 +767,38 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     artifacts: list[ReportArtifact] = []
 
     try:
-        issues = []
-        reports = {}
-        missing = []
+        issues: list = []
+        reports: dict = {}
+        missing: list = []
+        _master_hydrated_review_rows: list | None = None  # Phase 2: preserved from master
 
         # 1. Direct Hydration (User provided --input-report)
         if options.input_report:
             report_path = Path(options.input_report)
             logger.info("Hydrating from user-provided report: %s", report_path)
             reports, issues, missing = load_hydrated_report(report_path)
-        
+
+        # 1.5. Phase 2 — Hydrate from audit_master.json when available and no explicit report given
+        if not issues:
+            master_candidate = resolve_master_path(runtime)  # Phase B
+            if master_candidate.exists():
+                logger.info("Phase 2: Hydrating from audit_master.json: %s", master_candidate)
+                try:
+                    reports, issues, _master_hydrated_review_rows, missing = load_from_master(master_candidate)
+                except Exception as master_exc:
+                    logger.warning("Phase 2: Failed to load audit_master.json, falling back: %s", master_exc)
+                    issues = []
+                    reports = {}
+                    missing = []
+                    _master_hydrated_review_rows = None
+
         # 2. Per-tool scanning (Default behavior)
         if not issues:
-            reports, issues, missing = load_all_report_issues(results_dir, include_sources=include_sources)
-        
+            reports, issues, missing = load_all_report_issues(results_dir, include_sources=include_sources, options=options)
+
         # 3. Last-resort fallback to standard aggregate
         if not issues:
-            std_agg = results_dir / "final" / "final_audit_report.json"
+            std_agg = resolve_final_report_path(runtime)  # Phase B
             if std_agg.exists():
                 logger.info("Falling back to standard aggregate report: %s", std_agg)
                 reports, issues, missing = load_hydrated_report(std_agg)
@@ -523,8 +808,40 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
 
         summary = summarize_issues(issues)
         safe_fixes = safe_fix_counts(issues)
-        review_rows = build_review_queue(issues, runtime)
+        # Phase 2: prefer review_rows from master projection to preserve any
+        # human edits captured in a prior XLSX round-trip, falling back to
+        # freshly computed rows when master hydration was not used.
+        if _master_hydrated_review_rows is not None:
+            review_rows = _master_hydrated_review_rows
+            logger.info("Phase 2: Using %d review rows from audit_master projection.", len(review_rows))
+        else:
+            review_rows = build_review_queue(issues, runtime)
         source_status = build_source_status(reports, issues)
+
+        # Phase 4 — Reproject review rows from reconciled workflow_state
+        # Applied before render_markdown and payload construction so all
+        # downstream outputs (JSON, XLSX, Markdown) reflect reconciled state.
+        # Guarded: any failure leaves review_rows unchanged.
+        try:
+            master_candidate = resolve_master_path(runtime)  # Phase B
+            if master_candidate.exists():
+                import json as _mj
+                _wf_master = _mj.loads(master_candidate.read_text(encoding="utf-8"))
+                _workflow_state = _wf_master.get("workflow_state", {})
+                if _workflow_state:
+                    _reprojected = apply_workflow_state_to_rows(review_rows, _workflow_state)
+                    _changed = sum(
+                        1 for o, n in zip(review_rows, _reprojected)
+                        if o.get("approved_new") != n.get("approved_new")
+                        or o.get("status") != n.get("status")
+                    )
+                    review_rows = _reprojected
+                    logger.info(
+                        "Phase 4: Reprojected %d review rows (%d updated from workflow_state).",
+                        len(review_rows), _changed,
+                    )
+        except Exception as _reproject_exc:
+            logger.warning("Phase 4: Reprojection from workflow_state failed, using unchanged rows: %s", _reproject_exc)
         markdown = render_markdown(issues, summary, safe_fixes, review_rows, source_status, missing)
 
         include_sources = sorted(reports.keys())
@@ -560,12 +877,39 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         review_xlsx = review_dir / "review_queue.xlsx"
 
         md_file.write_text(markdown, encoding="utf-8")
-        (final_dir / "final_audit_report_en.md").write_text(markdown, encoding="utf-8")
-        (final_dir / "final_audit_report_ar.md").write_text(markdown, encoding="utf-8")
+        logger.debug("Phase G2/G3: Multilingual markdown variants successfully removed. Dead flags cleared.")
         try:
             write_unified_json(json_file, payload)
+            
+            warn_deprecated_artifact("aggregated_issues_json", aggr_file, "write", options.strict_deprecations)
             write_unified_json(aggr_file, {"included_sources": include_sources, "issues": issues})
+            
+            logger.debug(
+                "Phase E: aggregated_issues.json written for compatibility "
+                "(classification: compatibility_required; replacement: audit_master.json[issue_inventory]). "
+                "Path: %s", aggr_file
+            )
             write_unified_json(review_json, {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
+            
+            try:
+                write_audit_master(
+                    artifacts_dir=results_dir / "artifacts",
+                    aggr_file=aggr_file,
+                    json_file=json_file,
+                    review_json=review_json,
+                    review_xlsx=review_xlsx,
+                    issues=issues,
+                    review_rows=review_rows,
+                    payload=payload,
+                    missing=missing,
+                    include_sources=include_sources,
+                    source_status=source_status,
+                    project_root=runtime.project_root,
+                    runtime=runtime,
+                    options=options,
+                )
+            except Exception as master_exc:
+                logger.error("Failed to write audit_master.json: %s", master_exc)
             
             # Migrate verified translations to staged storage
             try:

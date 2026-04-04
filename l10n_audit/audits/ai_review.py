@@ -20,6 +20,8 @@ from l10n_audit.core.workspace import read_json
 from l10n_audit.ai.provider import request_ai_review
 from l10n_audit.ai.prompts import get_review_prompt
 from l10n_audit.ai.verification import verify_batch_fixes
+from l10n_audit.core.decision_engine import is_routing_enabled
+from l10n_audit.core.routing_metrics import RoutingMetrics
 
 def load_issues(runtime):
     """Read existing local audits, prefer final report, else review queue."""
@@ -76,7 +78,18 @@ def main() -> None:
         
     # Build unique flawed keys issues dict
     flawed_keys = {}
+    routing_metrics_main = RoutingMetrics()
+    
     for issue in all_issues:
+        route = issue.get("decision", {}).get("route", "unknown")
+        routing_metrics_main.record(route)
+        
+        if is_routing_enabled(runtime):
+            if route != "ai_review":
+                routing_metrics_main.record_ai_skip()
+                logger.debug("ROUTING ENFORCEMENT (ai_review main): Skipping key='%s' because route is '%s' (not ai_review)", issue.get("key"), route)
+                continue
+                
         k = issue.get("key")
         if not k: 
             continue
@@ -99,6 +112,14 @@ def main() -> None:
             
     batch_items = list(flawed_keys.values())
     
+    if is_routing_enabled(runtime):
+        logger.info("Routing Metrics [ai_review main]: %s", routing_metrics_main.to_dict())
+        try:
+            if hasattr(runtime, "metadata"):
+                runtime.metadata["routing_metrics"] = routing_metrics_main.to_dict()
+        except Exception:
+            pass
+            
     if not batch_items:
         print("No valid flawed keys with source/target found.")
         return
@@ -228,7 +249,25 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
     technical_substr = ("_id", "_url")
     uuid_pattern = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 
+    from l10n_audit.core.enforcement_layer import EnforcementController
+    enforcer = EnforcementController(runtime)
+
     for issue in all_issues:
+        decision = issue.get("decision", {})
+        route = decision.get("route")
+
+        enforcer.record(route)
+        enforcer.record_adaptive(decision.get("confidence", 0.5), decision.get("risk", "low"))
+        
+        if not enforcer.should_process(route, "ai"):
+            enforcer.record_skip("ai")
+            logger.debug(
+                "AI OPTIMIZATION: Skipping key='%s' route='%s'",
+                issue.get("key"),
+                route
+            )
+            continue
+
         k = str(issue.get("key", ""))
         if not k or k.endswith("."): # Skip empty keys or parent keys
             continue
@@ -279,6 +318,11 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
                     }
 
     batch_items = list(flawed_keys.values())
+    
+    if enforcer.enabled:
+        logger.info("Routing Metrics [ai_review run_stage]: %s", enforcer.metrics.to_dict())
+        enforcer.save_metrics(runtime)
+            
     if not batch_items:
         return []
 
@@ -293,6 +337,26 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
                     glossary_terms[t["term_en"]] = {"translation": t["approved_ar"], "notes": t.get("definition", "")}
     except Exception:
         pass
+
+    # --- Phase 10: Conflict Resolution (Governance Layer) ---
+    from l10n_audit.core.conflict_resolution import get_conflict_resolver, MutationRecord
+    resolver = get_conflict_resolver(runtime)
+    
+    # 1. Pre-register high-priority mutations (auto_fix) that already exist
+    for issue in all_issues:
+        route = issue.get("decision", {}).get("route")
+        if route == "auto_fix":
+            k = issue.get("key")
+            if k:
+                resolver.register(MutationRecord(
+                    key=k,
+                    original_text=str(en_data.get(k, issue.get("source", ""))),
+                    new_text=str(issue.get("suggested_fix") or issue.get("suggestion") or ""),
+                    offset=issue.get("offset", -1),
+                    length=issue.get("error_length", 0),
+                    source="existing_autofix",
+                    priority=3
+                ))
 
     # Process in batches using the injected AI provider
     all_fixes: list[dict] = []
@@ -325,7 +389,27 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
         try:
             # Pass BOTH glossary_terms (for prompt) and raw_glossary (for validation)
             fixes = ai_provider.review_batch(batch, ai_config, glossary=raw_glossary)
-            all_fixes.extend(fixes)
+            
+            # 2. Register AI fixes with Priority 2
+            for f in fixes:
+                k = f.get("key")
+                if not k:
+                    all_fixes.append(f)
+                    continue
+                
+                record = MutationRecord(
+                    key=k,
+                    original_text=str(en_data.get(k, "")),
+                    new_text=str(f.get("suggestion") or ""),
+                    offset=f.get("offset", -1),
+                    length=f.get("error_length", 0),
+                    source="ai_review",
+                    priority=2
+                )
+                if resolver.register(record):
+                    all_fixes.append(f)
+                else:
+                    logger.warning("AI CONFLICT: Skipping AI suggestion for key '%s' due to priority override.", k)
             
             # Anti-rate-limit sleep between batches (except the last one)
             if i < len(batches) - 1:
@@ -338,9 +422,23 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
 
     print(" ✅ Response received.")
 
+    # Update metrics in metadata
+    try:
+        if hasattr(runtime, "metadata"):
+            metrics = resolver.summarize()
+            if "conflict_metrics" in runtime.metadata:
+                # Merge with existing metrics (e.g. from previous stages in same run)
+                m = runtime.metadata["conflict_metrics"]
+                m["conflicts_detected"] += metrics["conflicts_detected"]
+                m["conflicts_resolved"] += metrics["conflicts_resolved"]
+                m["rejected_low_priority"] += metrics["rejected_low_priority"]
+            else:
+                runtime.metadata["conflict_metrics"] = metrics
+    except Exception:
+        pass
 
     if options.write_reports:
-        out_dir = options.effective_output_dir(runtime.results_dir) / "per_tool" / "ai_review"
+        out_dir = options.effective_output_dir(runtime.results_dir) / ".cache" / "raw_tools" / "ai_review"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / "ai_review_report.json"
         try:

@@ -18,5 +18,60 @@
     "enabled": true,
     "strict_branch_matching": true,
     "enable_selectordinal": true
+  },
+
+  "_comment_project_memory": [
+    "project_memory — Phase 13 optional feature.",
+    "When disabled (default), zero overhead: no file I/O, no pipeline impact.",
+    "When enabled, each audit run appends a read-only snapshot to a local JSON",
+    "cache under results_dir/.cache/project_memory/. This data is never read",
+    "back during a run — it is analytics-only for future tooling."
+  ],
+  "project_memory": {
+    "enabled": false,
+    "max_runs": 50
+  },
+
+  "_comment_adaptive_intelligence": [
+    "adaptive_intelligence — Phase 14 optional feature.",
+    "Disabled by default. Reads only the LearningProfile produced by Phase 13.",
+    "Produces a deterministic AdaptationReport stored in runtime.metadata only.",
+    "No behavioral change, no routing change, no file output in this phase.",
+    "Modes: shadow (no output), suggest (report in metadata), prepare_bounded_actions.",
+    "min_runs_required: proposals are suppressed until this many runs are recorded.",
+    "thresholds: all rate/ratio values are overridable; never self-modified."
+  ],
+  "adaptive_intelligence": {
+    "enabled": false,
+    "mode": "shadow",
+    "min_runs_required": 5,
+    "thresholds": {
+      "manual_review_rate_high": 0.70,
+      "ai_review_rate_high": 0.85,
+      "auto_fix_rate_low": 0.10,
+      "context_adjustment_rate_high": 0.40,
+      "arabic_run_dominance": 0.80,
+      "calibration_rarely_active": 0.20
+    }
+  },
+
+  "_comment_controlled_consumption": [
+    "controlled_consumption — Phase 15 optional feature.",
+    "Disabled by default. Reads only the AdaptationReport produced by Phase 14.",
+    "Produces a deterministic ConsumptionManifest — review-only, never auto-applied.",
+    "No behavioral change, no routing change, no scoring change in this phase.",
+    "Modes: shadow (no output), generate_manifest (metadata only), review_ready.",
+    "allowed_signal_keys: explicit opt-in list — empty means zero actions generated.",
+    "allowed_action_types: explicit opt-in list — empty means zero actions generated.",
+    "emit_manifest: true writes an isolated JSON under results_dir/.cache/consumption_manifests/.",
+    "v1 supports exactly one mapping: calibration_rarely_active -> calibration.enabled = true."
+  ],
+  "controlled_consumption": {
+    "enabled": false,
+    "mode": "shadow",
+    "min_runs_required": 5,
+    "emit_manifest": false,
+    "allowed_signal_keys": [],
+    "allowed_action_types": []
   }
 }
