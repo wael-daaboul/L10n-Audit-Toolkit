@@ -335,7 +335,7 @@ class TestBuildReviewQueueIntegration:
           - approved_new == "احفظ"       (preserved — no destructive overwrite)
         """
         ar_current = "حفظ {{name}}"
-        safe_suggestion = "احفظ الملف"
+        safe_suggestion = "احفظ الملف {{name}}"
 
         # Issue 1 — safe: different text, no structural risk, no review blockers
         issue_safe = {

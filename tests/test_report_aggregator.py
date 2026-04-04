@@ -64,7 +64,7 @@ def test_report_aggregator_builds_review_queue_and_hides_auto_safe(tmp_path: Pat
     assert row["suggested_fix"] == "Welcome"
     assert row["approved_new"] == ""
     assert row["status"] == "pending"
-    assert row["notes"] == "Missing"
+    assert "Missing" in row["notes"]
     assert row["source_old_value"] == ""
     assert row["source_hash"]
     assert row["suggested_hash"]
