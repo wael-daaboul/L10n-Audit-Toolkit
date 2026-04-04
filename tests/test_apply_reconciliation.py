@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pandas as pd
 import pytest
 
 from l10n_audit.fixes.apply_review_fixes import reconcile_master_from_xlsx
+from l10n_audit.core.audit_runtime import write_simple_xlsx
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +23,8 @@ def _read_master(path: Path) -> list[dict]:
 
 
 def _write_xlsx(path: Path, data: list[dict]) -> None:
-    pd.DataFrame(data).to_excel(path, index=False)
+    columns = list(data[0].keys()) if data else []
+    write_simple_xlsx(data, columns, path, sheet_name="Sheet1")
 
 
 # ---------------------------------------------------------------------------

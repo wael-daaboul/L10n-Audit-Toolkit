@@ -14,8 +14,6 @@ from pathlib import Path
 from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, load_locale_mapping, load_runtime, read_simple_xlsx, write_json
 from l10n_audit.core.artifact_resolver import resolve_ar_fixed_json_path, resolve_fix_plan_path, resolve_master_path
 
-import pandas as _pd
-
 logger = logging.getLogger("l10n_audit.fixes")
 
 REQUIRED_REVIEW_COLUMNS = (
@@ -39,39 +37,41 @@ def reconcile_master_from_xlsx(xlsx_path: str, master_path: str) -> None:
     existing ones. Missing plan_ids and missing XLSX columns are ignored.
     """
     try:
-        df = _pd.read_excel(xlsx_path, dtype=str)
+        rows_data = read_simple_xlsx(Path(xlsx_path))
     except Exception as exc:
         logger.warning("reconcile_master_from_xlsx: failed to read XLSX %s: %s", xlsx_path, exc)
         return
 
-    if "plan_id" not in df.columns:
+    if not rows_data:
+        return
+
+    has_plan_id = any("plan_id" in row for row in rows_data)
+    if not has_plan_id:
         logger.warning("reconcile_master_from_xlsx: 'plan_id' column missing in %s — aborting.", xlsx_path)
         return
 
-    has_approved_new = "approved_new" in df.columns
-    has_status = "status" in df.columns
+    has_approved_new = any("approved_new" in row for row in rows_data)
+    has_status = any("status" in row for row in rows_data)
 
     # Build a lookup: plan_id -> {approved_new, status} from XLSX rows
     # Detect duplicates while building the index.
     xlsx_index: dict[str, dict] = {}
     seen_pids: set[str] = set()
-    for _, row in df.iterrows():
-        raw_pid = row.get("plan_id", "")
-        if _pd.isna(raw_pid):
+    for row in rows_data:
+        raw_pid = row.get("plan_id")
+        if raw_pid is None or str(raw_pid).strip() == "":
             continue
         pid = str(raw_pid).strip()
-        if not pid:
-            continue
         if pid in seen_pids:
             logger.warning("reconcile_master_from_xlsx: duplicate plan_id '%s' in XLSX — last row wins.", pid)
         seen_pids.add(pid)
         entry: dict = {}
         if has_approved_new:
-            val = row.get("approved_new", "")
-            entry["approved_new"] = "" if _pd.isna(val) else str(val)
+            val = row.get("approved_new")
+            entry["approved_new"] = "" if val is None else str(val)
         if has_status:
-            val = row.get("status", "")
-            entry["status"] = "" if _pd.isna(val) else str(val)
+            val = row.get("status")
+            entry["status"] = "" if val is None else str(val)
         xlsx_index[pid] = entry
 
     if not xlsx_index:
@@ -100,11 +100,11 @@ def reconcile_master_from_xlsx(xlsx_path: str, master_path: str) -> None:
         if not isinstance(json_row, dict):
             logger.debug("reconcile_master_from_xlsx: skipping non-dict row: %r", json_row)
             continue
-        raw_pid = json_row.get("plan_id", "")
-        if _pd.isna(raw_pid) if not isinstance(raw_pid, str) else not raw_pid:
+        raw_pid = json_row.get("plan_id")
+        if raw_pid is None or str(raw_pid).strip() == "":
             continue
         pid = str(raw_pid).strip()
-        if not pid or pid not in xlsx_index:
+        if pid not in xlsx_index:
             continue
         xlsx_entry = xlsx_index[pid]
         if "approved_new" in xlsx_entry:
