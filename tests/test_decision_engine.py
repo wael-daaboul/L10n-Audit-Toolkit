@@ -24,13 +24,18 @@ def test_evaluate_findings_rules() -> None:
         key="k3", rule_id="R3", issue_category="style", message="m",
         original_text="o", suggested_text="risky", offset=0, error_length=1, is_simple_fix=False
     )
+    finding_manual_review = LTFinding(
+        key="k4", rule_id="R4", issue_category="complex", message="m",
+        original_text="o", suggested_text="", offset=0, error_length=1, is_simple_fix=False
+    )
     
-    ctx = DecisionContext(findings=[finding_empty_sugg, finding_safe_fix, finding_ai_review], source="en")
+    ctx = DecisionContext(findings=[finding_empty_sugg, finding_safe_fix, finding_ai_review, finding_manual_review], source="en")
     result = evaluate_findings(ctx)
     
-    assert result.manual_review == [finding_empty_sugg]
+    assert result.manual_review == [finding_manual_review]
     assert result.auto_fix == [finding_safe_fix]
-    assert result.ai_review == [finding_ai_review]
+    # finding_empty_sugg score is 0.5 + 0.3 (simple) - 0.4 (empty) + 0.2 (grammar) = 0.6 -> AI_REVIEW
+    assert result.ai_review == [finding_empty_sugg, finding_ai_review]
     assert result.dropped == []
 
 
@@ -192,7 +197,7 @@ def test_routing_enforcement_active(caplog: pytest.LogCaptureFixture) -> None:
         plan = build_fix_plan(issues, project_root=None, runtime=runtime)
         
     # Validation 1: It must log the skip enforcement
-    assert "Skipping key='test.ai.skips' because route is 'ai_review' (not auto_fix)" in caplog.text
+    assert "AUTO-FIX OPTIMIZATION: Skipping key='test.ai.skips' route='ai_review'" in caplog.text
     
     # Validation 2: It must ACTUALLY drop the finding in Phase 3
     assert len(plan) == 1
