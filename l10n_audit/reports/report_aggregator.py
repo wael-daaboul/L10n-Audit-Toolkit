@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import uuid
+import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -140,6 +141,62 @@ def _resolve_issue_locale(issue: dict) -> str:
     # 5. Fallback
     return "unknown"
 
+# ---------------------------------------------------------------------------
+# Phase 7: Candidate Safety Gate (Proper Nouns & Brand Identity)
+# ---------------------------------------------------------------------------
+
+_PROTECTED_BRANDS = {
+    "bkash", "paytm", "mercadopago", "flutterwave", "paytabs", "moonbid", "betaxi",
+    "stripe", "paypal", "razorpay", "instamojo", "billplz"
+}
+_PROTECTED_ACRONYMS = {
+    "API", "OTP", "VIN", "JSON", "ICU", "URL", "PIN", "CVV", "IBAN", "SWIFT", "VAT"
+}
+_CAMEL_CASE_RE = re.compile(r'[A-Z][a-z]+[A-Z]')
+
+def _is_unsafe_mutation(cur: str, fix: str) -> bool:
+    """Detect brand identity violations, token splitting, or proper noun substitution (Phase 7).
+    
+    This gate is strictly conservative: it only allows mechanical changes and blocks 
+    any modification to identity-carrying tokens.
+    """
+    if not cur or not fix or cur == fix:
+        return False
+        
+    # Unicode-aware word tokenization
+    tokens_cur = re.findall(r'\w+', cur, re.UNICODE)
+    tokens_fix = re.findall(r'\w+', fix, re.UNICODE)
+    
+    # 1. Token Identity Correlation check (Splitting/Joining)
+    # If fix has different token count but matches normalized form -> splitting/joining error.
+    if len(tokens_fix) != len(tokens_cur):
+        if "".join(tokens_fix).lower() == "".join(tokens_cur).lower():
+            return True
+
+    # 2. Detailed Token-by-Token Safety Inspection
+    for t in tokens_cur:
+        # Identity Tokens: Brands, Acronyms, CamelCase, and Mixed-Script
+        is_protected = t.lower() in _PROTECTED_BRANDS
+        is_acronym = t.isupper() and len(t) >= 2 and t in _PROTECTED_ACRONYMS
+        is_camel = bool(_CAMEL_CASE_RE.match(t))
+        
+        # Mixed-script branded tokens (e.g., Payتم or Bkash_خدمة)
+        is_mixed = bool(re.search(r'[A-Za-z]', t)) and bool(re.search(r'[^\x00-\x7F]', t))
+        
+        if is_protected or is_acronym or is_camel or is_mixed:
+            # Identity tokens must be preserved. 
+            # Acronyms must be case-identical. 
+            # Brands and CamelCase can be case-insensitive but must exist.
+            if is_acronym:
+                if t not in tokens_fix:
+                    return True
+            else:
+                found = any(t.lower() == f.lower() for f in tokens_fix)
+                if not found:
+                    return True
+                    
+    return False
+
 
 def _resolve_candidate_value(
     issue: dict,
@@ -208,7 +265,16 @@ def _resolve_candidate_value(
             "notes_token": "[CONFLICT:STRUCTURAL_RISK]",
         }
 
-    # 4. Safe suggested fix
+    # 4. Phase 7: Safety Gate (Brand/Identity Protection)
+    if _is_unsafe_mutation(cur, fix):
+        return {
+            "candidate_value": "",
+            "resolution_mode": "conflict",
+            "conflict_flag": "SAFETY_VETO",
+            "notes_token": "[CONFLICT:SAFETY_VETO]",
+        }
+
+    # 5. Safe suggested fix
     return {
         "candidate_value": fix,
         "resolution_mode": "suggested_fix",
@@ -347,10 +413,15 @@ def _classify_decision_quality(
         
         # 1. Conflict
         if res_mode == "conflict":
+            reason = "conflict"
+            token = "[DQ:BLOCKED]"
+            if str(resolution.get("conflict_flag", "")) == "SAFETY_VETO":
+                reason = "safety_gate"
+            
             return {
                 "decision_quality": "blocked",
-                "decision_reason": "conflict",
-                "decision_token": "[DQ:BLOCKED]",
+                "decision_reason": reason,
+                "decision_token": token,
             }
 
         # 2. No candidate

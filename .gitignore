@@ -43,7 +43,7 @@ repomix*
 project-context.txt
 final-audit-toolkit.txt
 clean_project.txt
-clean_project
+clean_project*
 
 # --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
 # ملاحظة: تم استبعاد "مفاتيح" لأنه يحتوي على أدوات عمل خاصة بالمطور
