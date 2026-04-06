@@ -5,7 +5,7 @@ from conftest import write_json
 
 def test_aggregator_filters_info_from_review_queue(tmp_path):
     issues = [
-        {"key": "crit", "severity": "critical", "message": "Critical issue", "source": "s1", "issue_type": "t1"},
+        {"key": "crit", "severity": "critical", "message": "Critical issue", "source": "s1", "issue_type": "t1", "suggested_fix": "v1_fixed"},
         {"key": "info", "severity": "info", "message": "Info issue", "source": "s1", "issue_type": "t2"},
     ]
     runtime = type("RT", (), {
@@ -40,8 +40,8 @@ def test_aggregator_filters_info_from_markdown(tmp_path):
 
 def test_aggregator_deduplicates_by_key(tmp_path):
     issues = [
-        {"key": "dup", "severity": "high", "message": "Mixed script", "source": "ar_locale_qc", "issue_type": "mixed_script"},
-        {"key": "dup", "severity": "medium", "message": "Meaning loss", "source": "ar_semantic_qc", "issue_type": "possible_meaning_loss"},
+        {"key": "dup", "severity": "high", "message": "Mixed script", "source": "ar_locale_qc", "issue_type": "mixed_script", "suggested_fix": "فکس 1"},
+        {"key": "dup", "severity": "medium", "message": "Meaning loss", "source": "ar_semantic_qc", "issue_type": "possible_meaning_loss", "suggested_fix": "فکس 2"},
     ]
     runtime = type("RT", (), {
         "en_file": tmp_path/"en.json", 
