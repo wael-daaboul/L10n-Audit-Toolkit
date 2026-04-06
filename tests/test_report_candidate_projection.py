@@ -115,7 +115,7 @@ class TestResolveCandidateValue:
         assert result["candidate_value"] == "احفظ"
         assert result["resolution_mode"] == "suggested_fix"
         assert result["conflict_flag"] == ""
-        assert result["notes_token"] == "[SAFE:SUGGESTED_FIX]"
+        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
 
     def test_always_returns_all_four_keys(self):
         for fix in ("", "same", "different", "{{x}} mismatch"):
@@ -188,12 +188,12 @@ class TestProjectApprovedNew:
         assert _project_approved_new(issue, _safe_resolution()) == ""
 
     def test_a7_whitespace_only_review_reason_does_not_block(self):
-        issue = _clean_issue(details={"semantic_risk": "", "review_reason": "   "})
-        assert _project_approved_new(issue, _safe_resolution()) == "احفظ"
+        issue = _clean_issue(current_value="حفظ", details={"semantic_risk": "", "review_reason": "   "})
+        assert _project_approved_new(issue, _safe_resolution("احفظ")) == "احفظ"
 
     def test_a8_safe_suggested_fix_projects_approval(self):
-        issue = _clean_issue()
-        result = _project_approved_new(issue, _safe_resolution("احفظ"))
+        issue = _clean_issue(current_value="حفظ")
+        result = _project_approved_new(issue, _safe_resolution("احفظ")) # Dist 1 (a-)
         assert result == "احفظ"
 
     @pytest.mark.parametrize("truthy_str", ["true", "yes", "1", "True", "YES"])
@@ -243,16 +243,16 @@ class TestBuildReviewQueueIntegration:
         assert row["suggested_fix"] == ""
         assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
 
-    def test_i2_safe_suggestion_projects_approved_new(self, tmp_path: Path):
-        """A clean low-risk suggestion with no review blockers must auto-fill approved_new."""
+    def test_i2_safe_mechanical_suggestion_projects_approved_new(self, tmp_path: Path):
+        """A mechanical (punctuation) suggestion must auto-fill approved_new in Phase 8."""
         ar_current = "حفظ"
-        suggested = "احفظ الملف"
+        suggested = "حفظ."  # Punctuation normalization
         issue = {
             "key": "save.button",
             "locale": "ar",
             "issue_type": "possible_meaning_loss",
             "severity": "low",
-            "message": "Slight wording improvement",
+            "message": "Punctuation change",
             "source": "ar_semantic_qc",
             "needs_review": False,
             "details": {
@@ -262,7 +262,7 @@ class TestBuildReviewQueueIntegration:
                 "review_reason": "",
             },
         }
-        runtime = _runtime(tmp_path, {"save.button": "Save File"}, {"save.button": ar_current})
+        runtime = _runtime(tmp_path, {"save.button": "Save."}, {"save.button": ar_current})
         rows = build_review_queue([issue], runtime)
         assert len(rows) == 1
         row = rows[0]
@@ -315,11 +315,8 @@ class TestBuildReviewQueueIntegration:
         }
         runtime = _runtime(tmp_path, {"save.button": "Save"}, {"save.button": ar_current})
         rows = build_review_queue([issue], runtime)
-        assert len(rows) == 1
-        row = rows[0]
-        assert "[KEEP:CURRENT_VALUE]" in row["notes"]
-        # current_value mode should not produce an auto-approval
-        assert row["approved_new"] == ""
+        # Phase 9: Identical suggestions are suppressed from the review queue
+        assert len(rows) == 0
 
     def test_merge_path_conflict_clears_existing_suggested_fix_but_preserves_existing_approved_new(
         self, tmp_path: Path
@@ -335,7 +332,7 @@ class TestBuildReviewQueueIntegration:
           - approved_new == "احفظ"       (preserved — no destructive overwrite)
         """
         ar_current = "حفظ {{name}}"
-        safe_suggestion = "احفظ الملف {{name}}"
+        safe_suggestion = "حفظ {{name}}." # Mechanical fix
 
         # Issue 1 — safe: different text, no structural risk, no review blockers
         issue_safe = {

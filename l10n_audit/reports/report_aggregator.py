@@ -184,17 +184,69 @@ def _is_unsafe_mutation(cur: str, fix: str) -> bool:
         is_mixed = bool(re.search(r'[A-Za-z]', t)) and bool(re.search(r'[^\x00-\x7F]', t))
         
         if is_protected or is_acronym or is_camel or is_mixed:
-            # Identity tokens must be preserved. 
-            # Acronyms must be case-identical. 
-            # Brands and CamelCase can be case-insensitive but must exist.
-            if is_acronym:
-                if t not in tokens_fix:
-                    return True
-            else:
-                found = any(t.lower() == f.lower() for f in tokens_fix)
-                if not found:
-                    return True
+            # Identity tokens must be perfectly preserved (case-sensitive).
+            if t not in tokens_fix:
+                return True
                     
+    return False
+
+
+def _levenshtein_distance(s1: str, s2: str) -> int:
+    """Compute the Levenshtein distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+
+def _is_low_risk_fix(cur: str, fix: str) -> bool:
+    """Phase 8: Return True for mechanical or confirmed low-risk normalization."""
+    if not cur or not fix:
+        return False
+    if cur == fix:
+        return True
+    
+    # 1. Whitespace normalization (Curated Safe)
+    cur_norm = re.sub(r'\s+', ' ', cur).strip()
+    fix_norm = re.sub(r'\s+', ' ', fix).strip()
+    if cur_norm == fix_norm:
+        return True
+        
+    # 2. Case normalization (e.g. EMAIL -> Email)
+    if cur.lower() == fix.lower():
+        return True
+        
+    # 3. Punctuation normalization (e.g. Hello -> Hello.)
+    # (Identity/Brands are protected by Phase 7 check BEFORE this helper is called)
+    punc_pattern = r'[\s.,!?;:]+'
+    cur_punc = re.sub(punc_pattern, '', cur).lower()
+    fix_punc = re.sub(punc_pattern, '', fix).lower()
+    if cur_punc == fix_punc:
+        return True
+        
+    # 4. Low-risk typo correction (Minimal word-edit distance)
+    # Check if we have the same number of word-tokens
+    tokens_cur = re.findall(r'\w+', cur, re.UNICODE)
+    tokens_fix = re.findall(r'\w+', fix, re.UNICODE)
+    
+    if len(tokens_cur) == len(tokens_fix) and len(tokens_cur) > 0:
+        diff_indices = [i for i in range(len(tokens_cur)) if tokens_cur[i] != tokens_fix[i]]
+        if len(diff_indices) == 1:
+            idx = diff_indices[0]
+            # Typo bucket: Distance <= 2 (e.g., mision -> mission)
+            if _levenshtein_distance(tokens_cur[idx].lower(), tokens_fix[idx].lower()) <= 2:
+                return True
+                
     return False
 
 
@@ -209,7 +261,7 @@ def _resolve_candidate_value(
         candidate_value   str
         resolution_mode   str  one of: suggested_fix | current_value | no_candidate | conflict
         conflict_flag     str  one of: "" | IDENTICAL_TO_CURRENT | EMPTY_SUGGESTION | STRUCTURAL_RISK
-        notes_token       str  one of: "" | [SAFE:SUGGESTED_FIX] | [KEEP:CURRENT_VALUE] | [NO_CANDIDATE] | [CONFLICT:STRUCTURAL_RISK]
+        notes_token       str  one of: "" | [DQ:SAFE_AUTO_PROJECTED] | [KEEP:CURRENT_VALUE] | [NO_CANDIDATE] | [CONFLICT:STRUCTURAL_RISK]
 
     Decision order (strict):
       1. Empty suggestion       → no_candidate
@@ -279,7 +331,7 @@ def _resolve_candidate_value(
         "candidate_value": fix,
         "resolution_mode": "suggested_fix",
         "conflict_flag": "",
-        "notes_token": "[SAFE:SUGGESTED_FIX]",
+        "notes_token": "[DQ:SAFE_AUTO_PROJECTED]",
     }
 
 
@@ -331,11 +383,15 @@ def _project_approved_new(issue: dict, resolution: dict) -> str:
         if review_reason:
             return ""
 
-        # 6. Safe suggested fix
+        # 6. Suggested fix - Phase 8 Hardening: only auto-project low-risk fixes
         if mode == "suggested_fix":
             candidate = str(resolution.get("candidate_value", "") or "").strip()
             if candidate:
-                return candidate
+                # Robustly find the current value for comparison
+                current = str(issue.get("current_value") or issue.get("old_value") or 
+                             (issue.get("details", {}) or {}).get("old") or "")
+                if _is_low_risk_fix(current, candidate):
+                    return candidate
 
     except Exception:
         pass
@@ -382,24 +438,45 @@ def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], a
 
 
 def _normalize_review_row(row: dict) -> dict:
+    """Phase 10: Tighten and stabilize review queue row semantics."""
     normalized = dict(row)
     for field in [
-        "key",
-        "locale",
-        "old_value",
-        "issue_type",
-        "suggested_fix",
-        "approved_new",
-        "status",
-        "notes",
-        "provenance",
-        "source_hash",
-        "suggested_hash",
-        "plan_id",
+        "key", "locale", "old_value", "issue_type", "suggested_fix",
+        "approved_new", "status", "notes", "provenance", "source_hash",
+        "suggested_hash", "plan_id", "needs_review"
     ]:
         if field in normalized:
             val = normalized[field]
             normalized[field] = "" if val is None else str(val)
+
+    # Normalize notes (Stable, unique segments)
+    notes = normalized.get("notes", "")
+    note_segments = [s.strip() for s in notes.split(" | ") if s.strip()]
+    unique_notes = []
+    seen = set()
+    for s in note_segments:
+        if s not in seen:
+            unique_notes.append(s)
+            seen.add(s)
+    normalized["notes"] = " | ".join(unique_notes)
+
+    # Normalize provenance (Stable, unique, sorted segments)
+    prov = normalized.get("provenance", "")
+    prov_segments = sorted(list(set(filter(None, prov.split(" || ")))))
+    normalized["provenance"] = " || ".join(prov_segments)
+
+    # Tighten needs_review logic (Semantic Hardening)
+    # 1. If approved_new is empty, review is MANDATORY (Yes) because there is no safe target.
+    # 2. If approved_new is populated, we preserve the existing 'Yes' (High severity) but don't force it.
+    if not normalized.get("approved_new"):
+        normalized["needs_review"] = "Yes"
+    
+    # Ensure suggested_fix is actionable only
+    # If the suggestion is effectively a no-op, we clear it to avoid blind/noisy approvals.
+    if normalized.get("suggested_fix") == normalized.get("old_value"):
+        normalized["suggested_fix"] = ""
+        normalized["suggested_hash"] = compute_text_hash("")
+
     return normalized
 
 
@@ -477,20 +554,18 @@ def _classify_decision_quality(
             }
 
         # 7. Safe auto projected
-        if projected_approved_new != "" and res_mode == "suggested_fix":
+        if projected_approved_new:
             return {
                 "decision_quality": "safe_auto_projected",
-                "decision_reason": "approved_projection",
+                "decision_reason": "safe_mechanical_normalization",
                 "decision_token": "[DQ:SAFE_AUTO_PROJECTED]",
             }
 
-        # 8. Suggestion only
-        if res_mode == "suggested_fix" and projected_approved_new == "":
-            return {
-                "decision_quality": "suggestion_only",
-                "decision_reason": "suggested_not_approved",
-                "decision_token": "[DQ:SUGGESTION_ONLY]",
-            }
+        return {
+            "decision_quality": "suggestion_only",
+            "decision_reason": "not_approved_semantic_or_complex",
+            "decision_token": "[DQ:SUGGESTION_ONLY]",
+        }
 
     except Exception:
         pass
@@ -602,14 +677,32 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "plan_id": compute_plan_id(key, locale, issue_type, current_value, suggested_fix),
                 "generated_at": generated_at,
                 "provenance": f"{source}|{issue_type}|{severity}",
+                "_severity": str(issue.get("severity", "info")).lower(),
+                "_source": str(issue.get("source", "unknown")),
             }
             rows_by_key[row_key] = _normalize_review_row(new_row)
 
     rows = list(rows_by_key.values())
-    # Filter out auto-safe from review queue if they match exactly
-    # (Though grouping by key might change how auto_safe works, 
-    # the user goal is grouping by key for the review queue).
-
+    
+    # Phase 9: No-Op / Noise Suppression
+    meaningful_rows = []
+    for row in rows:
+        notes = row.get("notes", "")
+        fix = row.get("suggested_fix", "")
+        old = row.get("old_value", "")
+        
+        # 1. Actionable Suggestion (different from current)
+        has_new_suggestion = fix and (fix != old)
+        
+        # 2. Meaningful Block/Conflict (needs manual review)
+        # Includes IDENTITY_VETO, STRUCTURAL_RISK, SAFETY_VETO, etc.
+        is_review_worthy_block = "[CONFLICT:" in notes or "safety_gate" in notes
+        
+        # Suppression: Exclude empty/no-candidate noise and keep-current rows
+        if has_new_suggestion or is_review_worthy_block:
+            meaningful_rows.append(row)
+            
+    rows = meaningful_rows
     rows.sort(key=lambda row: (row["locale"], row["key"], row["issue_type"]))
     return rows
 
@@ -695,6 +788,43 @@ def render_markdown(
         lines.append("")
 
     return "\n".join(lines)
+
+
+def create_analytical_payload(
+    review_rows: list[dict],
+    issues: list[dict],
+    reports: dict,
+    missing: list,
+    summary: dict,
+    safe_fixes: dict,
+    source_status: dict
+) -> dict:
+    """Phase 11: Construct a strictly reconciled analytical payload from filtered operational rows."""
+    from collections import Counter
+    
+    # Deriving reconciled analytical summary from operational truth
+    actionable_summary = {
+        "total_issues": len(review_rows),
+        "critical_issues": sum(1 for r in review_rows if r.get("_severity") in {"critical", "high"}),
+        "safe_fixes_available": sum(1 for r in review_rows if r.get("needs_review") == "No"),
+        "review_required_issues": sum(1 for r in review_rows if r.get("needs_review") == "Yes"),
+        "blocked_issues": sum(1 for r in review_rows if "[DQ:BLOCKED]" in r.get("notes", "")),
+        "by_severity": dict(sorted(Counter(r.get("_severity", "info") for r in review_rows).items())),
+        "by_source": dict(sorted(Counter(r.get("_source", "unknown") for r in review_rows).items())),
+        "by_issue_type": dict(sorted(Counter(r.get("issue_type", "unknown") for r in review_rows).items())),
+    }
+
+    include_sources = sorted(reports.keys())
+    return {
+        "summary": actionable_summary,
+        "missing_reports": missing,
+        "included_sources": include_sources,
+        "priority_order": priority_order(issues),
+        "recommendations": recommendations(summary, safe_fixes, review_rows),
+        "source_status": source_status,
+        "review_queue": review_rows,
+        "issues": issues,
+    }
 
 
 def _build_deprecation_governance() -> dict:
@@ -1116,14 +1246,29 @@ def apply_workflow_state_to_rows(review_rows: list[dict], workflow_state: dict) 
             continue
         # Shallow-copy the row so we don't mutate the source list
         merged = dict(row)
-        # approved_new: use reconciled value if non-empty
-        reconciled_approved = str(ws_entry.get("approved_new", "")).strip()
-        if reconciled_approved:
-            merged["approved_new"] = reconciled_approved
-        # status: always reflect reconciled state (applied / not_approved / etc.)
-        reconciled_status = str(ws_entry.get("status", "")).strip()
-        if reconciled_status:
-            merged["status"] = reconciled_status
+        
+        # Phase 12 Stale Defense: Check if current source text matches reconciled history
+        # (Exclude empty hashes from comparison to avoid false staleness on initial run)
+        ws_source_hash = str(ws_entry.get("source_hash", "")).strip()
+        current_source_hash = str(row.get("source_hash", "")).strip()
+        
+        is_stale = ws_source_hash and current_source_hash and (ws_source_hash != current_source_hash)
+        
+        if is_stale:
+            # Source text changed: previous approval is unsafe
+            merged["status"] = "stale"
+            merged["notes"] = f"{merged.get('notes', '')} | [DQ:STALE_DECISION]".strip(" | ")
+            merged["needs_review"] = "Yes"
+        else:
+            # Identity and source match: re-apply decisions
+            reconciled_approved = str(ws_entry.get("approved_new", "")).strip()
+            if reconciled_approved:
+                merged["approved_new"] = reconciled_approved
+            
+            reconciled_status = str(ws_entry.get("status", "")).strip()
+            if reconciled_status:
+                merged["status"] = reconciled_status
+                
         result.append(merged)
     return result
 
@@ -1247,22 +1392,15 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
             logger.warning("Phase 4: Reprojection from workflow_state failed, using unchanged rows: %s", _reproject_exc)
         markdown = render_markdown(issues, summary, safe_fixes, review_rows, source_status, missing)
 
-        include_sources = sorted(reports.keys())
-        payload = {
-            "summary": {
-                **summary,
-                "critical_issues": sum(1 for issue in issues if str(issue.get("severity")) in {"critical", "high"}),
-                "safe_fixes_available": safe_fixes["available"],
-                "review_required_issues": len(review_rows),
-            },
-            "missing_reports": missing,
-            "included_sources": include_sources,
-            "priority_order": priority_order(issues),
-            "recommendations": recommendations(summary, safe_fixes, review_rows),
-            "source_status": source_status,
-            "review_queue": review_rows,
-            "issues": issues,
-        }
+        payload = create_analytical_payload(
+            review_rows=review_rows,
+            issues=issues,
+            reports=reports,
+            missing=missing,
+            summary=summary,
+            safe_fixes=safe_fixes,
+            source_status=source_status
+        )
 
         final_dir = results_dir / "final"
         review_dir = results_dir / "review"
