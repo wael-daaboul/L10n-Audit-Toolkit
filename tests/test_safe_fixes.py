@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, read_simple_xlsx, write_simple_xlsx
+from l10n_audit.fixes.fix_merger import export_review_queue, validate_review_row
 from l10n_audit.fixes.apply_review_fixes import main as review_main
 from l10n_audit.fixes.apply_safe_fixes import add_direct_locale_safety_pass, apply_safe_changes, build_fix_plan, main
 
@@ -64,6 +65,544 @@ def test_build_fix_plan_preserves_provenance_for_same_replacement() -> None:
     )
     assert len(plan) == 1
     assert len(plan[0]["provenance"]) == 2
+
+
+def test_build_fix_plan_rejects_item_when_locale_missing(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    issues = [
+        {
+            "source": "unknown_source",
+            "key": "welcome",
+            "issue_type": "ai_suggestion",
+            "severity": "medium",
+            "message": "AI suggestion",
+            "verified": True,
+            "details": {"old": "اهلا", "new": "مرحبا"},
+        }
+    ]
+
+    plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "unknown_source",
+            "issue_type": "ai_suggestion",
+            "missing_fields": ["locale"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_rejects_item_when_current_value_unresolved(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"new": "hello"},
+        }
+    ]
+
+    plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "trimmed",
+            "source": "locale_qc",
+            "issue_type": "whitespace",
+            "missing_fields": ["current_value"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_rejects_item_when_candidate_value_unresolved(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"old": " hello "},
+        }
+    ]
+
+    plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "trimmed",
+            "source": "locale_qc",
+            "issue_type": "whitespace",
+            "missing_fields": ["candidate_value"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_valid_item_keeps_exact_output_schema() -> None:
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"old": " hello ", "new": "hello"},
+        }
+    ]
+
+    plan = build_fix_plan(issues)
+
+    assert len(plan) == 1
+    assert set(plan[0]) == {
+        "key",
+        "locale",
+        "source",
+        "issue_type",
+        "severity",
+        "classification",
+        "message",
+        "current_value",
+        "candidate_value",
+        "provenance",
+    }
+
+
+def test_build_fix_plan_never_emits_empty_required_strings() -> None:
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"old": " hello ", "new": "hello"},
+        }
+    ]
+
+    plan = build_fix_plan(issues)
+
+    assert len(plan) == 1
+    assert plan[0]["locale"] != ""
+    assert plan[0]["current_value"] != ""
+    assert plan[0]["candidate_value"] != ""
+
+
+def test_build_fix_plan_rejects_staged_item_when_source_text_missing(tmp_path: Path) -> None:
+    staged_dir = tmp_path / ".l10n-audit" / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    (staged_dir / "approved_translations.json").write_text(
+        json.dumps(
+            {
+                "ar:welcome": {
+                    "key": "welcome",
+                    "locale": "ar",
+                    "suggestion": "مرحبا",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runtime = SimpleNamespace(metadata={})
+
+    plan = build_fix_plan([], project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "persistent_staged",
+            "issue_type": "verified_migration",
+            "missing_fields": ["current_value"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_rejects_staged_item_when_locale_missing(tmp_path: Path) -> None:
+    staged_dir = tmp_path / ".l10n-audit" / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    (staged_dir / "approved_translations.json").write_text(
+        json.dumps(
+            {
+                "missing-locale": {
+                    "key": "welcome",
+                    "locale": "",
+                    "suggestion": "مرحبا",
+                    "source_text": "اهلا",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runtime = SimpleNamespace(metadata={})
+
+    plan = build_fix_plan([], project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "persistent_staged",
+            "issue_type": "verified_migration",
+            "missing_fields": ["locale"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_accepts_valid_staged_item_without_empty_required_fields(tmp_path: Path) -> None:
+    staged_dir = tmp_path / ".l10n-audit" / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    (staged_dir / "approved_translations.json").write_text(
+        json.dumps(
+            {
+                "ar:welcome": {
+                    "key": "welcome",
+                    "locale": "ar",
+                    "suggestion": "مرحبا",
+                    "source_text": "اهلا",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runtime = SimpleNamespace(metadata={})
+
+    plan = build_fix_plan([], project_root=tmp_path, runtime=runtime)
+
+    assert len(plan) == 1
+    assert plan[0]["key"] == "welcome"
+    assert plan[0]["locale"] != ""
+    assert plan[0]["current_value"] != ""
+    assert plan[0]["candidate_value"] != ""
+
+
+def test_export_review_queue_rejects_row_when_current_value_missing(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "",
+            "candidate_value": "مرحبا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    assert not output_path.exists()
+    assert runtime.metadata["review_export_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "missing_fields": ["current_value"],
+            "reason": "incomplete_review_export_contract",
+        }
+    ]
+
+
+def test_export_review_queue_rejects_row_when_candidate_value_missing(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    assert not output_path.exists()
+    assert runtime.metadata["review_export_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "missing_fields": ["candidate_value"],
+            "reason": "incomplete_review_export_contract",
+        }
+    ]
+
+
+def test_export_review_queue_rejects_row_when_locale_missing(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "locale": "",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "مرحبا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    assert not output_path.exists()
+    assert runtime.metadata["review_export_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "missing_fields": ["locale"],
+            "reason": "incomplete_review_export_contract",
+        }
+    ]
+
+
+def test_export_review_queue_valid_row_gets_canonical_export_fields(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "مرحبا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    row = payload["review_queue"][0]
+    assert row["approved_new"] == "مرحبا"
+    assert row["source_old_value"] == "اهلا"
+    assert row["status"] == "pending"
+    assert row["source_hash"] == compute_text_hash("اهلا")
+    assert row["suggested_hash"] == compute_text_hash("مرحبا")
+    assert row["locale"] != ""
+    assert row["current_value"] != ""
+    assert row["candidate_value"] != ""
+    assert row["approved_new"] != ""
+    assert row["source_old_value"] != ""
+
+
+def test_export_review_queue_does_not_rely_on_setdefault_semantics(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "مرحبا",
+            "approved_new": "",
+            "source_old_value": "",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    row = payload["review_queue"][0]
+    assert row["approved_new"] == row["candidate_value"] == "مرحبا"
+    assert row["source_old_value"] == row["current_value"] == "اهلا"
+
+
+def test_export_review_queue_only_exports_review_required_items(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "safe",
+            "locale": "ar",
+            "source": "ar_locale_qc",
+            "issue_type": "spacing",
+            "severity": "low",
+            "classification": "auto_safe",
+            "message": "Auto safe",
+            "current_value": "اهلا ",
+            "candidate_value": "اهلا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        },
+        {
+            "key": "review",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "مرحبا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        },
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert [row["key"] for row in payload["review_queue"]] == ["review"]
+
+
+def test_export_review_queue_never_emits_empty_semantic_fields(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "review",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "مرحبا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        },
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    row = payload["review_queue"][0]
+    assert row["locale"] != ""
+    assert row["current_value"] != ""
+    assert row["candidate_value"] != ""
+    assert row["approved_new"] != ""
+    assert row["source_old_value"] != ""
+
+
+def test_validate_review_row_rejects_invalid_locale_and_missing_required_fields() -> None:
+    is_valid, missing_fields = validate_review_row(
+        {
+            "key": "welcome",
+            "locale": "",
+            "issue_type": "meaning_loss",
+            "message": "Needs review",
+            "current_value": "",
+            "candidate_value": "",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+        }
+    )
+
+    assert is_valid is False
+    assert set(missing_fields) == {"locale", "current_value", "candidate_value"}
+
+
+def test_export_review_queue_tracks_invalid_review_row_metadata(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "plan_id": "plan-invalid",
+            "locale": "",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "",
+            "candidate_value": "مرحبا",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+
+    assert not output_path.exists()
+    assert runtime.metadata["invalid_review_rows_count"] == 1
+    assert runtime.metadata["invalid_review_rows"][0]["key"] == "welcome"
+    assert runtime.metadata["invalid_review_rows"][0]["plan_id"] == "plan-invalid"
+    assert set(runtime.metadata["invalid_review_rows"][0]["missing_fields"]) == {"locale", "current_value"}
+    assert runtime.metadata["invalid_review_rows"][0]["raw_item_snapshot"]["source"] == "ai_review"
+    assert runtime.metadata["invalid_review_rows_reasons_breakdown"]["missing_locale"] == 1
+    assert runtime.metadata["invalid_review_rows_reasons_breakdown"]["missing_current_value"] == 1
+
+
+def test_export_review_queue_rejects_missing_generated_at_deterministically(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    output_path = tmp_path / "review_queue.json"
+    fix_plan = [
+        {
+            "key": "welcome",
+            "plan_id": "plan-no-ts",
+            "locale": "ar",
+            "source": "ai_review",
+            "issue_type": "meaning_loss",
+            "severity": "medium",
+            "classification": "review_required",
+            "message": "Needs review",
+            "current_value": "اهلا",
+            "candidate_value": "مرحبا",
+            "provenance": [],
+        }
+    ]
+
+    export_review_queue(fix_plan, runtime, output_path)
+    first_invalid = runtime.metadata["invalid_review_rows"][0]
+    first_rejection = runtime.metadata["review_export_rejections"][0]
+
+    runtime_second = SimpleNamespace(metadata={})
+    export_review_queue(fix_plan, runtime_second, output_path)
+    second_invalid = runtime_second.metadata["invalid_review_rows"][0]
+    second_rejection = runtime_second.metadata["review_export_rejections"][0]
+
+    assert not output_path.exists()
+    assert first_invalid == second_invalid
+    assert first_rejection == second_rejection
+    assert first_invalid["missing_fields"] == ["generated_at"]
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -196,6 +735,8 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "approved_new": approved_new,
                 "status": "approved",
                 "notes": "",
+                "current_value": source_old_value,
+                "candidate_value": approved_new,
                 "source_old_value": source_old_value,
                 "source_hash": compute_text_hash(source_old_value),
                 "suggested_hash": compute_text_hash(approved_new),
@@ -211,6 +752,8 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "approved_new": "",
                 "status": "pending",
                 "notes": "",
+                "current_value": "كما هو",
+                "candidate_value": "",
                 "source_old_value": "كما هو",
                 "source_hash": compute_text_hash("كما هو"),
                 "suggested_hash": compute_text_hash(""),
@@ -218,7 +761,7 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "generated_at": "2026-03-08T00:00:00+00:00",
             },
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
@@ -277,6 +820,8 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
                 "approved_new": approved_new,
                 "status": "approved",
                 "notes": "",
+                "current_value": source_old,
+                "candidate_value": approved_new,
                 "source_old_value": source_old,
                 "source_hash": compute_text_hash(source_old),
                 "suggested_hash": compute_text_hash(approved_new),
@@ -284,7 +829,7 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
                 "generated_at": "2026-03-08T00:00:00+00:00",
             }
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
@@ -323,6 +868,8 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
                 "approved_new": "مرحبا",
                 "status": "approved",
                 "notes": "",
+                "current_value": "اهلا",
+                "candidate_value": "مرحبا",
                 "source_old_value": "اهلا",
                 "source_hash": compute_text_hash("اهلا"),
                 "suggested_hash": compute_text_hash("مرحبا"),
@@ -330,7 +877,7 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
                 "generated_at": "2026-03-08T00:00:00+00:00",
             }
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
@@ -339,7 +886,7 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
     review_main()
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
     assert report_payload["summary"]["approved_rows_applied"] == 0
-    assert report_payload["skipped"][0]["reason"] == "stale_source"
+    assert report_payload["skipped"][0]["reason"] == "source_hash_mismatch"
 
 
 def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, tmp_path: Path) -> None:
@@ -366,16 +913,17 @@ def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, 
         "issue_type": "confirmed_missing_key",
         "status": "approved",
         "notes": "",
+        "current_value": "اهلا",
         "source_old_value": "اهلا",
         "source_hash": compute_text_hash("اهلا"),
         "generated_at": "2026-03-08T00:00:00+00:00",
     }
     write_simple_xlsx(
         [
-            {**base_fields, "suggested_fix": "مرحبا", "approved_new": "مرحبا", "suggested_hash": compute_text_hash("مرحبا"), "plan_id": "plan-a"},
-            {**base_fields, "suggested_fix": "أهلًا", "approved_new": "أهلًا", "suggested_hash": compute_text_hash("أهلًا"), "plan_id": "plan-b"},
+            {**base_fields, "suggested_fix": "مرحبا", "candidate_value": "مرحبا", "approved_new": "مرحبا", "suggested_hash": compute_text_hash("مرحبا"), "plan_id": "plan-a"},
+            {**base_fields, "suggested_fix": "أهلًا", "candidate_value": "أهلًا", "approved_new": "أهلًا", "suggested_hash": compute_text_hash("أهلًا"), "plan_id": "plan-b"},
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
@@ -444,6 +992,8 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
                 "approved_new": "تم تحريرها يدويًا",
                 "status": "approved",
                 "notes": "",
+                "current_value": "اهلا",
+                "candidate_value": "مرحبا",
                 "source_old_value": "اهلا",
                 "source_hash": compute_text_hash("اهلا"),
                 "suggested_hash": compute_text_hash("مرحبا"),
@@ -451,7 +1001,7 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
                 "generated_at": "2026-03-08T00:00:00+00:00",
             }
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
@@ -459,4 +1009,4 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
     monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
-    assert report_payload["skipped"][0]["reason"] == "suggested_hash_mismatch"
+    assert report_payload["skipped"][0]["reason"] == "tampered_row_detected"

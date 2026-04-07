@@ -19,10 +19,10 @@ def __mock_setup(monkeypatch, issues, respect_routing):
 def test_autofix_optimization_respects_routing(monkeypatch):
     """Test reduction of fixes when flag is enabled: only 'auto_fix' passes."""
     issues = [
-        {"key": "k1", "decision": {"route": "auto_fix"}, "new": "fix1"},
-        {"key": "k2", "decision": {"route": "ai_review"}, "new": "fix2"},
-        {"key": "k3", "decision": {"route": "manual_review"}, "new": "fix3"},
-        {"key": "k4", "decision": {"route": "dropped"}, "new": "fix4"},
+        {"key": "k1", "source": "locale_qc", "decision": {"route": "auto_fix"}, "old": "before", "new": "fix1"},
+        {"key": "k2", "source": "locale_qc", "decision": {"route": "ai_review"}, "old": "before", "new": "fix2"},
+        {"key": "k3", "source": "locale_qc", "decision": {"route": "manual_review"}, "old": "before", "new": "fix3"},
+        {"key": "k4", "source": "locale_qc", "decision": {"route": "dropped"}, "old": "before", "new": "fix4"},
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=True)
@@ -37,9 +37,9 @@ def test_autofix_optimization_respects_routing(monkeypatch):
 def test_autofix_fallback_without_decision(monkeypatch):
     """Test fallback functionality: if an issue lacks 'decision', it defaults to 'auto_fix'."""
     issues = [
-        {"key": "k1", "new": "fix1"},  # Legacy data without decision key
-        {"key": "k2", "decision": {}, "new": "fix2"}, # Empty decision dict
-        {"key": "k3", "decision": {"route": None}, "new": "fix3"}, # Explicit None
+        {"key": "k1", "source": "locale_qc", "old": "before", "new": "fix1"},  # Legacy data without decision key
+        {"key": "k2", "source": "locale_qc", "decision": {}, "old": "before", "new": "fix2"}, # Empty decision dict
+        {"key": "k3", "source": "locale_qc", "decision": {"route": None}, "old": "before", "new": "fix3"}, # Explicit None
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=True)
@@ -53,9 +53,9 @@ def test_autofix_fallback_without_decision(monkeypatch):
 def test_autofix_routing_disabled_no_filter(monkeypatch):
     """Test functionality when 'respect_routing' is disabled: All issues are passed to builder."""
     issues = [
-        {"key": "k1", "decision": {"route": "ai_review"}, "new": "fix1"},
-        {"key": "k2", "decision": {"route": "auto_fix"}, "new": "fix2"},
-        {"key": "k3", "decision": {"route": "manual_review"}, "new": "fix3"},
+        {"key": "k1", "source": "locale_qc", "decision": {"route": "ai_review"}, "old": "before", "new": "fix1"},
+        {"key": "k2", "source": "locale_qc", "decision": {"route": "auto_fix"}, "old": "before", "new": "fix2"},
+        {"key": "k3", "source": "locale_qc", "decision": {"route": "manual_review"}, "old": "before", "new": "fix3"},
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=False)
@@ -69,9 +69,9 @@ def test_autofix_routing_disabled_no_filter(monkeypatch):
 def test_metrics_injected_to_metadata(monkeypatch):
     """Test that skipped calls increment the would_skip_autofix metric."""
     issues = [
-        {"key": "k1", "decision": {"route": "auto_fix"}, "new": "fix1"},
-        {"key": "k2", "decision": {"route": "ai_review"}, "new": "fix2"},
-        {"key": "k3", "decision": {"route": "dropped"}, "new": "fix3"},
+        {"key": "k1", "source": "locale_qc", "decision": {"route": "auto_fix"}, "old": "before", "new": "fix1"},
+        {"key": "k2", "source": "locale_qc", "decision": {"route": "ai_review"}, "old": "before", "new": "fix2"},
+        {"key": "k3", "source": "locale_qc", "decision": {"route": "dropped"}, "old": "before", "new": "fix3"},
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=True)

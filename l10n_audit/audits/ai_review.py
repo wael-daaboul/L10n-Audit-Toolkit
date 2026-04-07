@@ -23,21 +23,39 @@ from l10n_audit.ai.verification import verify_batch_fixes
 from l10n_audit.core.decision_engine import is_routing_enabled
 from l10n_audit.core.routing_metrics import RoutingMetrics
 
+from l10n_audit.core.artifact_resolver import (
+    resolve_final_report_path,
+    resolve_review_machine_queue_json_path,
+    resolve_review_queue_json_path
+)
+
 def load_issues(runtime):
-    """Read existing local audits, prefer final report, else review queue."""
-    report_path = runtime.results_dir / "final_audit_report.json"
+    """Read existing local audits with role-based priority (Phase 9).
+    
+    Priority:
+      1. final_audit_report.json (Source of truth for entire run)
+      2. review_machine_queue.json (Explicit machine-consumer artifact)
+      3. review_queue.json (Legacy fallback / Compatibility)
+    """
+    # 1. Final report
+    report_path = resolve_final_report_path(runtime)
+    
+    # 2. Machine queue (preferred source)
     if not report_path.exists():
-        report_path = runtime.results_dir / "review" / "review_queue.json"
+        report_path = resolve_review_machine_queue_json_path(runtime)
+        
+    # 3. Legacy fallback
+    if not report_path.exists():
+        report_path = resolve_review_queue_json_path(runtime)
         
     if not report_path.exists():
         return []
         
     try:
-        with open(report_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("findings", []) + data.get("issues", []) + data.get("review_queue", []) + data.get("rows", [])
+        data = json.loads(report_path.read_text(encoding="utf-8"))
+        return data.get("findings", []) + data.get("issues", []) + data.get("review_queue", []) + data.get("rows", [])
     except Exception as e:
-        logging.error(f"Failed to load issues from {report_path}: {e}")
+        logger.error(f"Failed to load issues from {report_path}: {e}")
         return []
 
 def main() -> None:

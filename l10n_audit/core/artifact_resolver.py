@@ -33,9 +33,17 @@ logger = logging.getLogger("l10n_audit.artifact_resolver")
 # ---------------------------------------------------------------------------
 _CONVENTIONS: dict[str, str] = {
     # User-facing and master outputs (unchanged)
-    "review_queue_xlsx_path":    "review/review_queue.xlsx",
-    "review_queue_json_path":    "review/review_queue.json",
-    "aggregated_issues_path":    "normalized/aggregated_issues.json",
+    "review_queue_xlsx_path":      "review/review_queue.xlsx",
+    "review_projection_xlsx_path": "review/review_projection.xlsx",
+    "review_projection_json_path": "review/review_projection.json",
+    
+    # Machine-consumer review artifacts (Phase 9)
+    "review_machine_queue_json_path": "review/review_machine_queue.json",
+    
+    # Legacy / Compatibility aliases
+    "review_queue_json_path":      "review/review_queue.json",
+    
+    "aggregated_issues_path":      "normalized/aggregated_issues.json",
     "final_report_json_path":    "final/final_audit_report.json",
     "final_report_md_path":      "final/final_audit_report.md",
     "final_report_en_md_path":   "final/final_audit_report_en.md",
@@ -201,8 +209,27 @@ def resolve_review_queue_path(runtime) -> Path:
 
 
 def resolve_review_queue_json_path(runtime) -> Path:
-    """Resolve the JSON mirror of the review queue."""
+    """Resolve the legacy JSON mirror of the review queue.
+    
+    [DEPRECATED] Use resolve_review_machine_queue_json_path for machine consumers
+    or resolve_review_projection_json_path for reporting.
+    """
     return resolve_artifact_path(runtime, "review_queue_json_path")
+
+
+def resolve_review_machine_queue_json_path(runtime) -> Path:
+    """Resolve the primary machine-consumer JSON artifact (Phase 9)."""
+    return resolve_artifact_path(runtime, "review_machine_queue_json_path")
+
+
+def resolve_review_projection_path(runtime) -> Path:
+    """Resolve the analytical review projection XLSX path."""
+    return resolve_artifact_path(runtime, "review_projection_xlsx_path")
+
+
+def resolve_review_projection_json_path(runtime) -> Path:
+    """Resolve the analytical review projection JSON path."""
+    return resolve_artifact_path(runtime, "review_projection_json_path")
 
 
 def resolve_aggregated_issues_path(runtime) -> Path:

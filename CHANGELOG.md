@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.5.2] - 2026-04-07
+
+### Added
+
+* Minor internal improvements and stabilization
+
+### Fixed
+
+* Patch-level fixes for review/apply pipeline consistency
+
+### Notes
+
+* No breaking changes
+* No contract changes
+
+## [1.5.1]
+- Fixed identity crisis in `_SOURCE_LOCALE_MAP` (grammar/ai_review mapping)
+- Fixed "Structural Blindness" bug (nested keys suffix match)
+- Handle LanguageTool replacements array format in suggested_fix
+- Added smart value extraction helper in report_aggregator
+
 ## [1.5.0]
 
 - reporting identity stabilization

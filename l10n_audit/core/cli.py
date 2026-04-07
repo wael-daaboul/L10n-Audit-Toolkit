@@ -14,6 +14,7 @@ from l10n_audit.core.workspace import (
     workspace_config_path,
     workspace_status,
 )
+from l10n_audit.core.artifact_resolver import resolve_review_queue_path
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +208,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         from l10n_audit.api import _stage_module_names
 
         if verbose:
-            version = getattr(l10n_audit, '__version__', '1.5.0')
+            version = getattr(l10n_audit, '__version__', '1.5.4')
             print(f"  [Engine] L10n Audit Engine v{version} loaded.")
             print(f"  [Stage] Target: {stage}")
 
@@ -353,11 +354,8 @@ def cmd_apply(args: argparse.Namespace) -> int:
     
     from l10n_audit.fixes.apply_review_fixes import run_apply
     
-    # Default to .l10n-audit/Results/review/review_queue.xlsx if not provided
-    review_queue = Path(args.review_queue) if args.review_queue else runtime.results_dir / "review" / "review_queue.xlsx"
-    if not args.review_queue and not review_queue.exists():
-        # Fallback to absolute project-root based path if runtime results_dir didn't help
-        review_queue = project_root / ".l10n-audit" / "Results" / "review" / "review_queue.xlsx"
+    # Deterministic lookup using artifact resolver (Phase 8)
+    review_queue = Path(args.review_queue) if args.review_queue else resolve_review_queue_path(runtime)
     
     if not review_queue.exists():
         print(f"❌ Error: Review queue not found at {review_queue}")

@@ -117,6 +117,62 @@ class TestResolveCandidateValue:
         assert result["conflict_flag"] == ""
         assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
 
+    def test_contextual_guard_v1_vetoes_short_your_to_youre_shift(self):
+        result = _resolve_candidate_value({}, "Your account", "You're account")
+        assert result["candidate_value"] == ""
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "SUSPICIOUS_GRAMMAR_SHIFT"
+        assert result["notes_token"] == "[CONFLICT:SUSPICIOUS_GRAMMAR_SHIFT]"
+
+    def test_contextual_guard_v1_marks_long_your_to_youre_shift_for_review(self):
+        result = _resolve_candidate_value({}, "Your account is ready", "You're account is ready")
+        assert result["candidate_value"] == ""
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "SUSPICIOUS_GRAMMAR_SHIFT"
+        assert result["notes_token"] == "[REVIEW:SUSPICIOUS_GRAMMAR_SHIFT]"
+
+    def test_contextual_guard_v1_allows_capitalization_only_fix(self):
+        result = _resolve_candidate_value({}, "you are ready", "You are ready")
+        assert result["candidate_value"] == "You are ready"
+        assert result["resolution_mode"] == "suggested_fix"
+        assert result["conflict_flag"] == ""
+        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
+
+    def test_contextual_guard_v1_does_not_affect_non_matching_cases(self):
+        result = _resolve_candidate_value({}, "Our account", "You're account")
+        assert result["candidate_value"] == "You're account"
+        assert result["resolution_mode"] == "suggested_fix"
+        assert result["conflict_flag"] == ""
+        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
+
+    def test_pattern_completion_guard_v1_vetoes_numeric_token_addition(self):
+        result = _resolve_candidate_value({}, "1 من", "1 من 3")
+        assert result["candidate_value"] == ""
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "PATTERN_COMPLETION_VETO"
+        assert result["notes_token"] == "[CONFLICT:PATTERN_COMPLETION_VETO]"
+
+    def test_pattern_completion_guard_v1_vetoes_word_token_addition(self):
+        result = _resolve_candidate_value({}, "hello", "hello world")
+        assert result["candidate_value"] == ""
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "PATTERN_COMPLETION_VETO"
+        assert result["notes_token"] == "[CONFLICT:PATTERN_COMPLETION_VETO]"
+
+    def test_pattern_completion_guard_v1_allows_punctuation_normalization(self):
+        result = _resolve_candidate_value({}, "hello ,", "hello,")
+        assert result["candidate_value"] == "hello,"
+        assert result["resolution_mode"] == "suggested_fix"
+        assert result["conflict_flag"] == ""
+        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
+
+    def test_pattern_completion_guard_v1_allows_typo_like_single_token_edit(self):
+        result = _resolve_candidate_value({}, "teh", "the")
+        assert result["candidate_value"] == "the"
+        assert result["resolution_mode"] == "suggested_fix"
+        assert result["conflict_flag"] == ""
+        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
+
     def test_always_returns_all_four_keys(self):
         for fix in ("", "same", "different", "{{x}} mismatch"):
             result = _resolve_candidate_value({}, "same", fix)
@@ -318,6 +374,160 @@ class TestBuildReviewQueueIntegration:
         # Phase 9: Identical suggestions are suppressed from the review queue
         assert len(rows) == 0
 
+    def test_brand_silence_filter_v1_suppresses_grammar_brand_noise(self, tmp_path: Path):
+        issue = {
+            "key": "payment.method",
+            "locale": "en",
+            "issue_type": "grammar",
+            "severity": "medium",
+            "message": "Grammar check",
+            "source": "grammar",
+            "details": {"old": "Use PayPal for payment", "new": "Use PayPal to pay"},
+        }
+        runtime = _runtime(tmp_path, {"payment.method": "Use PayPal for payment"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert rows == []
+
+    def test_brand_silence_filter_v1_suppresses_spelling_acronym_noise(self, tmp_path: Path):
+        issue = {
+            "key": "otp.prompt",
+            "locale": "en",
+            "issue_type": "spelling",
+            "severity": "medium",
+            "message": "Spelling check",
+            "source": "grammar",
+            "details": {"old": "Enter your OTP now", "new": "Enter your OTP right now"},
+        }
+        runtime = _runtime(tmp_path, {"otp.prompt": "Enter your OTP now"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert rows == []
+
+    def test_brand_silence_filter_v1_keeps_grammar_on_normal_text(self, tmp_path: Path):
+        issue = {
+            "key": "contact.cta",
+            "locale": "en",
+            "issue_type": "grammar",
+            "severity": "medium",
+            "message": "Grammar check",
+            "source": "grammar",
+            "details": {"old": "Talk with us", "new": "Talk to us"},
+        }
+        runtime = _runtime(tmp_path, {"contact.cta": "Talk with us"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+
+    def test_brand_silence_filter_v1_keeps_non_eligible_issue_type_on_brand_text(self, tmp_path: Path):
+        issue = {
+            "key": "payment.method",
+            "locale": "en",
+            "issue_type": "style",
+            "severity": "medium",
+            "message": "Style check",
+            "source": "grammar",
+            "details": {"old": "Use PayPal for payment", "new": "Use PayPal to pay"},
+        }
+        runtime = _runtime(tmp_path, {"payment.method": "Use PayPal for payment"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+
+    def test_brand_silence_filter_v1_keeps_non_grammar_source_on_brand_text(self, tmp_path: Path):
+        issue = {
+            "key": "payment.method",
+            "locale": "en",
+            "issue_type": "spelling",
+            "severity": "medium",
+            "message": "Spelling check",
+            "source": "locale_qc",
+            "details": {"old": "Use PayPal for payment", "new": "Use PayPal to pay"},
+        }
+        runtime = _runtime(tmp_path, {"payment.method": "Use PayPal for payment"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+
+    def test_profile_based_case_policy_v1_suppresses_capitalization_on_label_key(self, tmp_path: Path):
+        issue = {
+            "key": "profile_label",
+            "locale": "en",
+            "issue_type": "capitalization",
+            "severity": "low",
+            "message": "Capitalization check",
+            "source": "locale_qc",
+            "details": {"old": "profile", "new": "Profile"},
+        }
+        runtime = _runtime(tmp_path, {"profile_label": "profile"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert rows == []
+
+    def test_profile_based_case_policy_v1_suppresses_capitalization_on_btn_key(self, tmp_path: Path):
+        issue = {
+            "key": "submit_btn",
+            "locale": "en",
+            "issue_type": "capitalization",
+            "severity": "low",
+            "message": "Capitalization check",
+            "source": "locale_qc",
+            "details": {"old": "submit", "new": "Submit"},
+        }
+        runtime = _runtime(tmp_path, {"submit_btn": "submit"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert rows == []
+
+    def test_profile_based_case_policy_v1_suppresses_capitalization_on_hint_key(self, tmp_path: Path):
+        issue = {
+            "key": "email_hint",
+            "locale": "en",
+            "issue_type": "capitalization",
+            "severity": "low",
+            "message": "Capitalization check",
+            "source": "locale_qc",
+            "details": {"old": "enter email", "new": "Enter email"},
+        }
+        runtime = _runtime(tmp_path, {"email_hint": "enter email"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert rows == []
+
+    def test_profile_based_case_policy_v1_keeps_capitalization_on_non_matching_key(self, tmp_path: Path):
+        issue = {
+            "key": "welcome_msg",
+            "locale": "en",
+            "issue_type": "capitalization",
+            "severity": "low",
+            "message": "Capitalization check",
+            "source": "locale_qc",
+            "details": {"old": "welcome back", "new": "Welcome back"},
+        }
+        runtime = _runtime(tmp_path, {"welcome_msg": "welcome back"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+
+    def test_profile_based_case_policy_v1_keeps_non_capitalization_on_label_key(self, tmp_path: Path):
+        issue = {
+            "key": "profile_label",
+            "locale": "en",
+            "issue_type": "spelling",
+            "severity": "low",
+            "message": "Spelling check",
+            "source": "locale_qc",
+            "details": {"old": "teh", "new": "the"},
+        }
+        runtime = _runtime(tmp_path, {"profile_label": "teh"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+
+    def test_profile_based_case_policy_v1_keeps_capitalization_from_non_locale_qc_source(self, tmp_path: Path):
+        issue = {
+            "key": "profile_label",
+            "locale": "en",
+            "issue_type": "capitalization",
+            "severity": "low",
+            "message": "Capitalization check",
+            "source": "grammar",
+            "details": {"old": "profile", "new": "Profile"},
+        }
+        runtime = _runtime(tmp_path, {"profile_label": "profile"}, {})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+
     def test_merge_path_conflict_clears_existing_suggested_fix_but_preserves_existing_approved_new(
         self, tmp_path: Path
     ):
@@ -379,11 +589,163 @@ class TestBuildReviewQueueIntegration:
         assert len(rows) == 1
         row = rows[0]
 
-        # Conflict from issue 2 must clear suggested_fix
-        assert row["suggested_fix"] == ""
+        # Incompatible conflict from issue 2 must NOT clear canonical suggested_fix
+        assert row["suggested_fix"] == safe_suggestion
 
         # Conflict token must appear in notes
         assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
 
         # approved_new set by issue 1 must survive — no destructive overwrite
         assert row["approved_new"] == safe_suggestion
+
+    def test_semantic_clustering_v1_keeps_canonical_outcome_when_incoming_conflict_is_incompatible(
+        self, tmp_path: Path
+    ):
+        ar_current = "حفظ {{name}}"
+        safe_suggestion = "حفظ {{name}}."
+
+        issue_safe = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "possible_meaning_loss",
+            "severity": "low",
+            "message": "Wording improvement",
+            "source": "ar_semantic_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": safe_suggestion,
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+
+        issue_conflict = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "grammar_error",
+            "severity": "medium",
+            "message": "Grammar fix",
+            "source": "ar_locale_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": "احفظ",
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+            "suggested_fix": "احفظ",
+        }
+
+        runtime = _runtime(
+            tmp_path,
+            {"save.button": "Save {{name}}"},
+            {"save.button": ar_current},
+        )
+        rows = build_review_queue([issue_safe, issue_conflict], runtime)
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["suggested_fix"] == safe_suggestion
+        assert "possible_meaning_loss" in row["issue_type"]
+        assert "grammar_error" in row["issue_type"]
+        assert "Wording improvement" in row["notes"]
+        assert "Grammar fix" in row["notes"]
+        assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
+        assert "ar_semantic_qc|possible_meaning_loss|low" in row["provenance"]
+        assert "ar_locale_qc|grammar_error|medium" in row["provenance"]
+
+    def test_semantic_clustering_v1_keeps_existing_approved_new_when_incoming_approved_new_differs(
+        self, tmp_path: Path
+    ):
+        ar_current = "Hello"
+        first_suggestion = "Hello."
+        second_suggestion = "Hello!"
+
+        issue_first = {
+            "key": "greeting",
+            "locale": "ar",
+            "issue_type": "punctuation",
+            "severity": "low",
+            "message": "Add period",
+            "source": "ar_semantic_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": first_suggestion,
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+
+        issue_second = {
+            "key": "greeting",
+            "locale": "ar",
+            "issue_type": "style_variant",
+            "severity": "low",
+            "message": "Use exclamation",
+            "source": "ar_locale_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": second_suggestion,
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+
+        runtime = _runtime(
+            tmp_path,
+            {"greeting": "Hello"},
+            {"greeting": ar_current},
+        )
+        rows = build_review_queue([issue_first, issue_second], runtime)
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["approved_new"] == first_suggestion
+        assert "punctuation" in row["issue_type"]
+        assert "style_variant" in row["issue_type"]
+        assert "Add period" in row["notes"]
+        assert "Use exclamation" in row["notes"]
+        assert "ar_semantic_qc|punctuation|low" in row["provenance"]
+        assert "ar_locale_qc|style_variant|low" in row["provenance"]
+
+    def test_semantic_clustering_v1_still_fully_merges_compatible_same_outcome_signals(
+        self, tmp_path: Path
+    ):
+        ar_current = "Talk with us"
+        shared_suggestion = "Talk to us"
+
+        issue_first = {
+            "key": "contact.cta",
+            "locale": "en",
+            "issue_type": "grammar",
+            "severity": "medium",
+            "message": "Grammar check",
+            "source": "grammar",
+            "details": {"old": ar_current, "new": shared_suggestion},
+        }
+
+        issue_second = {
+            "key": "contact.cta",
+            "locale": "en",
+            "issue_type": "spelling",
+            "severity": "medium",
+            "message": "Spelling check",
+            "source": "grammar",
+            "details": {"old": ar_current, "new": shared_suggestion},
+        }
+
+        runtime = _runtime(tmp_path, {"contact.cta": ar_current}, {})
+        rows = build_review_queue([issue_first, issue_second], runtime)
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["suggested_fix"] == shared_suggestion
+        assert "grammar" in row["issue_type"]
+        assert "spelling" in row["issue_type"]
+        assert "Grammar check" in row["notes"]
+        assert "Spelling check" in row["notes"]
+        assert "grammar|grammar|medium" in row["provenance"]
+        assert "grammar|spelling|medium" in row["provenance"]

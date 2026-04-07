@@ -15,6 +15,12 @@ from l10n_audit.core.audit_report_utils import load_all_report_issues
 from l10n_audit.core.audit_runtime import is_risky_for_whitespace_normalization, load_locale_mapping, load_runtime, write_json, write_simple_xlsx
 from l10n_audit.core.decision_engine import is_routing_enabled
 from l10n_audit.core.routing_metrics import RoutingMetrics
+from l10n_audit.core.locale_utils import (
+    resolve_issue_locale,
+    resolve_issue_current_value, 
+    resolve_issue_candidate_value,
+    normalized_non_empty_string as _normalized_non_empty_string
+)
 
 logger = logging.getLogger("l10n_audit.fixes")
 
@@ -106,6 +112,26 @@ def classify_issue(issue: dict[str, Any]) -> str:
     return "review_required"
 
 
+
+
+def _record_fix_plan_rejection(
+    runtime: Any,
+    issue: dict[str, Any],
+    missing_fields: list[str],
+) -> None:
+    rejection = {
+        "key": str(issue.get("key", "")),
+        "source": str(issue.get("source", "")),
+        "issue_type": str(issue.get("issue_type", "")),
+        "missing_fields": missing_fields,
+        "reason": "incomplete_fix_plan_contract",
+    }
+    if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        runtime.metadata.setdefault("fix_plan_rejections", []).append(rejection)
+        return
+    logger.debug("Dropping fix plan item: %s", rejection)
+
+
 def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = None, runtime: Any = None) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
     seen: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -119,12 +145,32 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
             if staged_file.exists():
                 staged_data = _json.loads(staged_file.read_text(encoding="utf-8"))
                 for identity, data in staged_data.items():
-                    key = data.get("key")
-                    locale = data.get("locale")
-                    candidate = data.get("suggestion")
-                    if not (key and locale and candidate):
+                    staged_issue = {
+                        "key": data.get("key"),
+                        "locale": data.get("locale"),
+                        "source": "persistent_staged",
+                        "issue_type": "verified_migration",
+                        "source_old_value": data.get("source_text"),
+                        "suggestion": data.get("suggestion"),
+                    }
+                    key = str(staged_issue.get("key", ""))
+                    locale, _locale_source = resolve_issue_locale(staged_issue)
+                    current, _current_source = resolve_issue_current_value(staged_issue)
+                    candidate, _candidate_source = resolve_issue_candidate_value(staged_issue)
+
+                    missing_fields: list[str] = []
+                    if not key.strip():
+                        missing_fields.append("key")
+                    if locale is None:
+                        missing_fields.append("locale")
+                    if current is None:
+                        missing_fields.append("current_value")
+                    if candidate is None:
+                        missing_fields.append("candidate_value")
+                    if missing_fields:
+                        _record_fix_plan_rejection(runtime, staged_issue, missing_fields)
                         continue
-                        
+
                     signature = (key, locale, candidate)
                     item = {
                         "key": key,
@@ -134,7 +180,7 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
                         "severity": "info",
                         "classification": "auto_safe",
                         "message": "Applying previously verified translation from staged storage.",
-                        "current_value": data.get("source_text", ""),
+                        "current_value": current,
                         "candidate_value": candidate,
                         "provenance": [{"source": "persistent_staged", "issue_type": "verified_migration", "message": "Staged", "severity": "info"}],
                     }
@@ -172,13 +218,26 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
                 continue
 
         details = issue.get("details", {})
+        if not isinstance(details, dict):
+            details = {}
+
         key = str(issue.get("key", ""))
-        locale = "en" if issue.get("source") in {"locale_qc", "grammar"} else str(issue.get("locale", ""))
-        if issue.get("source") == "ar_locale_qc":
-            locale = "ar"
-            
-        candidate = str(issue.get("approved_new") or issue.get("suggested_fix") or details.get("new") or issue.get("suggestion") or "").strip()
-        current = str(issue.get("source_old_value") or issue.get("target") or details.get("old") or issue.get("current_translation") or "").strip()
+        locale, _locale_source = resolve_issue_locale(issue)
+        current, _current_source = resolve_issue_current_value(issue)
+        candidate, _candidate_source = resolve_issue_candidate_value(issue)
+
+        missing_fields: list[str] = []
+        if not key.strip():
+            missing_fields.append("key")
+        if locale is None:
+            missing_fields.append("locale")
+        if current is None:
+            missing_fields.append("current_value")
+        if candidate is None:
+            missing_fields.append("candidate_value")
+        if missing_fields:
+            _record_fix_plan_rejection(runtime, issue, missing_fields)
+            continue
         
         classification = classify_issue(issue)
         signature = (key, locale, candidate)

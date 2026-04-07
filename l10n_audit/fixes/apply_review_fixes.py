@@ -12,7 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, load_locale_mapping, load_runtime, read_simple_xlsx, write_json
-from l10n_audit.core.artifact_resolver import resolve_ar_fixed_json_path, resolve_fix_plan_path, resolve_master_path
+from l10n_audit.core.artifact_resolver import (
+    resolve_ar_fixed_json_path, 
+    resolve_fix_plan_path, 
+    resolve_master_path,
+    resolve_review_queue_path,
+)
 
 logger = logging.getLogger("l10n_audit.fixes")
 
@@ -28,6 +33,198 @@ REQUIRED_REVIEW_COLUMNS = (
     "plan_id",
     "generated_at",
 )
+
+
+def _normalized_non_empty_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value if value.strip() else None
+
+
+def _record_apply_rejection(
+    runtime: object,
+    row: dict,
+    reason: str,
+    *,
+    missing_fields: list[str] | None = None,
+    expected: str | None = None,
+    actual: str | None = None,
+) -> dict:
+    rejection = {
+        "key": str(row.get("key", "")),
+        "locale": str(row.get("locale", "")),
+        "reason": reason,
+    }
+    if missing_fields:
+        rejection["missing_fields"] = missing_fields
+    if expected is not None:
+        rejection["expected"] = expected
+    if actual is not None:
+        rejection["actual"] = actual
+    if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        runtime.metadata.setdefault("apply_rejections", []).append(rejection)
+    else:
+        logger.debug("Rejecting apply row: %s", rejection)
+    return rejection
+
+
+def _get_applied_suggestions_store(runtime: object) -> list[str]:
+    if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        store = runtime.metadata.setdefault("applied_suggestions", [])
+        if isinstance(store, list):
+            return store
+        runtime.metadata["applied_suggestions"] = list(store) if isinstance(store, (set, tuple)) else []
+        return runtime.metadata["applied_suggestions"]
+    return []
+
+
+def _build_apply_trace_entry(
+    row: dict,
+    *,
+    status: str,
+    reason: str | None,
+    decision_context: dict[str, object] | None = None,
+) -> dict[str, object]:
+    return {
+        "key": str(row.get("key", "")),
+        "locale": str(row.get("locale", "")),
+        "status": status,
+        "reason": reason,
+        "suggested_hash": str(row.get("suggested_hash", "")),
+        "source_hash": str(row.get("source_hash", "")),
+        "plan_id": str(row.get("plan_id", "")),
+        "decision_context": decision_context or {},
+    }
+
+
+def _build_rejection_decision_context(
+    row: dict,
+    rejection: dict,
+    current_value: object,
+    applied_suggestions_store: list[str],
+) -> dict[str, object]:
+    reason = str(rejection.get("reason", ""))
+    if reason == "missing_required_fields":
+        return {
+            "missing_fields": list(rejection.get("missing_fields", [])),
+            "row_keys_present": list(row.keys()),
+        }
+    if reason == "source_hash_mismatch":
+        runtime_value = str(current_value) if isinstance(current_value, str) else ""
+        return {
+            "expected_source_hash": str(rejection.get("expected", row.get("source_hash", ""))),
+            "actual_current_hash": str(rejection.get("actual", compute_text_hash(runtime_value) if runtime_value else "")),
+            "current_value": runtime_value,
+            "source_old_value": str(row.get("source_old_value", "")),
+        }
+    if reason == "tampered_row_detected":
+        approved_new = str(row.get("approved_new", ""))
+        return {
+            "approved_new": approved_new,
+            "suggested_hash": str(row.get("suggested_hash", "")),
+            "actual_hash": compute_text_hash(approved_new),
+        }
+    if reason == "duplicate_application":
+        return {
+            "suggested_hash": str(row.get("suggested_hash", "")),
+            "already_applied_hashes": list(applied_suggestions_store),
+        }
+    if reason == "suggested_hash_mismatch":
+        candidate_value = str(row.get("candidate_value", ""))
+        return {
+            "suggested_hash": str(row.get("suggested_hash", "")),
+            "actual_hash": compute_text_hash(candidate_value),
+            "candidate_value": candidate_value,
+        }
+    return {}
+
+
+def _validate_apply_row(
+    row: dict,
+    runtime: object,
+    current_value: object,
+    applied_suggestions: set[str],
+) -> tuple[dict[str, str] | None, dict | None]:
+    key = _normalized_non_empty_string(row.get("key"))
+    locale = _normalized_non_empty_string(row.get("locale"))
+    current_row_value = _normalized_non_empty_string(row.get("current_value"))
+    candidate_value = _normalized_non_empty_string(row.get("candidate_value"))
+    source_hash = _normalized_non_empty_string(row.get("source_hash"))
+    suggested_hash = _normalized_non_empty_string(row.get("suggested_hash"))
+
+    missing_fields: list[str] = []
+    if key is None:
+        missing_fields.append("key")
+    if locale is None:
+        missing_fields.append("locale")
+    if current_row_value is None:
+        missing_fields.append("current_value")
+    if candidate_value is None:
+        missing_fields.append("candidate_value")
+    if source_hash is None:
+        missing_fields.append("source_hash")
+    if suggested_hash is None:
+        missing_fields.append("suggested_hash")
+    if missing_fields:
+        rejection = _record_apply_rejection(runtime, row, "missing_required_fields", missing_fields=missing_fields)
+        return None, rejection
+
+    approved_new = _normalized_non_empty_string(row.get("approved_new"))
+    if approved_new is None:
+        rejection = _record_apply_rejection(runtime, row, "missing_required_fields", missing_fields=["approved_new"])
+        return None, rejection
+    if approved_new != candidate_value:
+        rejection = _record_apply_rejection(
+            runtime,
+            row,
+            "tampered_row_detected",
+            expected=candidate_value,
+            actual=approved_new,
+        )
+        return None, rejection
+
+    runtime_value = _normalized_non_empty_string(current_value)
+    if runtime_value is None:
+        rejection = _record_apply_rejection(runtime, row, "source_hash_mismatch", expected=source_hash, actual="")
+        return None, rejection
+
+    actual_source_hash = compute_text_hash(runtime_value)
+    if actual_source_hash != source_hash:
+        rejection = _record_apply_rejection(
+            runtime,
+            row,
+            "source_hash_mismatch",
+            expected=source_hash,
+            actual=actual_source_hash,
+        )
+        return None, rejection
+
+    actual_suggested_hash = compute_text_hash(candidate_value)
+    if actual_suggested_hash != suggested_hash:
+        rejection = _record_apply_rejection(
+            runtime,
+            row,
+            "suggested_hash_mismatch",
+            expected=suggested_hash,
+            actual=actual_suggested_hash,
+        )
+        return None, rejection
+
+    if suggested_hash in applied_suggestions:
+        rejection = _record_apply_rejection(runtime, row, "duplicate_application")
+        return None, rejection
+
+    return {
+        "key": key,
+        "locale": locale,
+        "current_value": current_row_value,
+        "candidate_value": candidate_value,
+        "approved_new": approved_new,
+        "source_hash": source_hash,
+        "suggested_hash": suggested_hash,
+        "issue_type": str(row.get("issue_type", "")),
+        "plan_id": str(row.get("plan_id", "")),
+    }, None
 
 
 def reconcile_master_from_xlsx(xlsx_path: str, master_path: str) -> None:
@@ -304,6 +501,11 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
     review_fixes_ar = {}
     applied_meta = []
     skipped = []
+    apply_trace: list[dict[str, object]] = []
+    if hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        runtime.metadata["apply_trace"] = apply_trace
+    applied_suggestions_store = _get_applied_suggestions_store(runtime)
+    applied_suggestions = set(str(value) for value in applied_suggestions_store if isinstance(value, str))
     
     seen_keys = {} # (key, locale) -> approved_val
     current_en = load_locale_mapping(runtime.en_file, runtime, "en") if runtime.en_file.exists() else {}
@@ -329,44 +531,49 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
         status = str(row.get("status", "")).strip().lower()
         if not apply_all and status != "approved":
             continue
-            
-        key = str(row.get("key", "")).strip()
-        locale = str(row.get("locale", "")).strip()
-        approved_val = str(row.get("approved_new", ""))
         
-        # If apply_all is on but approved_new is empty, use suggested_fix instead
-        if apply_all and not approved_val:
-            approved_val = str(row.get("suggested_fix", ""))
-
-        if not approved_val:
+        locale_hint = str(row.get("locale", "")).strip()
+        key_hint = str(row.get("key", "")).strip()
+        current_val = current_en.get(key_hint) if locale_hint == "en" else current_ar.get(key_hint)
+        validated_row, rejection = _validate_apply_row(row, runtime, current_val, applied_suggestions)
+        if rejection is not None:
+            skipped.append(rejection)
+            apply_trace.append(
+                _build_apply_trace_entry(
+                    row,
+                    status="skipped",
+                    reason=str(rejection["reason"]),
+                    decision_context=_build_rejection_decision_context(
+                        row,
+                        rejection,
+                        current_val,
+                        applied_suggestions_store,
+                    ),
+                )
+            )
             continue
 
-        if not key:
-            skipped.append({"key": key, "reason": "empty_key"})
-            continue
-            
+        key = validated_row["key"]
+        locale = validated_row["locale"]
+        approved_val = validated_row["approved_new"]
+        suggested_hash = validated_row["suggested_hash"]
+
         if (key, locale) in seen_keys:
             if seen_keys[(key, locale)] != approved_val:
-                skipped.append({"key": key, "locale": locale, "reason": "conflicting_approved_rows"})
+                rejection = _record_apply_rejection(runtime, row, "conflicting_approved_rows")
+                skipped.append(rejection)
+                apply_trace.append(
+                    _build_apply_trace_entry(
+                        row,
+                        status="skipped",
+                        reason="conflicting_approved_rows",
+                        decision_context={},
+                    )
+                )
                 if locale == "en": review_fixes_en.pop(key, None)
                 else: review_fixes_ar.pop(key, None)
                 continue
         seen_keys[(key, locale)] = approved_val
-
-        source_hash = str(row.get("source_hash", ""))
-        current_val = current_en.get(key) if locale == "en" else current_ar.get(key)
-        if current_val is not None:
-            current_hash = compute_text_hash(str(current_val))
-            if current_hash != source_hash:
-                skipped.append({"key": key, "locale": locale, "reason": "stale_source", "expected_hash": source_hash, "actual_hash": current_hash})
-                continue
-
-        suggested_hash = str(row.get("suggested_hash", "")).strip()
-        if suggested_hash:
-            actual_suggested_hash = compute_text_hash(approved_val)
-            if actual_suggested_hash != suggested_hash:
-                skipped.append({"key": key, "locale": locale, "reason": "suggested_hash_mismatch", "expected": suggested_hash, "actual": actual_suggested_hash})
-                continue
         
         # --- Phase 10: Governance Enforcement ---
         if locale == "en":
@@ -386,12 +593,26 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
             )
             if not resolver.register(record):
                 logger.warning("CONFLICT DETECTED: Skipping manual/AI review fix for key '%s' due to priority overlap.", key)
-                skipped.append({"key": key, "locale": locale, "reason": "governance_conflict", "source": source_tag})
+                rejection = _record_apply_rejection(runtime, row, "governance_conflict")
+                rejection["source"] = source_tag
+                skipped.append(rejection)
+                apply_trace.append(
+                    _build_apply_trace_entry(
+                        row,
+                        status="skipped",
+                        reason="governance_conflict",
+                        decision_context={},
+                    )
+                )
                 continue
             
             review_fixes_en[key] = approved_val
         else:
             review_fixes_ar[key] = approved_val
+
+        applied_suggestions.add(suggested_hash)
+        if suggested_hash not in applied_suggestions_store:
+            applied_suggestions_store.append(suggested_hash)
             
         applied_meta.append({
             "key": key,
@@ -401,8 +622,24 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
             # Phase 3: carry plan_id and source_hash so _stable_identity
             # produces the same key as the XLSX row identity.
             "plan_id": str(row.get("plan_id", "")),
-            "source_hash": str(row.get("source_hash", "")),
+            "source_hash": validated_row["source_hash"],
+            "suggested_hash": suggested_hash,
         })
+        apply_trace.append(
+            _build_apply_trace_entry(
+                row,
+                status="applied",
+                reason=None,
+                decision_context={
+                    "current_value": validated_row["current_value"],
+                    "approved_new": validated_row["approved_new"],
+                    "source_hash": validated_row["source_hash"],
+                    "current_hash": compute_text_hash(validated_row["current_value"]),
+                    "suggested_hash": validated_row["suggested_hash"],
+                    "validation_passed": True,
+                },
+            )
+        )
 
     # Update conflict metrics in metadata
     try:
@@ -448,9 +685,29 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
             "en_fixed_files": count_en,
             "ar_fixed_files": count_ar,
         },
-        "applied": applied_meta,
+        "applied": [
+            {
+                "key": item["key"],
+                "locale": item["locale"],
+                "suggested_hash": item["suggested_hash"],
+                "plan_id": item["plan_id"],
+            }
+            for item in applied_meta
+        ],
         "skipped": skipped,
+        "trace": apply_trace,
     }
+
+    assert len(apply_trace) == len(applied_meta) + len(skipped)
+    assert len(report_payload["applied"]) == report_payload["summary"]["approved_rows_applied"]
+    assert len(report_payload["skipped"]) == report_payload["summary"]["approved_rows_skipped"]
+    applied_trace_keys = {
+        (str(item["plan_id"]), str(item["suggested_hash"]))
+        for item in apply_trace
+        if item["status"] == "applied"
+    }
+    for item in report_payload["applied"]:
+        assert (str(item["plan_id"]), str(item["suggested_hash"])) in applied_trace_keys
 
     if out_report:
         out_report_dir = Path(out_report).parent
@@ -469,7 +726,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
                 "plan_id": s.get("plan_id", ""),
                 "key": s.get("key", ""),
                 "locale": s.get("locale", ""),
-                "source_hash": s.get("expected_hash", s.get("source_hash", "")),
+                "source_hash": s.get("expected_hash", s.get("expected", s.get("source_hash", ""))),
             }
             skipped_dict[_stable_identity(proxy)] = s.get("reason", "unknown")
         reconcile_master(
@@ -526,7 +783,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
 def main() -> None:
     runtime = load_runtime(__file__)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--review-queue", default=str(runtime.results_dir / "review" / "review_queue.xlsx"))
+    parser.add_argument("--review-queue", default=str(resolve_review_queue_path(runtime)))
     parser.add_argument("--out-final-json", default=str(runtime.results_dir / "final_locale" / "ar.final.json"))
     parser.add_argument("--out-report", default=str(runtime.results_dir / "final_locale" / "review_fixes_report.json"))
     parser.add_argument("--all", action="store_true", help="Apply all fixes even if not approved.")

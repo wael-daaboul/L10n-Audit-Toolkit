@@ -330,6 +330,7 @@ tests/
   test_safe_fixes.py
   test_schema_validation_cli.py
   test_semantic_heuristics.py
+  test_structural_blindness_fix.py
   test_terminology_audit.py
   test_unified_enforcement.py
   test_universal_models.py
@@ -357,596 +358,55 @@ Files
 ================================================================
 
 ================
-File: tests/test_apply_cycle_closure.py
+File: tests/test_structural_blindness_fix.py
 ================
 import pytest
 from pathlib import Path
-from l10n_audit.reports.report_aggregator import (
-    build_review_queue, 
-    apply_workflow_state_to_rows, 
-    create_analytical_payload,
-    compute_text_hash
-)
+from l10n_audit.reports.report_aggregator import old_value_for_issue
 
-def _runtime():
-    return type("Runtime", (), {
-        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
-        "source_locale": "en", "target_locales": ("ar",),
-        "results_dir": ".", "project_root": Path("."), "plan_id": "P1"
-    })()
-
-def test_phase12_full_cycle_apply_closure():
-    # Proof of full-cycle apply closure using the real function chain.
-    i1 = {"key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
-          "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc"}
-    
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
-            "k1": "Hello"
-        })
-        
-        # Step 1: Initial Queue
-        r1_rows = build_review_queue([i1], _runtime())
-        plan_id = r1_rows[0]["plan_id"]
-        h1 = r1_rows[0]["source_hash"]
-        
-        # Step 2: SIMULATE APPLY (Persisted State in Workflow)
-        workflow_state = {
-            plan_id: {
-                "approved_new": "Hello.",
-                "status": "applied",
-                "source_hash": h1
-            }
-        }
-        
-        # Step 3: RERUN (Source is now "Hello.")
-        i1_rerun = {"key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
-                    "current_value": "Hello.", "suggested_fix": "Hello.", "source": "ar_qc"}
-        
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
-            "k1": "Hello."
-        })
-        
-        r2_rows = build_review_queue([i1_rerun], _runtime())
-        
-        # PROOF 1: Resolved row is suppressed (Closure confirmed)
-        assert len(r2_rows) == 0
-        
-        # Step 4: Analytical Closure
-        payload = create_analytical_payload(
-            review_rows=r2_rows,
-            issues=[i1_rerun],
-            reports={"ar_qc": {}},
-            missing=[],
-            summary={"total_issues": 1},
-            safe_fixes={"available": 0},
-            source_status={"ar_qc": "ok"}
-        )
-        
-        # PROOF 2: Summary reflects suppression (0 issues actionable)
-        assert payload["summary"]["total_issues"] == 0
-        assert payload["summary"]["review_required_issues"] == 0
-
-def test_phase12_stale_rerun_proof():
-    # Proof of stale-source defense: explicit stale marking for identity-matches with content shifts.
-    
-    # 1. State: Applied to "Hello" (H1)
-    h1 = compute_text_hash("Hello")
-    workflow_state = {
-        "FIXED_ID": {
-            "approved_new": "Hello.",
-            "status": "applied",
-            "source_hash": h1
-        }
+def test_old_value_for_issue_handles_nested_suffix_match():
+    # Simulation of flattened JSON data
+    en_data = {
+        "messages.contact_with_us": "Contact Us",
+        "home.title": "Home"
+    }
+    ar_data = {
+        "messages.contact_with_us": "اتصل بنا",
     }
     
-    # 2. Rerun: Current row has "Hi" (H2) and we simulate an ID match to test the stale-check logic
-    h2 = compute_text_hash("Hi")
-    current_row = {
-        "plan_id": "FIXED_ID", # FORCED IDENTITY MATCH
-        "key": "k1", "locale": "ar", "old_value": "Hi", "approved_new": "",
-        "source_hash": h2, "status": "pending", "notes": "Initial Issue"
-    }
-    
-    # ACT
-    reprojected = apply_workflow_state_to_rows([current_row], workflow_state)
-    r = reprojected[0]
-    
-    # PROOF 3: Row is marked STALE due to hash mismatch (Closure interrupted safely)
-    assert r["status"] == "stale"
-    assert r["needs_review"] == "Yes"
-    assert "[DQ:STALE_DECISION]" in r["notes"]
-    assert r["approved_new"] != "Hello." # Silent application blocked
-    
-    # ACT: Reconciled analytical payload
-    payload = create_analytical_payload([r], [{}], {}, [], {"total_issues": 1}, {"available": 0}, {})
-    
-    # PROOF 4: Reconciled analytical state reflects the Stale actionable item correctly
-    assert payload["summary"]["total_issues"] == 1
-    assert payload["summary"]["review_required_issues"] == 1
-    assert payload["summary"]["safe_fixes_available"] == 0
-
-================
-File: tests/test_apply_side_closure.py
-================
-import pytest
-from pathlib import Path
-from l10n_audit.reports.report_aggregator import (
-    build_review_queue, 
-    apply_workflow_state_to_rows, 
-    compute_text_hash
-)
-
-def _runtime():
-    return type("Runtime", (), {
-        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
-        "source_locale": "en", "target_locales": ("ar",),
-        "results_dir": ".", "project_root": Path("."), "plan_id": "P1"
-    })()
-
-def test_phase12_resolved_row_suppression():
-    # PROOF: Applied rows do not reappear if they become no-ops in the next run.
-    issues = [{
-        "key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
-        "current_value": "Hello.", "suggested_fix": "Hello.", "source": "ar_qc"
-    }]
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
-            "k1": "Hello."
-        })
-        review_rows = build_review_queue(issues, _runtime())
-        # Row is suppressed because suggestion == current.
-        assert len(review_rows) == 0
-
-def test_phase12_stale_row_defense():
-    # PROOF: Decisions are invalidated if source text changes (Hash mismatch).
-    h1 = compute_text_hash("OldText")
-    ws_entry = {
-        "approved_new": "NewText",
-        "status": "applied",
-        "source_hash": h1
-    }
-    workflow_state = {"P1": ws_entry}
-    
-    h2 = compute_text_hash("MutatedText")
-    current_row = {
-        "plan_id": "P1",
-        "key": "k1", "locale": "ar", "old_value": "MutatedText",
-        "approved_new": "", # Initial state from build_review_queue
-        "source_hash": h2, "status": "pending", "notes": "Issue found"
-    }
-    
-    result = apply_workflow_state_to_rows([current_row], workflow_state)
-    reprojected = result[0]
-    
-    assert reprojected["status"] == "stale"
-    assert "[DQ:STALE_DECISION]" in reprojected["notes"]
-    assert reprojected["needs_review"] == "Yes"
-    # Previous approval was NOT applied because it's unsafe
-    assert reprojected["approved_new"] != "NewText"
-
-def test_phase12_deterministic_applied_transition():
-    # PROOF: Transitions remain deterministic if hashes match.
-    h1 = compute_text_hash("ExactText")
-    ws_entry = {
-        "approved_new": "AppliedText",
-        "status": "applied",
-        "source_hash": h1
-    }
-    workflow_state = {"P1": ws_entry}
-    current_row = {
-        "plan_id": "P1",
-        "key": "k1", "locale": "ar", "old_value": "ExactText",
-        "approved_new": "",
-        "source_hash": h1, "status": "pending"
-    }
-    result = apply_workflow_state_to_rows([current_row], workflow_state)
-    reprojected = result[0]
-    assert reprojected["status"] == "applied"
-    assert reprojected["approved_new"] == "AppliedText"
-
-================
-File: tests/test_contract_freeze.py
-================
-import pytest
-import os
-import json
-import re
-from pathlib import Path
-from zipfile import ZipFile
-import xml.etree.ElementTree as ET
-from l10n_audit.reports.report_aggregator import build_review_queue, REVIEW_QUEUE_COLUMNS, _normalize_review_row
-from l10n_audit.core.audit_runtime import write_simple_xlsx
-
-def _runtime():
-    return type("Runtime", (), {
-        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
-        "source_locale": "en", "target_locales": ("ar",),
-        "results_dir": "."
-    })()
-
-def test_exact_20_column_freeze():
-    # 1. Assert exactly 20 columns in the static contract
-    assert len(REVIEW_QUEUE_COLUMNS) == 20
-    
-    # 2. Verify exact ordered parity of a representative materialized row
+    # Issue only contains the short key
     issue = {
-        "key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
-        "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc",
-        "needs_review": False
+        "key": "contact_with_us",
+        "locale": "en",
+        "source": "en_locale_qc"
     }
     
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {"k1": "Hello"})
-        rows = build_review_queue([issue], _runtime())
-        assert len(rows) == 1
-        row = rows[0]
-        
-        # EXACT PUBLIC column count and order check (Exclude internal metadata)
-        actual_keys = [k for k in row.keys() if not k.startswith("_")]
-        assert len(actual_keys) == 20
-        assert actual_keys == REVIEW_QUEUE_COLUMNS
+    # Act
+    value = old_value_for_issue(issue, en_data, ar_data)
+    
+    # Assert: Should match via suffix
+    assert value == "Contact Us"
 
-def test_json_xlsx_parity_readback(tmp_path):
-    rows = [
-        {col: f"val_{i}" for i, col in enumerate(REVIEW_QUEUE_COLUMNS)}
-    ]
-    json_path = tmp_path / "rq.json"
-    xlsx_path = tmp_path / "rq.xlsx"
-    
-    # Export
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(rows, f)
-    write_simple_xlsx(rows, REVIEW_QUEUE_COLUMNS, xlsx_path, sheet_name="Review Queue")
-    
-    # JSON Readback & Parity
-    with open(json_path, "r", encoding="utf-8") as f:
-        json_data = json.load(f)
-    assert len(json_data) == 1
-    assert list(json_data[0].keys()) == REVIEW_QUEUE_COLUMNS
-    
-    # XLSX Readback & Parity (using ZipFile/XML)
-    with ZipFile(xlsx_path, 'r') as zip_ref:
-        with zip_ref.open('xl/sharedStrings.xml') as f:
-            tree = ET.parse(f)
-            shared_strings = [t.text for t in tree.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t')]
-        
-        with zip_ref.open('xl/worksheets/sheet1.xml') as f:
-            tree = ET.parse(f)
-            first_row = tree.find('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row[@r="1"]')
-            header_v_elements = first_row.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v')
-            xlsx_headers = [shared_strings[int(v.text)] for v in header_v_elements]
-            all_rows = tree.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row')
-            xlsx_row_count = len(all_rows) - 1
-    
-    assert len(xlsx_headers) == 20
-    assert xlsx_headers == REVIEW_QUEUE_COLUMNS
-    assert xlsx_row_count == 1
-    assert xlsx_headers == list(json_data[0].keys())
-
-def test_strict_token_discipline():
-    # Final Frozen Notes Vocabulary (Phase 10 Hardened)
-    ALLOWED_TOKENS = {
-        "[DQ:SAFE_AUTO_PROJECTED]",
-        "[DQ:SUGGESTION_ONLY]",
-        "[DQ:BLOCKED]",
-        "[DQ:REVIEW_REQUIRED]",
-        "[CONFLICT:STRUCTURAL_RISK]",
-        "[CONFLICT:SAFETY_VETO]",
-        "[KEEP:CURRENT_VALUE]",
-        "[NO_CANDIDATE]"
+    # Test Arabic
+    issue_ar = {
+        "key": "contact_with_us",
+        "locale": "ar",
+        "source": "ar_locale_qc"
     }
-    
-    def check_row_tokens(row, expected_token=None):
-        notes = row.get("notes", "")
-        # Extract segments that look like tokens [ABC:XYZ]
-        found_tokens = re.findall(r"\[[A-Z_:]+]", notes)
-        for t in found_tokens:
-            assert t in ALLOWED_TOKENS, f"Unexpected token variant found: {t}"
-        if expected_token:
-            assert expected_token in found_tokens, f"Expected token {expected_token} not found in {notes}"
+    value_ar = old_value_for_issue(issue_ar, en_data, ar_data)
+    assert value_ar == "اتصل بنا"
 
-    # Verify semantic row categories
-    # 1. safe_auto_projected (Mechanical)
-    issue_safe = {
-        "key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
-        "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc", "needs_review": False
+def test_old_value_for_issue_prefers_direct_match():
+    en_data = {
+        "contact_with_us": "Direct Match",
+        "some.prefix.contact_with_us": "Suffix Match"
     }
-    # 2. suggestion_only (Semantic rewrite)
-    issue_suggest = {
-        "key": "key2", "locale": "ar", "issue_type": "meaning_loss", "severity": "medium",
-        "current_value": "Submit", "suggested_fix": "Finish registration", "source": "ar_qc"
-    }
-    # 3. blocked_brand (Safety block)
-    issue_blocked = {
-        "key": "key3", "locale": "ar", "issue_type": "meaning_loss", "severity": "medium",
-        "current_value": "Bkash Pay", "suggested_fix": "bkash pay", "source": "ar_qc"
-    }
-    # 4. structural_conflict (Tag mismatch)
-    issue_conflict = {
-        "key": "key4", "locale": "ar", "issue_type": "tag_mismatch", "severity": "medium",
-        "current_value": "<b>OK</b>", "suggested_fix": "OK", "source": "ar_qc"
-    }
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
-            "k1": "Hello", "key2": "Submit", "key3": "Bkash Pay", "key4": "<b>OK</b>"
-        })
-        rows = build_review_queue([issue_safe, issue_suggest, issue_blocked, issue_conflict], _runtime())
-        row_map = {row["key"]: row for row in rows}
-        
-        # PROOF OF SEMANTIC DISTINCTION
-        # Safe
-        check_row_tokens(row_map["k1"], "[DQ:SAFE_AUTO_PROJECTED]")
-        
-        # Suggestion Only (Must NOT be BLOCKED)
-        check_row_tokens(row_map["key2"], "[DQ:SUGGESTION_ONLY]")
-        assert "[DQ:BLOCKED]" not in row_map["key2"]["notes"]
-        
-        # Safety Block (Identity mutation)
-        check_row_tokens(row_map["key3"], "[DQ:BLOCKED]")
-        check_row_tokens(row_map["key3"], "[CONFLICT:SAFETY_VETO]")
-        
-        # Structural Conflict
-        check_row_tokens(row_map["key4"], "[DQ:BLOCKED]")
-        check_row_tokens(row_map["key4"], "[CONFLICT:STRUCTURAL_RISK]")
-
-def test_workflow_semantics_hardened():
-    # 1. Safe move (Mechanical)
-    r1 = _normalize_review_row({
-        "old_value": "Hello", "suggested_fix": "Hello.", "approved_new": "Hello.", "needs_review": "No"
-    })
-    assert r1["needs_review"] == "No"
-    
-    # 2. Suggestion only (Emptied by DQ)
-    r2 = _normalize_review_row({
-        "old_value": "Hello", "suggested_fix": "Finish registration", "approved_new": "", "needs_review": "No"
-    })
-    assert r2["needs_review"] == "Yes" # Forced by Phase 10 logic
-    
-    # 3. No-Op (Whitespace) -> Suppressed in build_review_queue loop, but _normalize handles edge cases
-    r3 = _normalize_review_row({
-        "old_value": "Hello", "suggested_fix": "Hello", "approved_new": "", "needs_review": "No"
-    })
-    assert r3["suggested_fix"] == "" # Cleared effective-only
-    assert r3["needs_review"] == "Yes"
-
-================
-File: tests/test_decision_quality.py
-================
-import pytest
-from l10n_audit.reports.report_aggregator import _resolve_candidate_value, _project_approved_new, _classify_decision_quality
-
-def get_row_fields(cur, fix, severity="info", needs_review=False):
     issue = {
-        "current_value": cur,
-        "suggested_fix": fix,
-        "severity": severity,
-        "needs_review": needs_review,
-        "details": {}
+        "key": "contact_with_us",
+        "locale": "en"
     }
-    res = _resolve_candidate_value(issue, cur, fix)
-    approved = _project_approved_new(issue, res)
-    dq = _classify_decision_quality(issue, res, approved)
-    return approved, dq
-
-def test_refined_dq_safe_bucket():
-    # 1. Whitespace (Mechanical) -> If cur.strip() == fix.strip(), resolution is current_value -> Empty projection.
-    approved, dq = get_row_fields("  hello  ", "hello")
-    assert approved == "" # Deduplicated to current value
-    
-    # 2. Punctuation Normalization (Mechanical) -> SAFE_AUTO_PROJECTED
-    approved, dq = get_row_fields("Hello", "Hello.")
-    assert approved == "Hello."
-    assert dq["decision_quality"] == "safe_auto_projected"
-    
-    # 3. Harmless Case Normalization -> SAFE_AUTO_PROJECTED
-    # Note: Phase 7 is case-sensitive, so brands are NOT in this bucket.
-    approved, dq = get_row_fields("EMAIL", "Email")
-    assert approved == "Email"
-    assert dq["decision_quality"] == "safe_auto_projected"
-    
-    # 4. Low-risk Typo Correction (mision -> mission) -> SAFE_AUTO_PROJECTED
-    approved, dq = get_row_fields("The mision is", "The mission is")
-    assert approved == "The mission is"
-    assert dq["decision_quality"] == "safe_auto_projected"
-
-def test_phase8_semantic_blocking():
-    # 5. Semantic Rewrite (Submit -> Send) -> SUGGESTION_ONLY
-    approved, dq = get_row_fields("Submit your form", "Send your document")
-    assert approved == "" # Semantic change is NOT mechanical
-    assert dq["decision_quality"] == "suggestion_only"
-    
-    # 6. Phrase Expansion (Pay -> Pay Now) -> SUGGESTION_ONLY
-    approved, dq = get_row_fields("Pay", "Pay Now")
-    assert approved == "" # expansion is NOT mechanical
-    assert dq["decision_quality"] == "suggestion_only"
-
-def test_safety_priority_over_dq():
-    # 7. Brand safety veto is now exact-case (Phase 7 tightening).
-    # Bkash -> bKash is now a CONFLICT (identity violation).
-    # This MUST block approved_new and result in dq="blocked"
-    approved, dq = get_row_fields("Bkash", "bKash")
-    assert approved == ""
-    assert dq["decision_quality"] == "blocked"
-    assert dq["decision_reason"] == "safety_gate"
-
-def test_levenshtein_distance_logic():
-    # Ensure dist > 2 is blocked (Submit -> Send)
-    from l10n_audit.reports.report_aggregator import _levenshtein_distance
-    assert _levenshtein_distance("submit", "send") > 2
-    assert _levenshtein_distance("mision", "mission") == 1
-
-================
-File: tests/test_final_report_reconciliation.py
-================
-import pytest
-import json
-from pathlib import Path
-from l10n_audit.reports.report_aggregator import build_review_queue, create_analytical_payload
-
-def _runtime():
-    return type("Runtime", (), {
-        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
-        "source_locale": "en", "target_locales": ("ar",),
-        "results_dir": ".", "project_root": Path(".")
-    })()
-
-def test_phase11_real_reconciliation_path():
-    # Proof of reconciling the REAL report-generation path against the final filtered queue.
-    
-    # 1. ACTIONABLE Safe fix
-    i1 = {"key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
-          "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc"}
-    
-    # 2. ACTIONABLE Review item (semantic)
-    i2 = {"key": "k2", "locale": "ar", "issue_type": "meaning_loss", "severity": "high",
-          "current_value": "Submit", "suggested_fix": "Finish", "source": "ar_qc"}
-    
-    # 3. ACTIONABLE Blocked item (safety)
-    i3 = {"key": "k3", "locale": "ar", "issue_type": "brand", "severity": "critical",
-          "current_value": "Bkash", "suggested_fix": "bkash", "source": "ar_qc"}
-    
-    # 4. SUPPRESSED NOISE (Trivial)
-    i4 = {"key": "k4", "locale": "ar", "issue_type": "noise", "severity": "low",
-          "current_value": "same", "suggested_fix": "same  ", "source": "ar_qc"}
-
-    issues = [i1, i2, i3, i4]
-    
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
-            "k1": "Hello", "k2": "Submit", "k3": "Bkash", "k4": "same"
-        })
-        
-        # Step A: Generate filtered operational truth
-        review_rows = build_review_queue(issues, _runtime())
-        
-        # Step B: Call REAL report path
-        # Mocking auxiliary components for isolation
-        reports = {"ar_qc": {}}
-        missing = ["dummy.json"]
-        summary_raw = {"total_issues": 4} # Pre-filtered
-        safe_fixes_raw = {"available": 1}
-        source_status = {"ar_qc": "ok"}
-        
-        payload = create_analytical_payload(
-            review_rows=review_rows,
-            issues=issues,
-            reports=reports,
-            missing=missing,
-            summary=summary_raw,
-            safe_fixes=safe_fixes_raw,
-            source_status=source_status
-        )
-        
-        # PROOF 1: Actionable Counts match strictly filtered Truth
-        res_summary = payload["summary"]
-        assert res_summary["total_issues"] == 3 # k4 excluded
-        assert res_summary["critical_issues"] == 2 # k2, k3
-        assert res_summary["safe_fixes_available"] == 1 # k1
-        assert res_summary["review_required_issues"] == 2 # k2, k3
-        assert res_summary["blocked_issues"] == 1 # k3
-        
-        # PROOF 2: Analytical Sections reconcile with Filtered rows
-        # by_severity check
-        assert res_summary["by_severity"]["critical"] == 1 # k3
-        assert res_summary["by_severity"]["high"] == 1     # k2
-        assert res_summary["by_severity"]["low"] == 1      # k1
-        assert "noise" not in res_summary["by_issue_type"], "Suppressed noise leaked into buckets"
-        
-        # by_source check
-        assert res_summary["by_source"]["ar_qc"] == 3
-        
-        # PROOF 3: Operational Queue Parity
-        assert len(payload["review_queue"]) == 3
-        assert payload["review_queue"] == review_rows
-
-def test_final_report_section_stability():
-    # Verify that the report payload preserves all required sections as per frozen contract
-    mock_sum = {"total_issues": 0}
-    mock_safe = {"available": 0}
-    payload = create_analytical_payload([], [], {}, [], mock_sum, mock_safe, {})
-    
-    sections = [
-        "summary", "missing_reports", "included_sources", "priority_order",
-        "recommendations", "source_status", "review_queue", "issues"
-    ]
-    for section in sections:
-        assert section in payload
-    
-    summary_sections = [
-        "total_issues", "critical_issues", "safe_fixes_available",
-        "review_required_issues", "blocked_issues",
-        "by_severity", "by_source", "by_issue_type"
-    ]
-    for s in summary_sections:
-        assert s in payload["summary"]
-
-================
-File: tests/test_noise_suppression.py
-================
-import pytest
-from l10n_audit.reports.report_aggregator import build_review_queue
-from unittest.mock import MagicMock
-
-def _runtime():
-    return type("Runtime", (), {
-        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
-        "source_locale": "en", "target_locales": ("ar",)
-    })()
-
-def test_noise_suppression_logic():
-    # Issue 1: Real suggested fix (Actionable) -> KEEP
-    issue1 = {
-        "key": "k1", "locale": "ar", "issue_type": "translation_error", "severity": "medium",
-        "current_value": "Old", "suggested_fix": "New", "source": "ar_qc"
-    }
-    # Issue 2: Keep current value (Noise) -> SUPPRESS
-    issue2 = {
-        "key": "k2", "locale": "ar", "issue_type": "translation_error", "severity": "medium",
-        "current_value": "Same", "suggested_fix": "Same", "source": "ar_qc"
-    }
-    # Issue 3: No candidate found (Noise) -> SUPPRESS
-    issue3 = {
-        "key": "k3", "locale": "ar", "issue_type": "translation_error", "severity": "medium",
-        "current_value": "Test", "suggested_fix": "", "source": "ar_qc"
-    }
-    # Issue 4: Tag Conflict (Meaningful mismatch) -> KEEP
-    issue4 = {
-        "key": "k4", "locale": "ar", "issue_type": "tag_mismatch", "severity": "medium",
-        "current_value": "<b>Val</b>", "suggested_fix": "Val", # Conflict
-        "source": "ar_qc"
-    }
-    # Issue 5: Brand Safety Block (Meaningful block) -> KEEP
-    issue5 = {
-        "key": "k5", "locale": "ar", "issue_type": "meaning_loss", "severity": "medium",
-        "current_value": "Bkash payment", "suggested_fix": "Brash payment", # Safety block
-        "source": "ar_qc"
-    }
-
-    issues = [issue1, issue2, issue3, issue4, issue5]
-    
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
-            "k1": "Old", "k2": "Same", "k3": "Test", "k4": "<b>Val</b>", "k5": "Bkash payment"
-        })
-        
-        rows = build_review_queue(issues, _runtime())
-        
-        # Expected results:
-        # k1: Keep (New fix)
-        # k2: Suppress (Same)
-        # k3: Suppress (No candidate)
-        # k4: Keep (CONFLICT:STRUCTURAL_RISK)
-        # k5: Keep (CONFLICT:SAFETY_VETO / DQ:BLOCKED)
-        
-        keys = set(row["key"] for row in rows)
-        assert "k1" in keys
-        assert "k4" in keys
-        assert "k5" in keys
-        assert "k2" not in keys
-        assert "k3" not in keys
-        assert len(rows) == 3
+    value = old_value_for_issue(issue, en_data, {})
+    assert value == "Direct Match"
 
 ================
 File: .github/workflows/jekyll-gh-pages.yml
@@ -8580,7 +8040,7 @@ File: test_proj/assets/language/ar.json
 ================
 File: test_proj/assets/language/en.json
 ================
-{"hello": "world"}
+{"messages": {"contact_with_us": "Contact Us"}}
 
 ================
 File: test_proj/lib/main.dart
@@ -9896,6 +9356,195 @@ def test_run_audit_empty_dir_project(tmp_path):
     assert "Invalid project configuration" in str(exc.value)
 
 ================
+File: tests/test_apply_cycle_closure.py
+================
+import pytest
+from pathlib import Path
+from l10n_audit.reports.report_aggregator import (
+    build_review_queue, 
+    apply_workflow_state_to_rows, 
+    create_analytical_payload,
+    compute_text_hash
+)
+
+def _runtime():
+    return type("Runtime", (), {
+        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
+        "source_locale": "en", "target_locales": ("ar",),
+        "results_dir": ".", "project_root": Path("."), "plan_id": "P1"
+    })()
+
+def test_phase12_full_cycle_apply_closure():
+    # Proof of full-cycle apply closure using the real function chain.
+    i1 = {"key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
+          "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc"}
+    
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
+            "k1": "Hello"
+        })
+        
+        # Step 1: Initial Queue
+        r1_rows = build_review_queue([i1], _runtime())
+        plan_id = r1_rows[0]["plan_id"]
+        h1 = r1_rows[0]["source_hash"]
+        
+        # Step 2: SIMULATE APPLY (Persisted State in Workflow)
+        workflow_state = {
+            plan_id: {
+                "approved_new": "Hello.",
+                "status": "applied",
+                "source_hash": h1
+            }
+        }
+        
+        # Step 3: RERUN (Source is now "Hello.")
+        i1_rerun = {"key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
+                    "current_value": "Hello.", "suggested_fix": "Hello.", "source": "ar_qc"}
+        
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
+            "k1": "Hello."
+        })
+        
+        r2_rows = build_review_queue([i1_rerun], _runtime())
+        
+        # PROOF 1: Resolved row is suppressed (Closure confirmed)
+        assert len(r2_rows) == 0
+        
+        # Step 4: Analytical Closure
+        payload = create_analytical_payload(
+            review_rows=r2_rows,
+            issues=[i1_rerun],
+            reports={"ar_qc": {}},
+            missing=[],
+            summary={"total_issues": 1},
+            safe_fixes={"available": 0},
+            source_status={"ar_qc": "ok"}
+        )
+        
+        # PROOF 2: Summary reflects suppression (0 issues actionable)
+        assert payload["summary"]["total_issues"] == 0
+        assert payload["summary"]["review_required_issues"] == 0
+
+def test_phase12_stale_rerun_proof():
+    # Proof of stale-source defense: explicit stale marking for identity-matches with content shifts.
+    
+    # 1. State: Applied to "Hello" (H1)
+    h1 = compute_text_hash("Hello")
+    workflow_state = {
+        "FIXED_ID": {
+            "approved_new": "Hello.",
+            "status": "applied",
+            "source_hash": h1
+        }
+    }
+    
+    # 2. Rerun: Current row has "Hi" (H2) and we simulate an ID match to test the stale-check logic
+    h2 = compute_text_hash("Hi")
+    current_row = {
+        "plan_id": "FIXED_ID", # FORCED IDENTITY MATCH
+        "key": "k1", "locale": "ar", "old_value": "Hi", "approved_new": "",
+        "source_hash": h2, "status": "pending", "notes": "Initial Issue"
+    }
+    
+    # ACT
+    reprojected = apply_workflow_state_to_rows([current_row], workflow_state)
+    r = reprojected[0]
+    
+    # PROOF 3: Row is marked STALE due to hash mismatch (Closure interrupted safely)
+    assert r["status"] == "stale"
+    assert r["needs_review"] == "Yes"
+    assert "[DQ:STALE_DECISION]" in r["notes"]
+    assert r["approved_new"] != "Hello." # Silent application blocked
+    
+    # ACT: Reconciled analytical payload
+    payload = create_analytical_payload([r], [{}], {}, [], {"total_issues": 1}, {"available": 0}, {})
+    
+    # PROOF 4: Reconciled analytical state reflects the Stale actionable item correctly
+    assert payload["summary"]["total_issues"] == 1
+    assert payload["summary"]["review_required_issues"] == 1
+    assert payload["summary"]["safe_fixes_available"] == 0
+
+================
+File: tests/test_apply_side_closure.py
+================
+import pytest
+from pathlib import Path
+from l10n_audit.reports.report_aggregator import (
+    build_review_queue, 
+    apply_workflow_state_to_rows, 
+    compute_text_hash
+)
+
+def _runtime():
+    return type("Runtime", (), {
+        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
+        "source_locale": "en", "target_locales": ("ar",),
+        "results_dir": ".", "project_root": Path("."), "plan_id": "P1"
+    })()
+
+def test_phase12_resolved_row_suppression():
+    # PROOF: Applied rows do not reappear if they become no-ops in the next run.
+    issues = [{
+        "key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
+        "current_value": "Hello.", "suggested_fix": "Hello.", "source": "ar_qc"
+    }]
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
+            "k1": "Hello."
+        })
+        review_rows = build_review_queue(issues, _runtime())
+        # Row is suppressed because suggestion == current.
+        assert len(review_rows) == 0
+
+def test_phase12_stale_row_defense():
+    # PROOF: Decisions are invalidated if source text changes (Hash mismatch).
+    h1 = compute_text_hash("OldText")
+    ws_entry = {
+        "approved_new": "NewText",
+        "status": "applied",
+        "source_hash": h1
+    }
+    workflow_state = {"P1": ws_entry}
+    
+    h2 = compute_text_hash("MutatedText")
+    current_row = {
+        "plan_id": "P1",
+        "key": "k1", "locale": "ar", "old_value": "MutatedText",
+        "approved_new": "", # Initial state from build_review_queue
+        "source_hash": h2, "status": "pending", "notes": "Issue found"
+    }
+    
+    result = apply_workflow_state_to_rows([current_row], workflow_state)
+    reprojected = result[0]
+    
+    assert reprojected["status"] == "stale"
+    assert "[DQ:STALE_DECISION]" in reprojected["notes"]
+    assert reprojected["needs_review"] == "Yes"
+    # Previous approval was NOT applied because it's unsafe
+    assert reprojected["approved_new"] != "NewText"
+
+def test_phase12_deterministic_applied_transition():
+    # PROOF: Transitions remain deterministic if hashes match.
+    h1 = compute_text_hash("ExactText")
+    ws_entry = {
+        "approved_new": "AppliedText",
+        "status": "applied",
+        "source_hash": h1
+    }
+    workflow_state = {"P1": ws_entry}
+    current_row = {
+        "plan_id": "P1",
+        "key": "k1", "locale": "ar", "old_value": "ExactText",
+        "approved_new": "",
+        "source_hash": h1, "status": "pending"
+    }
+    result = apply_workflow_state_to_rows([current_row], workflow_state)
+    reprojected = result[0]
+    assert reprojected["status"] == "applied"
+    assert reprojected["approved_new"] == "AppliedText"
+
+================
 File: tests/test_ar_routing_shadow.py
 ================
 import pytest
@@ -10333,10 +9982,10 @@ def __mock_setup(monkeypatch, issues, respect_routing):
 def test_autofix_optimization_respects_routing(monkeypatch):
     """Test reduction of fixes when flag is enabled: only 'auto_fix' passes."""
     issues = [
-        {"key": "k1", "decision": {"route": "auto_fix"}, "new": "fix1"},
-        {"key": "k2", "decision": {"route": "ai_review"}, "new": "fix2"},
-        {"key": "k3", "decision": {"route": "manual_review"}, "new": "fix3"},
-        {"key": "k4", "decision": {"route": "dropped"}, "new": "fix4"},
+        {"key": "k1", "source": "locale_qc", "decision": {"route": "auto_fix"}, "old": "before", "new": "fix1"},
+        {"key": "k2", "source": "locale_qc", "decision": {"route": "ai_review"}, "old": "before", "new": "fix2"},
+        {"key": "k3", "source": "locale_qc", "decision": {"route": "manual_review"}, "old": "before", "new": "fix3"},
+        {"key": "k4", "source": "locale_qc", "decision": {"route": "dropped"}, "old": "before", "new": "fix4"},
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=True)
@@ -10351,9 +10000,9 @@ def test_autofix_optimization_respects_routing(monkeypatch):
 def test_autofix_fallback_without_decision(monkeypatch):
     """Test fallback functionality: if an issue lacks 'decision', it defaults to 'auto_fix'."""
     issues = [
-        {"key": "k1", "new": "fix1"},  # Legacy data without decision key
-        {"key": "k2", "decision": {}, "new": "fix2"}, # Empty decision dict
-        {"key": "k3", "decision": {"route": None}, "new": "fix3"}, # Explicit None
+        {"key": "k1", "source": "locale_qc", "old": "before", "new": "fix1"},  # Legacy data without decision key
+        {"key": "k2", "source": "locale_qc", "decision": {}, "old": "before", "new": "fix2"}, # Empty decision dict
+        {"key": "k3", "source": "locale_qc", "decision": {"route": None}, "old": "before", "new": "fix3"}, # Explicit None
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=True)
@@ -10367,9 +10016,9 @@ def test_autofix_fallback_without_decision(monkeypatch):
 def test_autofix_routing_disabled_no_filter(monkeypatch):
     """Test functionality when 'respect_routing' is disabled: All issues are passed to builder."""
     issues = [
-        {"key": "k1", "decision": {"route": "ai_review"}, "new": "fix1"},
-        {"key": "k2", "decision": {"route": "auto_fix"}, "new": "fix2"},
-        {"key": "k3", "decision": {"route": "manual_review"}, "new": "fix3"},
+        {"key": "k1", "source": "locale_qc", "decision": {"route": "ai_review"}, "old": "before", "new": "fix1"},
+        {"key": "k2", "source": "locale_qc", "decision": {"route": "auto_fix"}, "old": "before", "new": "fix2"},
+        {"key": "k3", "source": "locale_qc", "decision": {"route": "manual_review"}, "old": "before", "new": "fix3"},
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=False)
@@ -10383,9 +10032,9 @@ def test_autofix_routing_disabled_no_filter(monkeypatch):
 def test_metrics_injected_to_metadata(monkeypatch):
     """Test that skipped calls increment the would_skip_autofix metric."""
     issues = [
-        {"key": "k1", "decision": {"route": "auto_fix"}, "new": "fix1"},
-        {"key": "k2", "decision": {"route": "ai_review"}, "new": "fix2"},
-        {"key": "k3", "decision": {"route": "dropped"}, "new": "fix3"},
+        {"key": "k1", "source": "locale_qc", "decision": {"route": "auto_fix"}, "old": "before", "new": "fix1"},
+        {"key": "k2", "source": "locale_qc", "decision": {"route": "ai_review"}, "old": "before", "new": "fix2"},
+        {"key": "k3", "source": "locale_qc", "decision": {"route": "dropped"}, "old": "before", "new": "fix3"},
     ]
     
     runtime = __mock_setup(monkeypatch, issues, respect_routing=True)
@@ -11364,6 +11013,172 @@ def test_get_context_profile_returns_profile_when_set():
     assert isinstance(get_context_profile(_Rt()), ContextProfile)
 
 ================
+File: tests/test_contract_freeze.py
+================
+import pytest
+import os
+import json
+import re
+from pathlib import Path
+from zipfile import ZipFile
+import xml.etree.ElementTree as ET
+from l10n_audit.reports.report_aggregator import build_review_queue, REVIEW_QUEUE_COLUMNS, _normalize_review_row
+from l10n_audit.core.audit_runtime import write_simple_xlsx
+
+def _runtime():
+    return type("Runtime", (), {
+        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
+        "source_locale": "en", "target_locales": ("ar",),
+        "results_dir": "."
+    })()
+
+def test_exact_20_column_freeze():
+    # 1. Assert exactly 20 columns in the static contract
+    assert len(REVIEW_QUEUE_COLUMNS) == 20
+    
+    # 2. Verify exact ordered parity of a representative materialized row
+    issue = {
+        "key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
+        "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc",
+        "needs_review": False
+    }
+    
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {"k1": "Hello"})
+        rows = build_review_queue([issue], _runtime())
+        assert len(rows) == 1
+        row = rows[0]
+        
+        # EXACT PUBLIC column count and order check (Exclude internal metadata)
+        actual_keys = [k for k in row.keys() if not k.startswith("_")]
+        assert len(actual_keys) == 20
+        assert actual_keys == REVIEW_QUEUE_COLUMNS
+
+def test_json_xlsx_parity_readback(tmp_path):
+    rows = [
+        {col: f"val_{i}" for i, col in enumerate(REVIEW_QUEUE_COLUMNS)}
+    ]
+    json_path = tmp_path / "rq.json"
+    xlsx_path = tmp_path / "rq.xlsx"
+    
+    # Export
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(rows, f)
+    write_simple_xlsx(rows, REVIEW_QUEUE_COLUMNS, xlsx_path, sheet_name="Review Queue")
+    
+    # JSON Readback & Parity
+    with open(json_path, "r", encoding="utf-8") as f:
+        json_data = json.load(f)
+    assert len(json_data) == 1
+    assert list(json_data[0].keys()) == REVIEW_QUEUE_COLUMNS
+    
+    # XLSX Readback & Parity (using ZipFile/XML)
+    with ZipFile(xlsx_path, 'r') as zip_ref:
+        with zip_ref.open('xl/sharedStrings.xml') as f:
+            tree = ET.parse(f)
+            shared_strings = [t.text for t in tree.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t')]
+        
+        with zip_ref.open('xl/worksheets/sheet1.xml') as f:
+            tree = ET.parse(f)
+            first_row = tree.find('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row[@r="1"]')
+            header_v_elements = first_row.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v')
+            xlsx_headers = [shared_strings[int(v.text)] for v in header_v_elements]
+            all_rows = tree.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row')
+            xlsx_row_count = len(all_rows) - 1
+    
+    assert len(xlsx_headers) == 20
+    assert xlsx_headers == REVIEW_QUEUE_COLUMNS
+    assert xlsx_row_count == 1
+    assert xlsx_headers == list(json_data[0].keys())
+
+def test_strict_token_discipline():
+    # Final Frozen Notes Vocabulary (Phase 10 Hardened)
+    ALLOWED_TOKENS = {
+        "[DQ:SAFE_AUTO_PROJECTED]",
+        "[DQ:SUGGESTION_ONLY]",
+        "[DQ:BLOCKED]",
+        "[DQ:REVIEW_REQUIRED]",
+        "[CONFLICT:STRUCTURAL_RISK]",
+        "[CONFLICT:SAFETY_VETO]",
+        "[KEEP:CURRENT_VALUE]",
+        "[NO_CANDIDATE]"
+    }
+    
+    def check_row_tokens(row, expected_token=None):
+        notes = row.get("notes", "")
+        # Extract segments that look like tokens [ABC:XYZ]
+        found_tokens = re.findall(r"\[[A-Z_:]+]", notes)
+        for t in found_tokens:
+            assert t in ALLOWED_TOKENS, f"Unexpected token variant found: {t}"
+        if expected_token:
+            assert expected_token in found_tokens, f"Expected token {expected_token} not found in {notes}"
+
+    # Verify semantic row categories
+    # 1. safe_auto_projected (Mechanical)
+    issue_safe = {
+        "key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
+        "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc", "needs_review": False
+    }
+    # 2. suggestion_only (Semantic rewrite)
+    issue_suggest = {
+        "key": "key2", "locale": "ar", "issue_type": "meaning_loss", "severity": "medium",
+        "current_value": "Submit", "suggested_fix": "Finish registration", "source": "ar_qc"
+    }
+    # 3. blocked_brand (Safety block)
+    issue_blocked = {
+        "key": "key3", "locale": "ar", "issue_type": "meaning_loss", "severity": "medium",
+        "current_value": "Bkash Pay", "suggested_fix": "bkash pay", "source": "ar_qc"
+    }
+    # 4. structural_conflict (Tag mismatch)
+    issue_conflict = {
+        "key": "key4", "locale": "ar", "issue_type": "tag_mismatch", "severity": "medium",
+        "current_value": "<b>OK</b>", "suggested_fix": "OK", "source": "ar_qc"
+    }
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
+            "k1": "Hello", "key2": "Submit", "key3": "Bkash Pay", "key4": "<b>OK</b>"
+        })
+        rows = build_review_queue([issue_safe, issue_suggest, issue_blocked, issue_conflict], _runtime())
+        row_map = {row["key"]: row for row in rows}
+        
+        # PROOF OF SEMANTIC DISTINCTION
+        # Safe
+        check_row_tokens(row_map["k1"], "[DQ:SAFE_AUTO_PROJECTED]")
+        
+        # Suggestion Only (Must NOT be BLOCKED)
+        check_row_tokens(row_map["key2"], "[DQ:SUGGESTION_ONLY]")
+        assert "[DQ:BLOCKED]" not in row_map["key2"]["notes"]
+        
+        # Safety Block (Identity mutation)
+        check_row_tokens(row_map["key3"], "[DQ:BLOCKED]")
+        check_row_tokens(row_map["key3"], "[CONFLICT:SAFETY_VETO]")
+        
+        # Structural Conflict
+        check_row_tokens(row_map["key4"], "[DQ:BLOCKED]")
+        check_row_tokens(row_map["key4"], "[CONFLICT:STRUCTURAL_RISK]")
+
+def test_workflow_semantics_hardened():
+    # 1. Safe move (Mechanical)
+    r1 = _normalize_review_row({
+        "old_value": "Hello", "suggested_fix": "Hello.", "approved_new": "Hello.", "needs_review": "No"
+    })
+    assert r1["needs_review"] == "No"
+    
+    # 2. Suggestion only (Emptied by DQ)
+    r2 = _normalize_review_row({
+        "old_value": "Hello", "suggested_fix": "Finish registration", "approved_new": "", "needs_review": "No"
+    })
+    assert r2["needs_review"] == "Yes" # Forced by Phase 10 logic
+    
+    # 3. No-Op (Whitespace) -> Suppressed in build_review_queue loop, but _normalize handles edge cases
+    r3 = _normalize_review_row({
+        "old_value": "Hello", "suggested_fix": "Hello", "approved_new": "", "needs_review": "No"
+    })
+    assert r3["suggested_fix"] == "" # Cleared effective-only
+    assert r3["needs_review"] == "Yes"
+
+================
 File: tests/test_controlled_consumption.py
 ================
 """
@@ -11993,6 +11808,72 @@ def test_signal_to_action_map_calibration_mode_absent():
         )
 
 ================
+File: tests/test_decision_quality.py
+================
+import pytest
+from l10n_audit.reports.report_aggregator import _resolve_candidate_value, _project_approved_new, _classify_decision_quality
+
+def get_row_fields(cur, fix, severity="info", needs_review=False):
+    issue = {
+        "current_value": cur,
+        "suggested_fix": fix,
+        "severity": severity,
+        "needs_review": needs_review,
+        "details": {}
+    }
+    res = _resolve_candidate_value(issue, cur, fix)
+    approved = _project_approved_new(issue, res)
+    dq = _classify_decision_quality(issue, res, approved)
+    return approved, dq
+
+def test_refined_dq_safe_bucket():
+    # 1. Whitespace (Mechanical) -> If cur.strip() == fix.strip(), resolution is current_value -> Empty projection.
+    approved, dq = get_row_fields("  hello  ", "hello")
+    assert approved == "" # Deduplicated to current value
+    
+    # 2. Punctuation Normalization (Mechanical) -> SAFE_AUTO_PROJECTED
+    approved, dq = get_row_fields("Hello", "Hello.")
+    assert approved == "Hello."
+    assert dq["decision_quality"] == "safe_auto_projected"
+    
+    # 3. Harmless Case Normalization -> SAFE_AUTO_PROJECTED
+    # Note: Phase 7 is case-sensitive, so brands are NOT in this bucket.
+    approved, dq = get_row_fields("EMAIL", "Email")
+    assert approved == "Email"
+    assert dq["decision_quality"] == "safe_auto_projected"
+    
+    # 4. Low-risk Typo Correction (mision -> mission) -> SAFE_AUTO_PROJECTED
+    approved, dq = get_row_fields("The mision is", "The mission is")
+    assert approved == "The mission is"
+    assert dq["decision_quality"] == "safe_auto_projected"
+
+def test_phase8_semantic_blocking():
+    # 5. Semantic Rewrite (Submit -> Send) -> SUGGESTION_ONLY
+    approved, dq = get_row_fields("Submit your form", "Send your document")
+    assert approved == "" # Semantic change is NOT mechanical
+    assert dq["decision_quality"] == "suggestion_only"
+    
+    # 6. Phrase Expansion (Pay -> Pay Now) -> SUGGESTION_ONLY
+    approved, dq = get_row_fields("Pay", "Pay Now")
+    assert approved == "" # expansion is NOT mechanical
+    assert dq["decision_quality"] == "suggestion_only"
+
+def test_safety_priority_over_dq():
+    # 7. Brand safety veto is now exact-case (Phase 7 tightening).
+    # Bkash -> bKash is now a CONFLICT (identity violation).
+    # This MUST block approved_new and result in dq="blocked"
+    approved, dq = get_row_fields("Bkash", "bKash")
+    assert approved == ""
+    assert dq["decision_quality"] == "blocked"
+    assert dq["decision_reason"] == "safety_gate"
+
+def test_levenshtein_distance_logic():
+    # Ensure dist > 2 is blocked (Submit -> Send)
+    from l10n_audit.reports.report_aggregator import _levenshtein_distance
+    assert _levenshtein_distance("submit", "send") > 2
+    assert _levenshtein_distance("mision", "mission") == 1
+
+================
 File: tests/test_feedback_engine.py
 ================
 """
@@ -12220,6 +12101,111 @@ def test_feedback_metrics_appears_in_metadata():
     assert "avg_confidence_by_route" in fb
     assert "risk_vs_rejection" in fb
     assert "signals_by_source" in fb
+
+================
+File: tests/test_final_report_reconciliation.py
+================
+import pytest
+import json
+from pathlib import Path
+from l10n_audit.reports.report_aggregator import build_review_queue, create_analytical_payload
+
+def _runtime():
+    return type("Runtime", (), {
+        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
+        "source_locale": "en", "target_locales": ("ar",),
+        "results_dir": ".", "project_root": Path(".")
+    })()
+
+def test_phase11_real_reconciliation_path():
+    # Proof of reconciling the REAL report-generation path against the final filtered queue.
+    
+    # 1. ACTIONABLE Safe fix
+    i1 = {"key": "k1", "locale": "ar", "issue_type": "punctuation", "severity": "low",
+          "current_value": "Hello", "suggested_fix": "Hello.", "source": "ar_qc"}
+    
+    # 2. ACTIONABLE Review item (semantic)
+    i2 = {"key": "k2", "locale": "ar", "issue_type": "meaning_loss", "severity": "high",
+          "current_value": "Submit", "suggested_fix": "Finish", "source": "ar_qc"}
+    
+    # 3. ACTIONABLE Blocked item (safety)
+    i3 = {"key": "k3", "locale": "ar", "issue_type": "brand", "severity": "critical",
+          "current_value": "Bkash", "suggested_fix": "bkash", "source": "ar_qc"}
+    
+    # 4. SUPPRESSED NOISE (Trivial)
+    i4 = {"key": "k4", "locale": "ar", "issue_type": "noise", "severity": "low",
+          "current_value": "same", "suggested_fix": "same  ", "source": "ar_qc"}
+
+    issues = [i1, i2, i3, i4]
+    
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
+            "k1": "Hello", "k2": "Submit", "k3": "Bkash", "k4": "same"
+        })
+        
+        # Step A: Generate filtered operational truth
+        review_rows = build_review_queue(issues, _runtime())
+        
+        # Step B: Call REAL report path
+        # Mocking auxiliary components for isolation
+        reports = {"ar_qc": {}}
+        missing = ["dummy.json"]
+        summary_raw = {"total_issues": 4} # Pre-filtered
+        safe_fixes_raw = {"available": 1}
+        source_status = {"ar_qc": "ok"}
+        
+        payload = create_analytical_payload(
+            review_rows=review_rows,
+            issues=issues,
+            reports=reports,
+            missing=missing,
+            summary=summary_raw,
+            safe_fixes=safe_fixes_raw,
+            source_status=source_status
+        )
+        
+        # PROOF 1: Actionable Counts match strictly filtered Truth
+        res_summary = payload["summary"]
+        assert res_summary["total_issues"] == 3 # k4 excluded
+        assert res_summary["critical_issues"] == 2 # k2, k3
+        assert res_summary["safe_fixes_available"] == 1 # k1
+        assert res_summary["review_required_issues"] == 2 # k2, k3
+        assert res_summary["blocked_issues"] == 1 # k3
+        
+        # PROOF 2: Analytical Sections reconcile with Filtered rows
+        # by_severity check
+        assert res_summary["by_severity"]["critical"] == 1 # k3
+        assert res_summary["by_severity"]["high"] == 1     # k2
+        assert res_summary["by_severity"]["low"] == 1      # k1
+        assert "noise" not in res_summary["by_issue_type"], "Suppressed noise leaked into buckets"
+        
+        # by_source check
+        assert res_summary["by_source"]["ar_qc"] == 3
+        
+        # PROOF 3: Operational Queue Parity
+        assert len(payload["review_queue"]) == 3
+        assert payload["review_queue"] == review_rows
+
+def test_final_report_section_stability():
+    # Verify that the report payload preserves all required sections as per frozen contract
+    mock_sum = {"total_issues": 0}
+    mock_safe = {"available": 0}
+    payload = create_analytical_payload([], [], {}, [], mock_sum, mock_safe, {})
+    
+    sections = [
+        "summary", "missing_reports", "included_sources", "priority_order",
+        "recommendations", "source_status", "review_queue", "issues"
+    ]
+    for section in sections:
+        assert section in payload
+    
+    summary_sections = [
+        "total_issues", "critical_issues", "safe_fixes_available",
+        "review_required_issues", "blocked_issues",
+        "by_severity", "by_source", "by_issue_type"
+    ]
+    for s in summary_sections:
+        assert s in payload["summary"]
 
 ================
 File: tests/test_final_report_schema.py
@@ -13937,6 +13923,72 @@ def test_rollback_key_must_equal_target_config_key():
     action = _make_approved_action(rollback_key="some.other.key")
     errors = _validate_approved_action(action)
     assert any("rollback_key" in e for e in errors)
+
+================
+File: tests/test_noise_suppression.py
+================
+import pytest
+from l10n_audit.reports.report_aggregator import build_review_queue
+from unittest.mock import MagicMock
+
+def _runtime():
+    return type("Runtime", (), {
+        "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
+        "source_locale": "en", "target_locales": ("ar",)
+    })()
+
+def test_noise_suppression_logic():
+    # Issue 1: Real suggested fix (Actionable) -> KEEP
+    issue1 = {
+        "key": "k1", "locale": "ar", "issue_type": "translation_error", "severity": "medium",
+        "current_value": "Old", "suggested_fix": "New", "source": "ar_qc"
+    }
+    # Issue 2: Keep current value (Noise) -> SUPPRESS
+    issue2 = {
+        "key": "k2", "locale": "ar", "issue_type": "translation_error", "severity": "medium",
+        "current_value": "Same", "suggested_fix": "Same", "source": "ar_qc"
+    }
+    # Issue 3: No candidate found (Noise) -> SUPPRESS
+    issue3 = {
+        "key": "k3", "locale": "ar", "issue_type": "translation_error", "severity": "medium",
+        "current_value": "Test", "suggested_fix": "", "source": "ar_qc"
+    }
+    # Issue 4: Tag Conflict (Meaningful mismatch) -> KEEP
+    issue4 = {
+        "key": "k4", "locale": "ar", "issue_type": "tag_mismatch", "severity": "medium",
+        "current_value": "<b>Val</b>", "suggested_fix": "Val", # Conflict
+        "source": "ar_qc"
+    }
+    # Issue 5: Brand Safety Block (Meaningful block) -> KEEP
+    issue5 = {
+        "key": "k5", "locale": "ar", "issue_type": "meaning_loss", "severity": "medium",
+        "current_value": "Bkash payment", "suggested_fix": "Brash payment", # Safety block
+        "source": "ar_qc"
+    }
+
+    issues = [issue1, issue2, issue3, issue4, issue5]
+    
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {
+            "k1": "Old", "k2": "Same", "k3": "Test", "k4": "<b>Val</b>", "k5": "Bkash payment"
+        })
+        
+        rows = build_review_queue(issues, _runtime())
+        
+        # Expected results:
+        # k1: Keep (New fix)
+        # k2: Suppress (Same)
+        # k3: Suppress (No candidate)
+        # k4: Keep (CONFLICT:STRUCTURAL_RISK)
+        # k5: Keep (CONFLICT:SAFETY_VETO / DQ:BLOCKED)
+        
+        keys = set(row["key"] for row in rows)
+        assert "k1" in keys
+        assert "k4" in keys
+        assert "k5" in keys
+        assert "k2" not in keys
+        assert "k3" not in keys
+        assert len(rows) == 3
 
 ================
 File: tests/test_results_retention_models.py
@@ -19817,491 +19869,6 @@ def test_prompt_contains_new_instructions():
     assert "العنوان" in prompt
 
 ================
-File: tests/test_report_candidate_projection.py
-================
-"""Tests for Phase 3 (candidate resolution) and Phase 4 (approval projection)
-in report_aggregator.py.
-
-Covers:
-  - _resolve_candidate_value
-  - _project_approved_new
-  - build_review_queue integration (conflict, safe, needs_review, identical)
-"""
-from __future__ import annotations
-
-from pathlib import Path
-
-import pytest
-
-from l10n_audit.reports.report_aggregator import (
-    _project_approved_new,
-    _resolve_candidate_value,
-    build_review_queue,
-)
-
-from conftest import write_json
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _runtime(tmp_path: Path, en: dict, ar: dict):
-    """Minimal runtime stub with real locale files on disk."""
-    en_file = tmp_path / "en.json"
-    ar_file = tmp_path / "ar.json"
-    write_json(en_file, en)
-    write_json(ar_file, ar)
-    return type(
-        "Runtime",
-        (),
-        {
-            "en_file": en_file,
-            "ar_file": ar_file,
-            "locale_format": "json",
-            "source_locale": "en",
-            "target_locales": ("ar",),
-        },
-    )()
-
-
-def _safe_resolution(candidate: str = "احفظ") -> dict:
-    return {
-        "candidate_value": candidate,
-        "resolution_mode": "suggested_fix",
-        "conflict_flag": "",
-        "notes_token": "[SAFE:SUGGESTED_FIX]",
-    }
-
-
-def _clean_issue(**overrides) -> dict:
-    base = {
-        "needs_review": False,
-        "severity": "low",
-        "details": {"semantic_risk": "", "review_reason": ""},
-    }
-    base.update(overrides)
-    return base
-
-
-# ===========================================================================
-# Part 1 — Unit tests for _resolve_candidate_value
-# ===========================================================================
-
-class TestResolveCandidateValue:
-
-    def test_c1_empty_suggestion(self):
-        result = _resolve_candidate_value({}, "حفظ", "")
-        assert result["candidate_value"] == ""
-        assert result["resolution_mode"] == "no_candidate"
-        assert result["conflict_flag"] == "EMPTY_SUGGESTION"
-        assert result["notes_token"] == "[NO_CANDIDATE]"
-
-    def test_c1_whitespace_only_suggestion(self):
-        result = _resolve_candidate_value({}, "حفظ", "   ")
-        assert result["resolution_mode"] == "no_candidate"
-        assert result["conflict_flag"] == "EMPTY_SUGGESTION"
-
-    def test_c2_identical_to_current(self):
-        result = _resolve_candidate_value({}, "حفظ", "حفظ")
-        assert result["candidate_value"] == "حفظ"
-        assert result["resolution_mode"] == "current_value"
-        assert result["conflict_flag"] == "IDENTICAL_TO_CURRENT"
-        assert result["notes_token"] == "[KEEP:CURRENT_VALUE]"
-
-    def test_c2_identical_ignores_surrounding_whitespace(self):
-        result = _resolve_candidate_value({}, "حفظ", " حفظ ")
-        assert result["resolution_mode"] == "current_value"
-        assert result["conflict_flag"] == "IDENTICAL_TO_CURRENT"
-
-    def test_c3_structural_risk_placeholder_mismatch(self):
-        result = _resolve_candidate_value({}, "مرحبا {{name}}", "مرحبا")
-        assert result["candidate_value"] == ""
-        assert result["resolution_mode"] == "conflict"
-        assert result["conflict_flag"] == "STRUCTURAL_RISK"
-        assert result["notes_token"] == "[CONFLICT:STRUCTURAL_RISK]"
-
-    def test_c4_structural_risk_tag_mismatch(self):
-        result = _resolve_candidate_value({}, "<b>Save</b>", "Save")
-        assert result["resolution_mode"] == "conflict"
-        assert result["conflict_flag"] == "STRUCTURAL_RISK"
-
-    def test_c4_structural_risk_newline_mismatch(self):
-        result = _resolve_candidate_value({}, "line1\nline2", "line1 line2")
-        assert result["resolution_mode"] == "conflict"
-        assert result["conflict_flag"] == "STRUCTURAL_RISK"
-
-    def test_c5_safe_suggested_fix(self):
-        result = _resolve_candidate_value({}, "حفظ", "احفظ")
-        assert result["candidate_value"] == "احفظ"
-        assert result["resolution_mode"] == "suggested_fix"
-        assert result["conflict_flag"] == ""
-        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
-
-    def test_always_returns_all_four_keys(self):
-        for fix in ("", "same", "different", "{{x}} mismatch"):
-            result = _resolve_candidate_value({}, "same", fix)
-            assert set(result.keys()) == {
-                "candidate_value", "resolution_mode", "conflict_flag", "notes_token"
-            }
-
-    def test_never_raises_on_none_inputs(self):
-        result = _resolve_candidate_value({}, None, None)
-        assert isinstance(result["candidate_value"], str)
-        assert result["resolution_mode"] == "no_candidate"
-
-    def test_matching_placeholders_not_flagged(self):
-        result = _resolve_candidate_value({}, "Hello {{name}}", "Hi {{name}}")
-        assert result["resolution_mode"] == "suggested_fix"
-        assert result["conflict_flag"] == ""
-
-
-# ===========================================================================
-# Part 2 — Unit tests for _project_approved_new
-# ===========================================================================
-
-class TestProjectApprovedNew:
-
-    def test_a1_no_candidate_returns_empty(self):
-        resolution = {
-            "resolution_mode": "no_candidate",
-            "candidate_value": "احفظ",
-            "conflict_flag": "EMPTY_SUGGESTION",
-            "notes_token": "[NO_CANDIDATE]",
-        }
-        assert _project_approved_new(_clean_issue(), resolution) == ""
-
-    def test_a2_conflict_returns_empty(self):
-        resolution = {
-            "resolution_mode": "conflict",
-            "candidate_value": "",
-            "conflict_flag": "STRUCTURAL_RISK",
-            "notes_token": "[CONFLICT:STRUCTURAL_RISK]",
-        }
-        assert _project_approved_new(_clean_issue(), resolution) == ""
-
-    def test_a3_needs_review_true_blocks_approval(self):
-        issue = _clean_issue(needs_review=True)
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a4_high_severity_blocks_approval(self):
-        issue = _clean_issue(severity="high")
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a5_critical_severity_blocks_approval(self):
-        issue = _clean_issue(severity="critical")
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a4_severity_check_is_case_insensitive(self):
-        issue = _clean_issue(severity="HIGH")
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a6_high_semantic_risk_blocks_approval(self):
-        issue = _clean_issue(details={"semantic_risk": "high", "review_reason": ""})
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a6_semantic_risk_case_insensitive(self):
-        issue = _clean_issue(details={"semantic_risk": "HIGH", "review_reason": ""})
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a7_review_reason_blocks_approval(self):
-        issue = _clean_issue(details={"semantic_risk": "", "review_reason": "meaning changed"})
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_a7_whitespace_only_review_reason_does_not_block(self):
-        issue = _clean_issue(current_value="حفظ", details={"semantic_risk": "", "review_reason": "   "})
-        assert _project_approved_new(issue, _safe_resolution("احفظ")) == "احفظ"
-
-    def test_a8_safe_suggested_fix_projects_approval(self):
-        issue = _clean_issue(current_value="حفظ")
-        result = _project_approved_new(issue, _safe_resolution("احفظ")) # Dist 1 (a-)
-        assert result == "احفظ"
-
-    @pytest.mark.parametrize("truthy_str", ["true", "yes", "1", "True", "YES"])
-    def test_a9_truthy_string_needs_review_blocks_approval(self, truthy_str: str):
-        issue = _clean_issue(needs_review=truthy_str)
-        assert _project_approved_new(issue, _safe_resolution()) == ""
-
-    def test_current_value_mode_does_not_auto_approve(self):
-        resolution = {
-            "resolution_mode": "current_value",
-            "candidate_value": "حفظ",
-            "conflict_flag": "IDENTICAL_TO_CURRENT",
-            "notes_token": "[KEEP:CURRENT_VALUE]",
-        }
-        assert _project_approved_new(_clean_issue(), resolution) == ""
-
-    def test_never_returns_none(self):
-        assert _project_approved_new(None, {}) is not None  # type: ignore[arg-type]
-        assert _project_approved_new({}, None) is not None  # type: ignore[arg-type]
-
-
-# ===========================================================================
-# Part 3 — Integration tests for build_review_queue
-# ===========================================================================
-
-class TestBuildReviewQueueIntegration:
-
-    def test_i1_conflict_clears_suggested_fix_and_adds_notes_token(self, tmp_path: Path):
-        """A structural mismatch in the suggestion must clear suggested_fix and stamp the notes."""
-        # current AR value has a placeholder; suggested (from AI) drops it → structural risk
-        ar_current = "مرحبا {{name}}"
-        en_val = "Hello {{name}}"
-        issue = {
-            "key": "greeting",
-            "locale": "ar",
-            "issue_type": "possible_meaning_loss",
-            "severity": "medium",
-            "message": "Meaning loss",
-            "source": "ar_semantic_qc",
-            "details": {"old": ar_current, "new": "مرحبا", "candidate_value": "مرحبا"},
-            "suggested_fix": "مرحبا",
-        }
-        runtime = _runtime(tmp_path, {"greeting": en_val}, {"greeting": ar_current})
-        rows = build_review_queue([issue], runtime)
-        assert len(rows) == 1
-        row = rows[0]
-        assert row["suggested_fix"] == ""
-        assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
-
-    def test_i2_safe_mechanical_suggestion_projects_approved_new(self, tmp_path: Path):
-        """A mechanical (punctuation) suggestion must auto-fill approved_new in Phase 8."""
-        ar_current = "حفظ"
-        suggested = "حفظ."  # Punctuation normalization
-        issue = {
-            "key": "save.button",
-            "locale": "ar",
-            "issue_type": "possible_meaning_loss",
-            "severity": "low",
-            "message": "Punctuation change",
-            "source": "ar_semantic_qc",
-            "needs_review": False,
-            "details": {
-                "old": ar_current,
-                "candidate_value": suggested,
-                "semantic_risk": "",
-                "review_reason": "",
-            },
-        }
-        runtime = _runtime(tmp_path, {"save.button": "Save."}, {"save.button": ar_current})
-        rows = build_review_queue([issue], runtime)
-        assert len(rows) == 1
-        row = rows[0]
-        assert row["suggested_fix"] == suggested
-        assert row["approved_new"] == suggested
-
-    def test_i3_needs_review_prevents_approved_new_projection(self, tmp_path: Path):
-        """needs_review=True must block approved_new even when the fix is structurally safe."""
-        ar_current = "حفظ"
-        suggested = "احفظ الملف"
-        issue = {
-            "key": "save.button",
-            "locale": "ar",
-            "issue_type": "possible_meaning_loss",
-            "severity": "low",
-            "message": "Needs human check",
-            "source": "ar_semantic_qc",
-            "needs_review": True,
-            "details": {
-                "old": ar_current,
-                "candidate_value": suggested,
-                "semantic_risk": "",
-                "review_reason": "",
-            },
-        }
-        runtime = _runtime(tmp_path, {"save.button": "Save File"}, {"save.button": ar_current})
-        rows = build_review_queue([issue], runtime)
-        assert len(rows) == 1
-        row = rows[0]
-        assert row["suggested_fix"] == suggested
-        assert row["approved_new"] == ""
-
-    def test_i4_identical_suggestion_stamps_keep_token_and_does_not_auto_approve(self, tmp_path: Path):
-        """When suggested == current, the row must get [KEEP:CURRENT_VALUE] in notes and empty approved_new."""
-        ar_current = "حفظ"
-        issue = {
-            "key": "save.button",
-            "locale": "ar",
-            "issue_type": "possible_meaning_loss",
-            "severity": "low",
-            "message": "No change needed",
-            "source": "ar_semantic_qc",
-            "needs_review": False,
-            "details": {
-                "old": ar_current,
-                "candidate_value": ar_current,   # identical to current
-                "semantic_risk": "",
-                "review_reason": "",
-            },
-        }
-        runtime = _runtime(tmp_path, {"save.button": "Save"}, {"save.button": ar_current})
-        rows = build_review_queue([issue], runtime)
-        # Phase 9: Identical suggestions are suppressed from the review queue
-        assert len(rows) == 0
-
-    def test_merge_path_conflict_clears_existing_suggested_fix_but_preserves_existing_approved_new(
-        self, tmp_path: Path
-    ):
-        """Two issues share (key, locale).
-
-        Issue 1 (safe):  produces suggested_fix="احفظ", approved_new="احفظ"
-        Issue 2 (conflict): {{name}} placeholder dropped → STRUCTURAL_RISK
-
-        Expected final row:
-          - suggested_fix == ""          (cleared by conflict)
-          - notes contains [CONFLICT:STRUCTURAL_RISK]
-          - approved_new == "احفظ"       (preserved — no destructive overwrite)
-        """
-        ar_current = "حفظ {{name}}"
-        safe_suggestion = "حفظ {{name}}." # Mechanical fix
-
-        # Issue 1 — safe: different text, no structural risk, no review blockers
-        issue_safe = {
-            "key": "save.button",
-            "locale": "ar",
-            "issue_type": "possible_meaning_loss",
-            "severity": "low",
-            "message": "Wording improvement",
-            "source": "ar_semantic_qc",
-            "needs_review": False,
-            "details": {
-                "old": ar_current,
-                "candidate_value": safe_suggestion,
-                "semantic_risk": "",
-                "review_reason": "",
-            },
-        }
-
-        # Issue 2 — conflict: drops the {{name}} placeholder
-        issue_conflict = {
-            "key": "save.button",
-            "locale": "ar",
-            "issue_type": "grammar_error",
-            "severity": "medium",
-            "message": "Grammar fix",
-            "source": "ar_locale_qc",
-            "needs_review": False,
-            "details": {
-                "old": ar_current,
-                "candidate_value": "احفظ",   # missing {{name}} → structural risk
-                "semantic_risk": "",
-                "review_reason": "",
-            },
-            "suggested_fix": "احفظ",
-        }
-
-        runtime = _runtime(
-            tmp_path,
-            {"save.button": "Save {{name}}"},
-            {"save.button": ar_current},
-        )
-        rows = build_review_queue([issue_safe, issue_conflict], runtime)
-
-        assert len(rows) == 1
-        row = rows[0]
-
-        # Conflict from issue 2 must clear suggested_fix
-        assert row["suggested_fix"] == ""
-
-        # Conflict token must appear in notes
-        assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
-
-        # approved_new set by issue 1 must survive — no destructive overwrite
-        assert row["approved_new"] == safe_suggestion
-
-================
-File: tests/test_report_dx_upgrades.py
-================
-import pytest
-from pathlib import Path
-from l10n_audit.reports.report_aggregator import build_review_queue, render_markdown
-from conftest import write_json
-
-def test_aggregator_filters_info_from_review_queue(tmp_path):
-    issues = [
-        {"key": "crit", "severity": "critical", "message": "Critical issue", "source": "s1", "issue_type": "t1"},
-        {"key": "info", "severity": "info", "message": "Info issue", "source": "s1", "issue_type": "t2"},
-    ]
-    runtime = type("RT", (), {
-        "en_file": tmp_path/"en.json", 
-        "ar_file": tmp_path/"ar.json", 
-        "source_locale": "en", 
-        "target_locales": ["ar"],
-        "locale_format": "json"
-    })()
-    write_json(runtime.en_file, {"crit": "v1", "info": "v2"})
-    write_json(runtime.ar_file, {"crit": "v1", "info": "v2"})
-
-    rows = build_review_queue(issues, runtime)
-    # Assert k2 (info) is missing
-    assert len(rows) == 1
-    assert rows[0]["key"] == "crit"
-
-def test_aggregator_filters_info_from_markdown(tmp_path):
-    issues = [
-        {"key": "crit", "severity": "critical", "message": "Critical issue", "source": "s1", "issue_type": "t1"},
-        {"key": "info", "severity": "info", "message": "Info issue", "source": "s1", "issue_type": "t2"},
-    ]
-    summary = {"total_issues": 2}
-    safe_fixes = {"available": 0}
-    review_rows = [{"key": "crit"}]
-    source_status = {"s1": "2 issues"}
-    
-    md = render_markdown(issues, summary, safe_fixes, review_rows, source_status, [])
-    
-    assert "[CRITICAL] `crit`" in md
-    assert "[INFO] `info`" not in md
-
-def test_aggregator_deduplicates_by_key(tmp_path):
-    issues = [
-        {"key": "dup", "severity": "high", "message": "Mixed script", "source": "ar_locale_qc", "issue_type": "mixed_script"},
-        {"key": "dup", "severity": "medium", "message": "Meaning loss", "source": "ar_semantic_qc", "issue_type": "possible_meaning_loss"},
-    ]
-    runtime = type("RT", (), {
-        "en_file": tmp_path/"en.json", 
-        "ar_file": tmp_path/"ar.json", 
-        "source_locale": "en", 
-        "target_locales": ["ar"],
-        "locale_format": "json"
-    })()
-    write_json(runtime.en_file, {"dup": "Brand Help"})
-    write_json(runtime.ar_file, {"dup": "مساعدة Brand"})
-
-    rows = build_review_queue(issues, runtime)
-    
-    # Assert only 1 row for 'dup'
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["key"] == "dup"
-    # Concatenated issue types
-    assert "mixed_script" in row["issue_type"]
-    assert "possible_meaning_loss" in row["issue_type"]
-    # Concatenated notes
-    assert "Mixed script" in row["notes"]
-    assert "Meaning loss" in row["notes"]
-    # But total issues should still reflect reality?
-    # Actually, if we filter it from the high-level report, maybe we should also filter the count?
-    # User said: "filter out low-priority noise... from high-level reports".
-    # Usually "Total issues" should match what's visible.
-    # But they said "Keep ALL issues in the raw l10n_issues.json".
-    # If the MD says "Total issues: 2" but only 1 is listed, it might be confusing.
-    # Let's see.
-
-def test_aggregator_ignores_missing_reports_not_in_sources(tmp_path):
-    from l10n_audit.core.audit_report_utils import load_all_report_issues
-    results = tmp_path / "Results"
-    results.mkdir()
-    (results / "per_tool" / "localization").mkdir(parents=True)
-    write_json(results / "per_tool" / "localization" / "localization_audit_pro.json", {"findings": []})
-    
-    # Specify only localization as source
-    _reports, _issues, missing = load_all_report_issues(results, include_sources={"localization"})
-    
-    # Should NOT contain 'locale_qc' even though it's in standard MAP and missing from disk
-    missing_sources = [m for m in missing]
-    assert not any("en_locale_qc" in m for m in missing_sources)
-
-================
 File: tests/test_results_manager.py
 ================
 from l10n_audit.models import AuditOptions, OutputOptions
@@ -20672,6 +20239,7 @@ def test_fix_plan_ignores_unverified_ai():
             "key": "k1",
             "source": "ai_review",
             "code": "AI_SUGGESTION",
+            "locale": "ar",
             "verified": False,
             "suggestion": "bad suggestion",
             "details": {"old": "old", "new": "bad suggestion"}
@@ -20680,6 +20248,7 @@ def test_fix_plan_ignores_unverified_ai():
             "key": "k2",
             "source": "ai_review",
             "code": "AI_SUGGESTION",
+            "locale": "ar",
             "verified": True,
             "suggestion": "good suggestion",
             "details": {"old": "old", "new": "good suggestion"}
@@ -25498,6 +25067,491 @@ def test_placeholder_parser_avoids_common_false_positives() -> None:
     assert items == []
 
 ================
+File: tests/test_report_candidate_projection.py
+================
+"""Tests for Phase 3 (candidate resolution) and Phase 4 (approval projection)
+in report_aggregator.py.
+
+Covers:
+  - _resolve_candidate_value
+  - _project_approved_new
+  - build_review_queue integration (conflict, safe, needs_review, identical)
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from l10n_audit.reports.report_aggregator import (
+    _project_approved_new,
+    _resolve_candidate_value,
+    build_review_queue,
+)
+
+from conftest import write_json
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _runtime(tmp_path: Path, en: dict, ar: dict):
+    """Minimal runtime stub with real locale files on disk."""
+    en_file = tmp_path / "en.json"
+    ar_file = tmp_path / "ar.json"
+    write_json(en_file, en)
+    write_json(ar_file, ar)
+    return type(
+        "Runtime",
+        (),
+        {
+            "en_file": en_file,
+            "ar_file": ar_file,
+            "locale_format": "json",
+            "source_locale": "en",
+            "target_locales": ("ar",),
+        },
+    )()
+
+
+def _safe_resolution(candidate: str = "احفظ") -> dict:
+    return {
+        "candidate_value": candidate,
+        "resolution_mode": "suggested_fix",
+        "conflict_flag": "",
+        "notes_token": "[SAFE:SUGGESTED_FIX]",
+    }
+
+
+def _clean_issue(**overrides) -> dict:
+    base = {
+        "needs_review": False,
+        "severity": "low",
+        "details": {"semantic_risk": "", "review_reason": ""},
+    }
+    base.update(overrides)
+    return base
+
+
+# ===========================================================================
+# Part 1 — Unit tests for _resolve_candidate_value
+# ===========================================================================
+
+class TestResolveCandidateValue:
+
+    def test_c1_empty_suggestion(self):
+        result = _resolve_candidate_value({}, "حفظ", "")
+        assert result["candidate_value"] == ""
+        assert result["resolution_mode"] == "no_candidate"
+        assert result["conflict_flag"] == "EMPTY_SUGGESTION"
+        assert result["notes_token"] == "[NO_CANDIDATE]"
+
+    def test_c1_whitespace_only_suggestion(self):
+        result = _resolve_candidate_value({}, "حفظ", "   ")
+        assert result["resolution_mode"] == "no_candidate"
+        assert result["conflict_flag"] == "EMPTY_SUGGESTION"
+
+    def test_c2_identical_to_current(self):
+        result = _resolve_candidate_value({}, "حفظ", "حفظ")
+        assert result["candidate_value"] == "حفظ"
+        assert result["resolution_mode"] == "current_value"
+        assert result["conflict_flag"] == "IDENTICAL_TO_CURRENT"
+        assert result["notes_token"] == "[KEEP:CURRENT_VALUE]"
+
+    def test_c2_identical_ignores_surrounding_whitespace(self):
+        result = _resolve_candidate_value({}, "حفظ", " حفظ ")
+        assert result["resolution_mode"] == "current_value"
+        assert result["conflict_flag"] == "IDENTICAL_TO_CURRENT"
+
+    def test_c3_structural_risk_placeholder_mismatch(self):
+        result = _resolve_candidate_value({}, "مرحبا {{name}}", "مرحبا")
+        assert result["candidate_value"] == ""
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "STRUCTURAL_RISK"
+        assert result["notes_token"] == "[CONFLICT:STRUCTURAL_RISK]"
+
+    def test_c4_structural_risk_tag_mismatch(self):
+        result = _resolve_candidate_value({}, "<b>Save</b>", "Save")
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "STRUCTURAL_RISK"
+
+    def test_c4_structural_risk_newline_mismatch(self):
+        result = _resolve_candidate_value({}, "line1\nline2", "line1 line2")
+        assert result["resolution_mode"] == "conflict"
+        assert result["conflict_flag"] == "STRUCTURAL_RISK"
+
+    def test_c5_safe_suggested_fix(self):
+        result = _resolve_candidate_value({}, "حفظ", "احفظ")
+        assert result["candidate_value"] == "احفظ"
+        assert result["resolution_mode"] == "suggested_fix"
+        assert result["conflict_flag"] == ""
+        assert result["notes_token"] == "[DQ:SAFE_AUTO_PROJECTED]"
+
+    def test_always_returns_all_four_keys(self):
+        for fix in ("", "same", "different", "{{x}} mismatch"):
+            result = _resolve_candidate_value({}, "same", fix)
+            assert set(result.keys()) == {
+                "candidate_value", "resolution_mode", "conflict_flag", "notes_token"
+            }
+
+    def test_never_raises_on_none_inputs(self):
+        result = _resolve_candidate_value({}, None, None)
+        assert isinstance(result["candidate_value"], str)
+        assert result["resolution_mode"] == "no_candidate"
+
+    def test_matching_placeholders_not_flagged(self):
+        result = _resolve_candidate_value({}, "Hello {{name}}", "Hi {{name}}")
+        assert result["resolution_mode"] == "suggested_fix"
+        assert result["conflict_flag"] == ""
+
+
+# ===========================================================================
+# Part 2 — Unit tests for _project_approved_new
+# ===========================================================================
+
+class TestProjectApprovedNew:
+
+    def test_a1_no_candidate_returns_empty(self):
+        resolution = {
+            "resolution_mode": "no_candidate",
+            "candidate_value": "احفظ",
+            "conflict_flag": "EMPTY_SUGGESTION",
+            "notes_token": "[NO_CANDIDATE]",
+        }
+        assert _project_approved_new(_clean_issue(), resolution) == ""
+
+    def test_a2_conflict_returns_empty(self):
+        resolution = {
+            "resolution_mode": "conflict",
+            "candidate_value": "",
+            "conflict_flag": "STRUCTURAL_RISK",
+            "notes_token": "[CONFLICT:STRUCTURAL_RISK]",
+        }
+        assert _project_approved_new(_clean_issue(), resolution) == ""
+
+    def test_a3_needs_review_true_blocks_approval(self):
+        issue = _clean_issue(needs_review=True)
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a4_high_severity_blocks_approval(self):
+        issue = _clean_issue(severity="high")
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a5_critical_severity_blocks_approval(self):
+        issue = _clean_issue(severity="critical")
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a4_severity_check_is_case_insensitive(self):
+        issue = _clean_issue(severity="HIGH")
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a6_high_semantic_risk_blocks_approval(self):
+        issue = _clean_issue(details={"semantic_risk": "high", "review_reason": ""})
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a6_semantic_risk_case_insensitive(self):
+        issue = _clean_issue(details={"semantic_risk": "HIGH", "review_reason": ""})
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a7_review_reason_blocks_approval(self):
+        issue = _clean_issue(details={"semantic_risk": "", "review_reason": "meaning changed"})
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_a7_whitespace_only_review_reason_does_not_block(self):
+        issue = _clean_issue(current_value="حفظ", details={"semantic_risk": "", "review_reason": "   "})
+        assert _project_approved_new(issue, _safe_resolution("احفظ")) == "احفظ"
+
+    def test_a8_safe_suggested_fix_projects_approval(self):
+        issue = _clean_issue(current_value="حفظ")
+        result = _project_approved_new(issue, _safe_resolution("احفظ")) # Dist 1 (a-)
+        assert result == "احفظ"
+
+    @pytest.mark.parametrize("truthy_str", ["true", "yes", "1", "True", "YES"])
+    def test_a9_truthy_string_needs_review_blocks_approval(self, truthy_str: str):
+        issue = _clean_issue(needs_review=truthy_str)
+        assert _project_approved_new(issue, _safe_resolution()) == ""
+
+    def test_current_value_mode_does_not_auto_approve(self):
+        resolution = {
+            "resolution_mode": "current_value",
+            "candidate_value": "حفظ",
+            "conflict_flag": "IDENTICAL_TO_CURRENT",
+            "notes_token": "[KEEP:CURRENT_VALUE]",
+        }
+        assert _project_approved_new(_clean_issue(), resolution) == ""
+
+    def test_never_returns_none(self):
+        assert _project_approved_new(None, {}) is not None  # type: ignore[arg-type]
+        assert _project_approved_new({}, None) is not None  # type: ignore[arg-type]
+
+
+# ===========================================================================
+# Part 3 — Integration tests for build_review_queue
+# ===========================================================================
+
+class TestBuildReviewQueueIntegration:
+
+    def test_i1_conflict_clears_suggested_fix_and_adds_notes_token(self, tmp_path: Path):
+        """A structural mismatch in the suggestion must clear suggested_fix and stamp the notes."""
+        # current AR value has a placeholder; suggested (from AI) drops it → structural risk
+        ar_current = "مرحبا {{name}}"
+        en_val = "Hello {{name}}"
+        issue = {
+            "key": "greeting",
+            "locale": "ar",
+            "issue_type": "possible_meaning_loss",
+            "severity": "medium",
+            "message": "Meaning loss",
+            "source": "ar_semantic_qc",
+            "details": {"old": ar_current, "new": "مرحبا", "candidate_value": "مرحبا"},
+            "suggested_fix": "مرحبا",
+        }
+        runtime = _runtime(tmp_path, {"greeting": en_val}, {"greeting": ar_current})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["suggested_fix"] == ""
+        assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
+
+    def test_i2_safe_mechanical_suggestion_projects_approved_new(self, tmp_path: Path):
+        """A mechanical (punctuation) suggestion must auto-fill approved_new in Phase 8."""
+        ar_current = "حفظ"
+        suggested = "حفظ."  # Punctuation normalization
+        issue = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "possible_meaning_loss",
+            "severity": "low",
+            "message": "Punctuation change",
+            "source": "ar_semantic_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": suggested,
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+        runtime = _runtime(tmp_path, {"save.button": "Save."}, {"save.button": ar_current})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["suggested_fix"] == suggested
+        assert row["approved_new"] == suggested
+
+    def test_i3_needs_review_prevents_approved_new_projection(self, tmp_path: Path):
+        """needs_review=True must block approved_new even when the fix is structurally safe."""
+        ar_current = "حفظ"
+        suggested = "احفظ الملف"
+        issue = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "possible_meaning_loss",
+            "severity": "low",
+            "message": "Needs human check",
+            "source": "ar_semantic_qc",
+            "needs_review": True,
+            "details": {
+                "old": ar_current,
+                "candidate_value": suggested,
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+        runtime = _runtime(tmp_path, {"save.button": "Save File"}, {"save.button": ar_current})
+        rows = build_review_queue([issue], runtime)
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["suggested_fix"] == suggested
+        assert row["approved_new"] == ""
+
+    def test_i4_identical_suggestion_stamps_keep_token_and_does_not_auto_approve(self, tmp_path: Path):
+        """When suggested == current, the row must get [KEEP:CURRENT_VALUE] in notes and empty approved_new."""
+        ar_current = "حفظ"
+        issue = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "possible_meaning_loss",
+            "severity": "low",
+            "message": "No change needed",
+            "source": "ar_semantic_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": ar_current,   # identical to current
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+        runtime = _runtime(tmp_path, {"save.button": "Save"}, {"save.button": ar_current})
+        rows = build_review_queue([issue], runtime)
+        # Phase 9: Identical suggestions are suppressed from the review queue
+        assert len(rows) == 0
+
+    def test_merge_path_conflict_clears_existing_suggested_fix_but_preserves_existing_approved_new(
+        self, tmp_path: Path
+    ):
+        """Two issues share (key, locale).
+
+        Issue 1 (safe):  produces suggested_fix="احفظ", approved_new="احفظ"
+        Issue 2 (conflict): {{name}} placeholder dropped → STRUCTURAL_RISK
+
+        Expected final row:
+          - suggested_fix == ""          (cleared by conflict)
+          - notes contains [CONFLICT:STRUCTURAL_RISK]
+          - approved_new == "احفظ"       (preserved — no destructive overwrite)
+        """
+        ar_current = "حفظ {{name}}"
+        safe_suggestion = "حفظ {{name}}." # Mechanical fix
+
+        # Issue 1 — safe: different text, no structural risk, no review blockers
+        issue_safe = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "possible_meaning_loss",
+            "severity": "low",
+            "message": "Wording improvement",
+            "source": "ar_semantic_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": safe_suggestion,
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+        }
+
+        # Issue 2 — conflict: drops the {{name}} placeholder
+        issue_conflict = {
+            "key": "save.button",
+            "locale": "ar",
+            "issue_type": "grammar_error",
+            "severity": "medium",
+            "message": "Grammar fix",
+            "source": "ar_locale_qc",
+            "needs_review": False,
+            "details": {
+                "old": ar_current,
+                "candidate_value": "احفظ",   # missing {{name}} → structural risk
+                "semantic_risk": "",
+                "review_reason": "",
+            },
+            "suggested_fix": "احفظ",
+        }
+
+        runtime = _runtime(
+            tmp_path,
+            {"save.button": "Save {{name}}"},
+            {"save.button": ar_current},
+        )
+        rows = build_review_queue([issue_safe, issue_conflict], runtime)
+
+        assert len(rows) == 1
+        row = rows[0]
+
+        # Conflict from issue 2 must clear suggested_fix
+        assert row["suggested_fix"] == ""
+
+        # Conflict token must appear in notes
+        assert "[CONFLICT:STRUCTURAL_RISK]" in row["notes"]
+
+        # approved_new set by issue 1 must survive — no destructive overwrite
+        assert row["approved_new"] == safe_suggestion
+
+================
+File: tests/test_report_dx_upgrades.py
+================
+import pytest
+from pathlib import Path
+from l10n_audit.reports.report_aggregator import build_review_queue, render_markdown
+from conftest import write_json
+
+def test_aggregator_filters_info_from_review_queue(tmp_path):
+    issues = [
+        {"key": "crit", "severity": "critical", "message": "Critical issue", "source": "s1", "issue_type": "t1", "suggested_fix": "v1_fixed"},
+        {"key": "info", "severity": "info", "message": "Info issue", "source": "s1", "issue_type": "t2"},
+    ]
+    runtime = type("RT", (), {
+        "en_file": tmp_path/"en.json", 
+        "ar_file": tmp_path/"ar.json", 
+        "source_locale": "en", 
+        "target_locales": ["ar"],
+        "locale_format": "json"
+    })()
+    write_json(runtime.en_file, {"crit": "v1", "info": "v2"})
+    write_json(runtime.ar_file, {"crit": "v1", "info": "v2"})
+
+    rows = build_review_queue(issues, runtime)
+    # Assert k2 (info) is missing
+    assert len(rows) == 1
+    assert rows[0]["key"] == "crit"
+
+def test_aggregator_filters_info_from_markdown(tmp_path):
+    issues = [
+        {"key": "crit", "severity": "critical", "message": "Critical issue", "source": "s1", "issue_type": "t1"},
+        {"key": "info", "severity": "info", "message": "Info issue", "source": "s1", "issue_type": "t2"},
+    ]
+    summary = {"total_issues": 2}
+    safe_fixes = {"available": 0}
+    review_rows = [{"key": "crit"}]
+    source_status = {"s1": "2 issues"}
+    
+    md = render_markdown(issues, summary, safe_fixes, review_rows, source_status, [])
+    
+    assert "[CRITICAL] `crit`" in md
+    assert "[INFO] `info`" not in md
+
+def test_aggregator_deduplicates_by_key(tmp_path):
+    issues = [
+        {"key": "dup", "severity": "high", "message": "Mixed script", "source": "ar_locale_qc", "issue_type": "mixed_script", "suggested_fix": "فکس 1"},
+        {"key": "dup", "severity": "medium", "message": "Meaning loss", "source": "ar_semantic_qc", "issue_type": "possible_meaning_loss", "suggested_fix": "فکس 2"},
+    ]
+    runtime = type("RT", (), {
+        "en_file": tmp_path/"en.json", 
+        "ar_file": tmp_path/"ar.json", 
+        "source_locale": "en", 
+        "target_locales": ["ar"],
+        "locale_format": "json"
+    })()
+    write_json(runtime.en_file, {"dup": "Brand Help"})
+    write_json(runtime.ar_file, {"dup": "مساعدة Brand"})
+
+    rows = build_review_queue(issues, runtime)
+    
+    # Assert only 1 row for 'dup'
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["key"] == "dup"
+    # Concatenated issue types
+    assert "mixed_script" in row["issue_type"]
+    assert "possible_meaning_loss" in row["issue_type"]
+    # Concatenated notes
+    assert "Mixed script" in row["notes"]
+    assert "Meaning loss" in row["notes"]
+    # But total issues should still reflect reality?
+    # Actually, if we filter it from the high-level report, maybe we should also filter the count?
+    # User said: "filter out low-priority noise... from high-level reports".
+    # Usually "Total issues" should match what's visible.
+    # But they said "Keep ALL issues in the raw l10n_issues.json".
+    # If the MD says "Total issues: 2" but only 1 is listed, it might be confusing.
+    # Let's see.
+
+def test_aggregator_ignores_missing_reports_not_in_sources(tmp_path):
+    from l10n_audit.core.audit_report_utils import load_all_report_issues
+    results = tmp_path / "Results"
+    results.mkdir()
+    (results / "per_tool" / "localization").mkdir(parents=True)
+    write_json(results / "per_tool" / "localization" / "localization_audit_pro.json", {"findings": []})
+    
+    # Specify only localization as source
+    _reports, _issues, missing = load_all_report_issues(results, include_sources={"localization"})
+    
+    # Should NOT contain 'locale_qc' even though it's in standard MAP and missing from disk
+    missing_sources = [m for m in missing]
+    assert not any("en_locale_qc" in m for m in missing_sources)
+
+================
 File: ROADMAP.md
 ================
 # Roadmap
@@ -27551,6 +27605,83 @@ def classify_issue(issue: dict[str, Any]) -> str:
     return "review_required"
 
 
+def _normalized_non_empty_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value if value.strip() else None
+
+
+def _resolve_fix_plan_locale(issue: dict[str, Any]) -> tuple[str | None, str | None]:
+    source = str(issue.get("source", "")).strip()
+    if source == "ar_locale_qc":
+        return "ar", "source=ar_locale_qc"
+    if source in {"locale_qc", "grammar", "en_locale_qc", "en_grammar_audit"}:
+        return "en", f"source={source}"
+
+    locale = _normalized_non_empty_string(issue.get("locale"))
+    if locale is not None:
+        return locale, "issue.locale"
+    return None, None
+
+
+def _resolve_fix_plan_current_value(issue: dict[str, Any]) -> tuple[str | None, str | None]:
+    details = issue.get("details", {})
+    if not isinstance(details, dict):
+        details = {}
+
+    candidates: list[tuple[str, Any]] = [
+        ("issue.source_old_value", issue.get("source_old_value")),
+        ("issue.current_value", issue.get("current_value")),
+        ("issue.target", issue.get("target")),
+        ("details.old", details.get("old")),
+        ("issue.old", issue.get("old")),
+        ("issue.current_translation", issue.get("current_translation")),
+    ]
+    for source_path, raw_value in candidates:
+        value = _normalized_non_empty_string(raw_value)
+        if value is not None:
+            return value, source_path
+    return None, None
+
+
+def _resolve_fix_plan_candidate_value(issue: dict[str, Any]) -> tuple[str | None, str | None]:
+    details = issue.get("details", {})
+    if not isinstance(details, dict):
+        details = {}
+
+    candidates: list[tuple[str, Any]] = [
+        ("issue.approved_new", issue.get("approved_new")),
+        ("issue.candidate_value", issue.get("candidate_value")),
+        ("issue.suggested_fix", issue.get("suggested_fix")),
+        ("details.new", details.get("new")),
+        ("issue.new", issue.get("new")),
+        ("issue.suggestion", issue.get("suggestion")),
+    ]
+    for source_path, raw_value in candidates:
+        value = _normalized_non_empty_string(raw_value)
+        if value is not None:
+            return value, source_path
+    return None, None
+
+
+def _record_fix_plan_rejection(
+    runtime: Any,
+    issue: dict[str, Any],
+    missing_fields: list[str],
+) -> None:
+    rejection = {
+        "key": str(issue.get("key", "")),
+        "source": str(issue.get("source", "")),
+        "issue_type": str(issue.get("issue_type", "")),
+        "missing_fields": missing_fields,
+        "reason": "incomplete_fix_plan_contract",
+    }
+    if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        runtime.metadata.setdefault("fix_plan_rejections", []).append(rejection)
+        return
+    logger.debug("Dropping fix plan item: %s", rejection)
+
+
 def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = None, runtime: Any = None) -> list[dict[str, Any]]:
     plan: list[dict[str, Any]] = []
     seen: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -27564,12 +27695,32 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
             if staged_file.exists():
                 staged_data = _json.loads(staged_file.read_text(encoding="utf-8"))
                 for identity, data in staged_data.items():
-                    key = data.get("key")
-                    locale = data.get("locale")
-                    candidate = data.get("suggestion")
-                    if not (key and locale and candidate):
+                    staged_issue = {
+                        "key": data.get("key"),
+                        "locale": data.get("locale"),
+                        "source": "persistent_staged",
+                        "issue_type": "verified_migration",
+                        "source_old_value": data.get("source_text"),
+                        "suggestion": data.get("suggestion"),
+                    }
+                    key = str(staged_issue.get("key", ""))
+                    locale, _locale_source = _resolve_fix_plan_locale(staged_issue)
+                    current, _current_source = _resolve_fix_plan_current_value(staged_issue)
+                    candidate, _candidate_source = _resolve_fix_plan_candidate_value(staged_issue)
+
+                    missing_fields: list[str] = []
+                    if not key.strip():
+                        missing_fields.append("key")
+                    if locale is None:
+                        missing_fields.append("locale")
+                    if current is None:
+                        missing_fields.append("current_value")
+                    if candidate is None:
+                        missing_fields.append("candidate_value")
+                    if missing_fields:
+                        _record_fix_plan_rejection(runtime, staged_issue, missing_fields)
                         continue
-                        
+
                     signature = (key, locale, candidate)
                     item = {
                         "key": key,
@@ -27579,7 +27730,7 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
                         "severity": "info",
                         "classification": "auto_safe",
                         "message": "Applying previously verified translation from staged storage.",
-                        "current_value": data.get("source_text", ""),
+                        "current_value": current,
                         "candidate_value": candidate,
                         "provenance": [{"source": "persistent_staged", "issue_type": "verified_migration", "message": "Staged", "severity": "info"}],
                     }
@@ -27617,13 +27768,26 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
                 continue
 
         details = issue.get("details", {})
+        if not isinstance(details, dict):
+            details = {}
+
         key = str(issue.get("key", ""))
-        locale = "en" if issue.get("source") in {"locale_qc", "grammar"} else str(issue.get("locale", ""))
-        if issue.get("source") == "ar_locale_qc":
-            locale = "ar"
-            
-        candidate = str(issue.get("approved_new") or issue.get("suggested_fix") or details.get("new") or issue.get("suggestion") or "").strip()
-        current = str(issue.get("source_old_value") or issue.get("target") or details.get("old") or issue.get("current_translation") or "").strip()
+        locale, _locale_source = _resolve_fix_plan_locale(issue)
+        current, _current_source = _resolve_fix_plan_current_value(issue)
+        candidate, _candidate_source = _resolve_fix_plan_candidate_value(issue)
+
+        missing_fields: list[str] = []
+        if not key.strip():
+            missing_fields.append("key")
+        if locale is None:
+            missing_fields.append("locale")
+        if current is None:
+            missing_fields.append("current_value")
+        if candidate is None:
+            missing_fields.append("candidate_value")
+        if missing_fields:
+            _record_fix_plan_rejection(runtime, issue, missing_fields)
+            continue
         
         classification = classify_issue(issue)
         signature = (key, locale, candidate)
@@ -28038,7 +28202,7 @@ Usage::
     print(result.to_dict())
 """
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
  
 from l10n_audit.api import (
     doctor_workspace,
@@ -30928,7 +31092,7 @@ import pytest
 from l10n_audit.core.audit_runtime import AuditRuntimeError
 from l10n_audit.core.audit_report_utils import load_all_report_issues
 from l10n_audit.core.audit_runtime import read_simple_xlsx
-from l10n_audit.reports.report_aggregator import build_review_queue
+from l10n_audit.reports.report_aggregator import build_review_queue, _resolve_issue_locale, suggested_fix_for_issue
 
 from conftest import write_json
 
@@ -31076,6 +31240,167 @@ def test_simple_xlsx_reader_rejects_missing_required_columns(tmp_path: Path) -> 
     with pytest.raises(AuditRuntimeError):
         read_simple_xlsx(path, required_columns=["key", "status"])
 
+
+def test_resolve_issue_locale_maps_grammar_to_en():
+    issue = {
+        "source": "grammar",
+        "key": "welcome.title",
+    }
+    assert _resolve_issue_locale(issue) == "en"
+
+
+def test_suggested_fix_for_issue_reads_details_new_when_top_level_missing():
+    issue = {
+        "source": "grammar",
+        "key": "any_time",
+        "details": {
+            "old": "Any time",
+            "new": "At any time.",
+        },
+    }
+    assert suggested_fix_for_issue(issue, {}, {}) == "At any time."
+
+
+def test_suggested_fix_for_issue_prefers_top_level_over_details():
+    issue = {
+        "source": "ai_review",
+        "suggested_fix": "احفظ",
+        "details": {
+            "new": "حفظ."
+        },
+    }
+    assert suggested_fix_for_issue(issue, {}, {}) == "احفظ"
+
+
+def test_build_review_queue_projects_grammar_locale_and_suggestion(tmp_path: Path):
+    issues = [
+        {
+            "source": "grammar",
+            "key": "any_time",
+            "issue_type": "grammar",
+            "severity": "medium",
+            "message": "Grammar check",
+            "details": {
+                "old": "Any time",
+                "new": "At any time.",
+            },
+        }
+    ]
+
+    runtime = type(
+        "Runtime",
+        (),
+        {
+            "en_file": tmp_path / "en.json",
+            "ar_file": tmp_path / "ar.json",
+            "locale_format": "json",
+            "source_locale": "en",
+            "target_locales": ("ar",),
+        },
+    )()
+    write_json(runtime.en_file, {"any_time": "Any time"})
+    write_json(runtime.ar_file, {})
+
+    rows = build_review_queue(issues, runtime)
+
+    assert len(rows) == 1
+    row = rows[0]
+
+    assert row["key"] == "any_time"
+    assert row["locale"] == "en"
+    assert row["suggested_fix"] == "At any time."
+
+
+def test_build_review_queue_collision_between_en_locale_qc_and_grammar_preserves_grammar_suggestion(tmp_path: Path):
+    issues = [
+        {
+            "source": "en_locale_qc",
+            "key": "any_time",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Whitespace issue",
+            "details": {
+                "old": "Any time ",
+            },
+        },
+        {
+            "source": "grammar",
+            "key": "any_time",
+            "issue_type": "grammar",
+            "severity": "medium",
+            "message": "Grammar check",
+            "details": {
+                "old": "Any time",
+                "new": "At any time.",
+            },
+        },
+    ]
+
+    runtime = type(
+        "Runtime",
+        (),
+        {
+            "en_file": tmp_path / "en.json",
+            "ar_file": tmp_path / "ar.json",
+            "locale_format": "json",
+            "source_locale": "en",
+            "target_locales": ("ar",),
+        },
+    )()
+    write_json(runtime.en_file, {"any_time": "Any time"})
+    write_json(runtime.ar_file, {})
+
+    rows = build_review_queue(issues, runtime)
+
+    # Collision results in 1 row (key, locale)
+    assert len(rows) == 1
+    row = rows[0]
+
+    assert row["key"] == "any_time"
+    assert row["locale"] == "en"
+    # grammar suggestion should be preserved
+    assert row["suggested_fix"] == "At any time."
+
+
+class TestAggregatorPatches:
+    
+    # ==========================================
+    # 1. اختبارات أزمة الهوية (Identity Crisis)
+    # ==========================================
+    def test_resolve_issue_locale_maps_grammar_to_en(self):
+        """التحقق من أن الجرامر يُنسب للغة الإنجليزية دائماً"""
+        issue = {"source": "grammar", "key": "welcome_msg"}
+        assert _resolve_issue_locale(issue) == "en"
+
+    def test_resolve_issue_locale_maps_ai_review_to_ar(self):
+        """التحقق من أن اقتراحات الذكاء الاصطناعي تُنسب للعربية"""
+        issue = {"source": "ai_review", "key": "welcome_msg"}
+        assert _resolve_issue_locale(issue) == "ar"
+
+    # ==========================================
+    # 2. اختبارات عقد البيانات (Data Contract)
+    # ==========================================
+    def test_suggested_fix_extracts_from_replacements_list(self):
+        """التحقق من نجاح سحب الاقتراح إذا كان داخل مصفوفة (كما في LanguageTool)"""
+        issue = {
+            "source": "grammar",
+            "details": {
+                "replacements": ["talk to", "speak with"] # يجب أن يسحب العنصر الأول
+            }
+        }
+        # نمرر قواميس فارغة لأننا نختبر استخراج الاقتراح فقط
+        assert suggested_fix_for_issue(issue, {}, {}) == "talk to"
+
+    def test_suggested_fix_extracts_from_replacements_string(self):
+        """التحقق من نجاح السحب إذا كانت replacements نصاً مباشراً (للحماية من الاستثناءات)"""
+        issue = {
+            "source": "grammar",
+            "details": {
+                "replacements": "talk to us" 
+            }
+        }
+        assert suggested_fix_for_issue(issue, {}, {}) == "talk to us"
+
 ================
 File: tests/test_safe_fixes.py
 ================
@@ -31145,6 +31470,230 @@ def test_build_fix_plan_preserves_provenance_for_same_replacement() -> None:
     )
     assert len(plan) == 1
     assert len(plan[0]["provenance"]) == 2
+
+
+def test_build_fix_plan_rejects_item_when_locale_missing(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    issues = [
+        {
+            "source": "ai_review",
+            "key": "welcome",
+            "issue_type": "ai_suggestion",
+            "severity": "medium",
+            "message": "AI suggestion",
+            "verified": True,
+            "details": {"old": "اهلا", "new": "مرحبا"},
+        }
+    ]
+
+    plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "ai_review",
+            "issue_type": "ai_suggestion",
+            "missing_fields": ["locale"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_rejects_item_when_current_value_unresolved(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"new": "hello"},
+        }
+    ]
+
+    plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "trimmed",
+            "source": "locale_qc",
+            "issue_type": "whitespace",
+            "missing_fields": ["current_value"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_rejects_item_when_candidate_value_unresolved(tmp_path: Path) -> None:
+    runtime = SimpleNamespace(metadata={})
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"old": " hello "},
+        }
+    ]
+
+    plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "trimmed",
+            "source": "locale_qc",
+            "issue_type": "whitespace",
+            "missing_fields": ["candidate_value"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_valid_item_keeps_exact_output_schema() -> None:
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"old": " hello ", "new": "hello"},
+        }
+    ]
+
+    plan = build_fix_plan(issues)
+
+    assert len(plan) == 1
+    assert set(plan[0]) == {
+        "key",
+        "locale",
+        "source",
+        "issue_type",
+        "severity",
+        "classification",
+        "message",
+        "current_value",
+        "candidate_value",
+        "provenance",
+    }
+
+
+def test_build_fix_plan_never_emits_empty_required_strings() -> None:
+    issues = [
+        {
+            "source": "locale_qc",
+            "key": "trimmed",
+            "issue_type": "whitespace",
+            "severity": "low",
+            "message": "Trim",
+            "details": {"old": " hello ", "new": "hello"},
+        }
+    ]
+
+    plan = build_fix_plan(issues)
+
+    assert len(plan) == 1
+    assert plan[0]["locale"] != ""
+    assert plan[0]["current_value"] != ""
+    assert plan[0]["candidate_value"] != ""
+
+
+def test_build_fix_plan_rejects_staged_item_when_source_text_missing(tmp_path: Path) -> None:
+    staged_dir = tmp_path / ".l10n-audit" / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    (staged_dir / "approved_translations.json").write_text(
+        json.dumps(
+            {
+                "ar:welcome": {
+                    "key": "welcome",
+                    "locale": "ar",
+                    "suggestion": "مرحبا",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runtime = SimpleNamespace(metadata={})
+
+    plan = build_fix_plan([], project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "persistent_staged",
+            "issue_type": "verified_migration",
+            "missing_fields": ["current_value"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_rejects_staged_item_when_locale_missing(tmp_path: Path) -> None:
+    staged_dir = tmp_path / ".l10n-audit" / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    (staged_dir / "approved_translations.json").write_text(
+        json.dumps(
+            {
+                "missing-locale": {
+                    "key": "welcome",
+                    "locale": "",
+                    "suggestion": "مرحبا",
+                    "source_text": "اهلا",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runtime = SimpleNamespace(metadata={})
+
+    plan = build_fix_plan([], project_root=tmp_path, runtime=runtime)
+
+    assert plan == []
+    assert runtime.metadata["fix_plan_rejections"] == [
+        {
+            "key": "welcome",
+            "source": "persistent_staged",
+            "issue_type": "verified_migration",
+            "missing_fields": ["locale"],
+            "reason": "incomplete_fix_plan_contract",
+        }
+    ]
+
+
+def test_build_fix_plan_accepts_valid_staged_item_without_empty_required_fields(tmp_path: Path) -> None:
+    staged_dir = tmp_path / ".l10n-audit" / "staged"
+    staged_dir.mkdir(parents=True, exist_ok=True)
+    (staged_dir / "approved_translations.json").write_text(
+        json.dumps(
+            {
+                "ar:welcome": {
+                    "key": "welcome",
+                    "locale": "ar",
+                    "suggestion": "مرحبا",
+                    "source_text": "اهلا",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    runtime = SimpleNamespace(metadata={})
+
+    plan = build_fix_plan([], project_root=tmp_path, runtime=runtime)
+
+    assert len(plan) == 1
+    assert plan[0]["key"] == "welcome"
+    assert plan[0]["locale"] != ""
+    assert plan[0]["current_value"] != ""
+    assert plan[0]["candidate_value"] != ""
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -31808,6 +32357,12 @@ File: CHANGELOG.md
 ================
 # Changelog
 
+## [1.5.1]
+- Fixed identity crisis in `_SOURCE_LOCALE_MAP` (grammar/ai_review mapping)
+- Fixed "Structural Blindness" bug (nested keys suffix match)
+- Handle LanguageTool replacements array format in suggested_fix
+- Added smart value extraction helper in report_aggregator
+
 ## [1.5.0]
 
 - reporting identity stabilization
@@ -32248,6 +32803,601 @@ def run_engine(
     return issues, reports
 
 ================
+File: l10n_audit/api.py
+================
+"""
+Public Python API for the L10n Audit Toolkit.
+
+This module exposes three top-level functions:
+
+- :func:`run_audit` — run an audit stage and return an :class:`~l10n_audit.models.AuditResult`
+- :func:`init_workspace` — initialise a workspace (equivalent to ``l10n-audit init``)
+- :func:`doctor_workspace` — return a stable structured status report
+
+All functions are safe to call from any Python thread.  No ``subprocess`` is
+used internally; all audit logic runs in-process.
+
+Example::
+
+    from l10n_audit import run_audit, doctor_workspace
+
+    result = run_audit("/path/to/project", stage="fast")
+    print(result.summary.missing_keys)
+    print(result.to_json())
+"""
+from __future__ import annotations
+
+import logging
+import os
+import shutil
+import time
+from pathlib import Path
+from typing import Any, Literal
+
+from l10n_audit.exceptions import AuditError, InvalidProjectError
+from l10n_audit.models import (
+    AIReview,
+    AuditIssue,
+    AuditOptions,
+    AuditResult,
+    AuditRules,
+    AuditSummary,
+    OutputOptions,
+    ProjectDetection,
+    ReportArtifact,
+)
+from l10n_audit.core.results_manager import manage_previous_results
+
+logger = logging.getLogger("l10n_audit.api")
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _stage_module_names(stage: str, ai_enabled: bool = False) -> list[str]:
+    """Return the module names that will run for a given *stage*.
+
+    Used by the CLI to print progress messages like ``Running audits.X...``
+    that match the old subprocess-based dispatch output exactly.
+    """
+    fast = [
+        "audits.l10n_audit_pro",
+        "audits.en_locale_qc",
+        "audits.ar_locale_qc",
+        "audits.ar_semantic_qc",
+        "audits.placeholder_audit",
+        "audits.terminology_audit",
+    ]
+    mapping: dict[str, list[str]] = {
+        "fast": fast + ["reports.report_aggregator"],
+        "full": fast + ["audits.icu_message_audit", "audits.en_grammar_audit", "reports.report_aggregator"],
+        "grammar": ["audits.en_grammar_audit"],
+        "terminology": ["audits.terminology_audit"],
+        "placeholders": ["audits.placeholder_audit"],
+        "ar-qc": ["audits.ar_locale_qc"],
+        "ar-semantic": ["audits.ar_semantic_qc"],
+        "icu": ["audits.icu_message_audit"],
+        "reports": ["reports.report_aggregator"],
+        "autofix": ["fixes.apply_safe_fixes"],
+        "ai-review": ["audits.ai_review"],
+    }
+    
+    modules = mapping.get(stage, [])
+    
+    # If AI is enabled, append ai_review to the pipeline (continuous flow)
+    if ai_enabled and "audits.ai_review" not in modules:
+        modules = list(modules)
+        # Avoid double-adding if report_aggregator is at the end, insert after it or just append
+        modules.append("audits.ai_review")
+        
+    return modules
+
+
+def check_prerequisites() -> None:
+    """Check if system prerequisites (like Java) are installed.
+
+    Raises
+    ------
+    RuntimeError
+        If Java is not found, with instructions for the user.
+    """
+    import subprocess
+    try:
+        # Check for Java presence
+        subprocess.run(["java", "-version"], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise RuntimeError(
+            "Java is required for grammar and style checks (LanguageTool).\n"
+            "Please ensure Java (JRE 8 or higher) is installed and available in your PATH.\n"
+            "You can download it from: https://www.java.com/"
+        )
+
+
+# ---------------------------------------------------------------------------
+# run_audit
+# ---------------------------------------------------------------------------
+
+def run_audit(
+    project_path: str | Path,
+    *,
+    stage: str = "full",
+    ai_enabled: bool | None = None,
+    ai_api_key: str | None = None,
+    ai_model: str | None = None,
+    ai_api_base: str | None = None,
+    ai_provider: str | None = None,
+    ai_api_key_env: str | None = None,
+    write_reports: bool = True,
+    output_dir: str | Path | None = None,
+    ai_provider_override: Any = None,
+    apply_safe_fixes: bool | None = None,
+    results_retention_mode: Literal["archive", "overwrite"] | None = None,
+    results_retention_prefix: str | None = None,
+    glossary_path: str | Path | None = None,
+    out_xlsx: str | Path | None = None,
+    config_schema: str | Path | None = None,
+    verbose: bool = False,
+    force: bool = False,
+    translate_missing: bool = False,
+    input_report: str | Path | None = None,
+) -> AuditResult:
+    """Run an audit stage on *project_path* and return structured results.
+
+    Parameters
+    ----------
+    project_path:
+        Absolute or relative path to the project root.
+    stage:
+        Audit stage to run.
+    ai_enabled:
+        Override AI review enablement.
+    ai_api_key:
+        Personal API key override.
+    ai_model:
+        Model name, e.g. "gpt-4o-mini" or "deepseek-chat".
+    ai_api_base:
+        Override provider URL.
+    write_reports:
+        Generate output files (JSON/CSV/XLSX).
+    glossary_path:
+        Path to a custom glossary JSON file.
+    out_xlsx:
+        Direct override path for the Excel report.
+    verbose:
+        Enable detailed step-by-step logging.
+    force:
+        Bypass safety pipelines or protection guards.
+
+    Raises
+    ------
+    InvalidProjectError
+        If *project_path* does not exist or is not a valid project.
+    StageError
+        If *stage* is not a recognised audit stage.
+    AIConfigError
+        If AI is enabled but the API key is missing.
+    """
+    check_prerequisites()
+
+    from l10n_audit.core.validators import (
+        validate_ai_config,
+        validate_project_path,
+        validate_stage,
+    )
+    from l10n_audit.core.engine import run_engine
+
+    result = AuditResult(
+        project_path=str(project_path),
+        stage=stage,
+    )
+    result.mark_started()
+
+    try:
+        path = validate_project_path(project_path)
+        validate_stage(stage)
+
+        # Load runtime environment
+        from l10n_audit.core.audit_runtime import load_runtime, AuditRuntimeError, write_json
+        from l10n_audit.core.workspace import prepare_audit_workspace
+        try:
+            runtime = load_runtime_from_path(path)
+            # Recovery & Enhancement: Create isolated workspace (replaces paths in runtime)
+            runtime = prepare_audit_workspace(runtime)
+            logger.info("Audit workspace prepared and runtime paths isolated.")
+        except AuditRuntimeError as exc:
+            raise InvalidProjectError(f"Invalid project configuration: {exc}") from exc
+        
+        result.profile = getattr(runtime, "project_profile", "")
+
+        # Merge arguments with runtime config for v1.2.2 namespaced structure
+        effective_ai_enabled = ai_enabled if ai_enabled is not None else runtime.ai_review["enabled"]
+        effective_apply_safe_fixes = apply_safe_fixes if apply_safe_fixes is not None else runtime.output["apply_safe_fixes"]
+        
+        validate_ai_config(
+            ai_enabled=effective_ai_enabled,
+            ai_api_key=ai_api_key,
+            ai_model=ai_model,
+            ai_api_base=ai_api_base,
+            ai_provider=ai_provider or runtime.ai_review["provider"],
+            ai_api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
+        )
+
+        options = AuditOptions(
+            stage=stage,
+            project_detection=ProjectDetection(
+                auto_detect=True,
+                force_profile=getattr(runtime, "project_profile", ""),
+            ),
+            audit_rules=AuditRules(
+                role_identifiers=list(runtime.role_identifiers),
+                entity_whitelist={k: list(v) for k, v in runtime.entity_whitelist.items()},
+                apply_safe_fixes=effective_apply_safe_fixes,
+                latin_whitelist=list(getattr(runtime, "latin_whitelist", [])),
+            ),
+            ai_review=AIReview(
+                enabled=effective_ai_enabled or translate_missing,
+                provider=ai_provider or runtime.ai_review["provider"],
+                model=ai_model or runtime.ai_review["model"],
+                api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
+                batch_size=runtime.ai_review["batch_size"],
+                short_label_threshold=runtime.ai_review["short_label_threshold"],
+                translate_missing=translate_missing,
+            ),
+            output=OutputOptions(
+                results_dir=output_dir or runtime.results_dir,
+                retention_mode=results_retention_mode or runtime.output.get("retention_mode", "overwrite"),
+                archive_name_prefix=results_retention_prefix or runtime.output.get("archive_name_prefix", "audit"),
+            ),
+            # Power-user Artifact Overrides
+            glossary_file=glossary_path or runtime.glossary_file,
+            out_xlsx=out_xlsx,
+            config_schema=config_schema,
+            verbose=verbose,
+            ai_provider_override=ai_provider_override,
+            input_report=input_report,
+        )
+
+        # Step 2: Results Retention Management (Suicide Loop Prevention)
+        from l10n_audit.models import PRODUCER_STAGES, CONSUMER_STAGES
+        results_dir = options.effective_output_dir(runtime.results_dir)
+        
+        # Guard logic: Bypass if 'force' is enabled
+        if force:
+            logger.info("Force flag enabled. Bypassing stage-safety guards.")
+            manage_previous_results(results_dir, options)
+        elif stage in PRODUCER_STAGES:
+            # Producers can safely rotate results
+            manage_previous_results(results_dir, options)
+        elif stage in CONSUMER_STAGES:
+            # Consumers process existing findings.
+            # v1.3.1 fix: We now allow these stages to proceed even if the aggregate report 
+            # is missing, as they can still process individual JSON reports from per_tool/
+            report_path = results_dir / "final_audit_report.json"
+            if not report_path.exists():
+                logger.info("Consumer stage '%s': Aggregated report not found at %s. Proceeding with per-tool cache files.", stage, report_path)
+            else:
+                logger.info("Consumer stage '%s' validated. Input found at %s", stage, report_path)
+        else:
+            # Fallback for unrecognized/adhoc stages
+            manage_previous_results(results_dir, options)
+
+        # Step 3: Produce results and reports
+        issues, reports = run_engine(runtime, options, ai_provider=ai_provider_override)
+
+        # Step 4: Unified Fix Generation (v1.3.0)
+        # This replaces the old glossary-only fix logic with a unified plan
+        from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
+        from l10n_audit.fixes.fix_merger import merge_and_export_fixes, export_review_queue
+        
+        issue_dicts = [i.to_dict() if hasattr(i, "to_dict") else i for i in issues]
+        fix_plan = build_fix_plan(issue_dicts, runtime.project_root)
+        
+        # Save the full plan for future reference (internal)
+        fixes_dir = results_dir / ".cache" / "apply"
+        fixes_dir.mkdir(parents=True, exist_ok=True)
+        write_json({"plan": fix_plan}, fixes_dir / "fix_plan.json")
+        
+        # 4.1 Export Review Queue if any manual review is needed
+        review_required = [i for i in fix_plan if i["classification"] == "review_required"]
+        if review_required:
+            review_xlsx = results_dir / "review" / "review_queue.xlsx"
+            export_review_queue(fix_plan, runtime, review_xlsx)
+            logger.info(f"Review Required: {len(review_required)} items added to {review_xlsx}")
+            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {review_xlsx}")
+            
+        # 4.2 Immediate Auto-Fix Generation (.fix files next to originals)
+        if effective_apply_safe_fixes:
+            auto_fixes_en = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and i["locale"] == "en"}
+            auto_fixes_ar = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and (i["locale"] == "ar" or i["locale"] == runtime.target_locales[0])}
+            
+            if auto_fixes_en and runtime.original_en_file:
+                merge_and_export_fixes(runtime.original_en_file, auto_fixes_en, runtime=runtime)
+            if auto_fixes_ar and runtime.original_ar_file:
+                merge_and_export_fixes(runtime.original_ar_file, auto_fixes_ar, runtime=runtime)
+            
+            total_auto = len(auto_fixes_en) + len(auto_fixes_ar)
+            if total_auto > 0:
+                print(f"✅ [AUTO-FIXED]: {total_auto} safe corrections generated in .fix files.")
+
+        result.issues = issues
+        result.reports = reports
+        result.summary = AuditSummary.from_issues(issues)
+        # Populate total_keys from locale data (best effort)
+        try:
+            from l10n_audit.core.audit_runtime import load_locale_mapping
+            en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+            ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+            result.summary.total_keys_en = len(en_data)
+            result.summary.total_keys_ar = len(ar_data)
+        except Exception:
+            pass
+
+    except AuditError:
+        raise
+    except Exception as exc:
+        result.success = False
+        result.error_message = str(exc)
+        logger.exception("Unexpected error during audit: %s", exc)
+
+    result.mark_finished()
+    logger.info(
+        "run_audit done: stage=%s issues=%d duration=%dms",
+        stage, len(result.issues), result.duration_ms,
+    )
+    return result
+
+
+def load_runtime_from_path(project_path: Path):
+    """Load AuditPaths for *project_path* by temporarily changing the process
+    working directory to the project root.
+
+    This is a thin wrapper around :func:`core.audit_runtime.load_runtime` that
+    sets the project root correctly without forking a subprocess.
+    """
+    import os
+    from l10n_audit.core.audit_runtime import load_runtime
+
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(project_path)
+        runtime = load_runtime(str(project_path / ".l10n-audit" / "cli.py"), validate=True)
+    finally:
+        os.chdir(old_cwd)
+    return runtime
+
+
+# ---------------------------------------------------------------------------
+# init_workspace
+# ---------------------------------------------------------------------------
+
+def init_workspace(
+    project_path: str | Path,
+    *,
+    force: bool = False,
+    channel: str = "stable",
+) -> dict[str, Any]:
+    """Initialise a workspace in *project_path*.
+
+    Parameters
+    ----------
+    project_path:
+        Directory in which to create ``.l10n-audit/``.
+    force:
+        Overwrite existing workspace.
+    channel:
+        Template channel to use.
+
+    Returns
+    -------
+    dict
+        ``{"success": bool, "message": str, "workspace_dir": str}``
+
+    Raises
+    ------
+    InvalidProjectError
+        If *project_path* is not a valid directory.
+    """
+    from l10n_audit.core.validators import validate_project_path
+    path = validate_project_path(project_path)
+
+    import os
+    from l10n_audit.core.workspace import init_workspace as _init_ws
+    old_cwd = os.getcwd()
+    try:
+        os.chdir(path)
+        _result = _init_ws(str(path), force=force, channel=channel)
+    finally:
+        os.chdir(old_cwd)
+
+    workspace_dir = path / ".l10n-audit"
+    return {
+        "success": True,
+        "message": "Workspace initialised successfully.",
+        "workspace_dir": str(workspace_dir),
+        "project_path": str(path),
+    }
+
+
+# ---------------------------------------------------------------------------
+# doctor_workspace
+# ---------------------------------------------------------------------------
+
+def doctor_workspace(project_path: str | Path) -> dict[str, Any]:
+    """Return a structured status report for *project_path*.
+
+    The returned dict has a stable schema suitable for consumption by HTTP APIs:
+
+    .. code-block:: json
+
+        {
+            "success": true,
+            "project_path": "/abs/path",
+            "framework": "flutter",
+            "profile": "flutter_arb",
+            "source_locale": "en",
+            "target_locales": ["ar"],
+            "translation_paths": {
+                "en": "/abs/path/lib/l10n/intl_en.arb",
+                "ar": "/abs/path/lib/l10n/intl_ar.arb"
+            },
+            "warnings": [],
+            "errors": []
+        }
+
+    Parameters
+    ----------
+    project_path:
+        Path to the project root.
+
+    Returns
+    -------
+    dict
+        Stable status schema. ``success`` will be ``false`` if errors are found.
+
+    Raises
+    ------
+    InvalidProjectError
+        If *project_path* does not exist.
+    """
+    from l10n_audit.core.validators import validate_project_path
+    path = validate_project_path(project_path)
+
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    profile = ""
+    framework = ""
+    source_locale = ""
+    target_locales: list[str] = []
+    translation_paths: dict[str, str] = {}
+
+    try:
+        runtime = load_runtime_from_path(path)
+        profile = getattr(runtime, "project_profile", "")
+        framework = _infer_framework(profile)
+        source_locale = getattr(runtime, "source_locale", "")
+        target_locales = list(getattr(runtime, "target_locales", []))
+
+        # Translation file presence checks
+        if hasattr(runtime, "en_file"):
+            if runtime.en_file.exists():
+                translation_paths[source_locale or "en"] = str(runtime.en_file)
+            else:
+                errors.append(f"Source locale file not found: {runtime.en_file}")
+
+        if hasattr(runtime, "ar_file"):
+            target_locale = target_locales[0] if target_locales else "ar"
+            if runtime.ar_file.exists():
+                translation_paths[target_locale] = str(runtime.ar_file)
+            else:
+                errors.append(f"Target locale file not found: {runtime.ar_file}")
+
+        # Config file check
+        config_path = path / ".l10n-audit" / "config" / "config.json"
+        if not config_path.exists():
+            warnings.append(f"Config file not found at {config_path}. Run 'l10n-audit init' first.")
+
+        # Glossary check
+        if hasattr(runtime, "glossary_file") and not runtime.glossary_file.exists():
+            warnings.append(f"Glossary file not found: {runtime.glossary_file}")
+
+    except Exception as exc:
+        errors.append(f"Failed to load project runtime: {exc}")
+
+    success = len(errors) == 0
+    return {
+        "success": success,
+        "project_path": str(path),
+        "framework": framework,
+        "profile": profile,
+        "source_locale": source_locale,
+        "target_locales": target_locales,
+        "translation_paths": translation_paths,
+        "warnings": warnings,
+        "errors": errors,
+    }
+
+
+
+
+
+def _infer_framework(profile: str) -> str:
+    """Map a profile string to a user-friendly framework name."""
+    _map = {
+        "flutter_arb": "flutter",
+        "react_i18n": "react",
+        "laravel_php": "laravel",
+        "json_flat": "json",
+        "vue_i18n": "vue",
+        "android_xml": "android",
+        "ios_strings": "ios",
+    }
+    return _map.get(profile, profile)
+
+================
+File: .gitignore
+================
+# --- Python bytecode and caches ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Test and type-check caches ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Build and packaging artifacts ---
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# --- Editor and OS files ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Generated reports and audit outputs ---
+Results/*
+!Results/.gitkeep
+reports_output/
+*.log
+
+# --- استبعاد ملفات أدوات التحليل الآلي (Repomix/Context) ---
+repomix*
+project-context.txt
+final-audit-toolkit.txt
+clean_project.txt
+clean_project*
+
+# --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
+# ملاحظة: تم استبعاد "مفاتيح" لأنه يحتوي على أدوات عمل خاصة بالمطور
+مفاتيح/*
+internal_notes/
+.dev_scripts/
+RELEASE_NOTE.md
+
+# --- إعدادات الحالة والبيئة المحلية ---
+vendor/
+.l10n-audit/status.json
+.l10n-audit/version.json
+
+================
 File: l10n_audit/reports/report_aggregator.py
 ================
 #!/usr/bin/env python3
@@ -32343,7 +33493,9 @@ _SOURCE_LOCALE_MAP: dict[str, str] = {
     "ar_locale_qc": "ar",
     "ar_semantic_qc": "ar",
     "en_locale_qc": "en",
-    "en_grammar_audit": "en",
+    "grammar": "en",           # Added to resolve Grammar locale disappearance
+    "en_grammar_audit": "en",  # Legacy fallback
+    "ai_review": "ar",         # Added to resolve AI suggestion locale disappearance
 }
 
 
@@ -32652,6 +33804,29 @@ def _project_approved_new(issue: dict, resolution: dict) -> str:
     return ""
 
 
+def _get_value_smart(target_key: str, locale_data: dict[str, object]) -> str:
+    """
+    Performs a smart lookup to handle flattened nested JSON keys.
+    Falls back to a suffix match if the direct flat key is not found.
+    """
+    if not target_key or not locale_data:
+        return ""
+        
+    # Attempt 1: Direct match
+    if target_key in locale_data:
+        val = locale_data[target_key]
+        return str(val) if val is not None else ""
+        
+    # Attempt 2: Suffix match for flattened nested keys
+    suffix = f".{target_key}"
+    for flat_key, value in locale_data.items():
+        if str(flat_key).endswith(suffix):
+            return str(value) if value is not None else ""
+            
+    # Attempt 3: Safe fail
+    return ""
+
+
 def old_value_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_data: dict[str, object]) -> str:
     details = issue.get("details", {})
     explicit = str(details.get("old", ""))
@@ -32660,9 +33835,9 @@ def old_value_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_da
     locale = _resolve_issue_locale(issue)
     key = str(issue.get("key", ""))
     if locale == "en":
-        return str(en_data.get(key, ""))
+        return _get_value_smart(key, en_data)
     if locale == "ar":
-        return str(ar_data.get(key, ""))
+        return _get_value_smart(key, ar_data)
     return ""
 
 
@@ -32673,19 +33848,27 @@ def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], a
         if val:
             return val
 
-    details = issue.get("details", {})
+    details = issue.get("details", {}) or {}
     for field in ("new", "candidate_value", "expected_ar", "use_instead"):
         value = str(details.get(field, ""))
         if value:
             return value
 
+    # NEW FIX: Handle LanguageTool array format
+    replacements = details.get("replacements")
+    if replacements:
+        if isinstance(replacements, list) and len(replacements) > 0:
+            return str(replacements[0])
+        elif isinstance(replacements, str):
+            return replacements
+
     locale = _resolve_issue_locale(issue)
     issue_type = str(issue.get("issue_type", ""))
     key = str(issue.get("key", ""))
     if issue_type in {"confirmed_missing_key", "missing_in_ar", "in_en_not_ar"} and locale == "ar":
-        return str(en_data.get(key, ""))
+        return _get_value_smart(key, en_data)
     if issue_type in {"missing_in_en", "in_ar_not_en"} and locale == "en":
-        return str(ar_data.get(key, ""))
+        return _get_value_smart(key, ar_data)
     return ""
 
 
@@ -33733,601 +34916,6 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
     return artifacts
 
 ================
-File: l10n_audit/api.py
-================
-"""
-Public Python API for the L10n Audit Toolkit.
-
-This module exposes three top-level functions:
-
-- :func:`run_audit` — run an audit stage and return an :class:`~l10n_audit.models.AuditResult`
-- :func:`init_workspace` — initialise a workspace (equivalent to ``l10n-audit init``)
-- :func:`doctor_workspace` — return a stable structured status report
-
-All functions are safe to call from any Python thread.  No ``subprocess`` is
-used internally; all audit logic runs in-process.
-
-Example::
-
-    from l10n_audit import run_audit, doctor_workspace
-
-    result = run_audit("/path/to/project", stage="fast")
-    print(result.summary.missing_keys)
-    print(result.to_json())
-"""
-from __future__ import annotations
-
-import logging
-import os
-import shutil
-import time
-from pathlib import Path
-from typing import Any, Literal
-
-from l10n_audit.exceptions import AuditError, InvalidProjectError
-from l10n_audit.models import (
-    AIReview,
-    AuditIssue,
-    AuditOptions,
-    AuditResult,
-    AuditRules,
-    AuditSummary,
-    OutputOptions,
-    ProjectDetection,
-    ReportArtifact,
-)
-from l10n_audit.core.results_manager import manage_previous_results
-
-logger = logging.getLogger("l10n_audit.api")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-def _stage_module_names(stage: str, ai_enabled: bool = False) -> list[str]:
-    """Return the module names that will run for a given *stage*.
-
-    Used by the CLI to print progress messages like ``Running audits.X...``
-    that match the old subprocess-based dispatch output exactly.
-    """
-    fast = [
-        "audits.l10n_audit_pro",
-        "audits.en_locale_qc",
-        "audits.ar_locale_qc",
-        "audits.ar_semantic_qc",
-        "audits.placeholder_audit",
-        "audits.terminology_audit",
-    ]
-    mapping: dict[str, list[str]] = {
-        "fast": fast + ["reports.report_aggregator"],
-        "full": fast + ["audits.icu_message_audit", "audits.en_grammar_audit", "reports.report_aggregator"],
-        "grammar": ["audits.en_grammar_audit"],
-        "terminology": ["audits.terminology_audit"],
-        "placeholders": ["audits.placeholder_audit"],
-        "ar-qc": ["audits.ar_locale_qc"],
-        "ar-semantic": ["audits.ar_semantic_qc"],
-        "icu": ["audits.icu_message_audit"],
-        "reports": ["reports.report_aggregator"],
-        "autofix": ["fixes.apply_safe_fixes"],
-        "ai-review": ["audits.ai_review"],
-    }
-    
-    modules = mapping.get(stage, [])
-    
-    # If AI is enabled, append ai_review to the pipeline (continuous flow)
-    if ai_enabled and "audits.ai_review" not in modules:
-        modules = list(modules)
-        # Avoid double-adding if report_aggregator is at the end, insert after it or just append
-        modules.append("audits.ai_review")
-        
-    return modules
-
-
-def check_prerequisites() -> None:
-    """Check if system prerequisites (like Java) are installed.
-
-    Raises
-    ------
-    RuntimeError
-        If Java is not found, with instructions for the user.
-    """
-    import subprocess
-    try:
-        # Check for Java presence
-        subprocess.run(["java", "-version"], capture_output=True, check=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        raise RuntimeError(
-            "Java is required for grammar and style checks (LanguageTool).\n"
-            "Please ensure Java (JRE 8 or higher) is installed and available in your PATH.\n"
-            "You can download it from: https://www.java.com/"
-        )
-
-
-# ---------------------------------------------------------------------------
-# run_audit
-# ---------------------------------------------------------------------------
-
-def run_audit(
-    project_path: str | Path,
-    *,
-    stage: str = "full",
-    ai_enabled: bool | None = None,
-    ai_api_key: str | None = None,
-    ai_model: str | None = None,
-    ai_api_base: str | None = None,
-    ai_provider: str | None = None,
-    ai_api_key_env: str | None = None,
-    write_reports: bool = True,
-    output_dir: str | Path | None = None,
-    ai_provider_override: Any = None,
-    apply_safe_fixes: bool | None = None,
-    results_retention_mode: Literal["archive", "overwrite"] | None = None,
-    results_retention_prefix: str | None = None,
-    glossary_path: str | Path | None = None,
-    out_xlsx: str | Path | None = None,
-    config_schema: str | Path | None = None,
-    verbose: bool = False,
-    force: bool = False,
-    translate_missing: bool = False,
-    input_report: str | Path | None = None,
-) -> AuditResult:
-    """Run an audit stage on *project_path* and return structured results.
-
-    Parameters
-    ----------
-    project_path:
-        Absolute or relative path to the project root.
-    stage:
-        Audit stage to run.
-    ai_enabled:
-        Override AI review enablement.
-    ai_api_key:
-        Personal API key override.
-    ai_model:
-        Model name, e.g. "gpt-4o-mini" or "deepseek-chat".
-    ai_api_base:
-        Override provider URL.
-    write_reports:
-        Generate output files (JSON/CSV/XLSX).
-    glossary_path:
-        Path to a custom glossary JSON file.
-    out_xlsx:
-        Direct override path for the Excel report.
-    verbose:
-        Enable detailed step-by-step logging.
-    force:
-        Bypass safety pipelines or protection guards.
-
-    Raises
-    ------
-    InvalidProjectError
-        If *project_path* does not exist or is not a valid project.
-    StageError
-        If *stage* is not a recognised audit stage.
-    AIConfigError
-        If AI is enabled but the API key is missing.
-    """
-    check_prerequisites()
-
-    from l10n_audit.core.validators import (
-        validate_ai_config,
-        validate_project_path,
-        validate_stage,
-    )
-    from l10n_audit.core.engine import run_engine
-
-    result = AuditResult(
-        project_path=str(project_path),
-        stage=stage,
-    )
-    result.mark_started()
-
-    try:
-        path = validate_project_path(project_path)
-        validate_stage(stage)
-
-        # Load runtime environment
-        from l10n_audit.core.audit_runtime import load_runtime, AuditRuntimeError, write_json
-        from l10n_audit.core.workspace import prepare_audit_workspace
-        try:
-            runtime = load_runtime_from_path(path)
-            # Recovery & Enhancement: Create isolated workspace (replaces paths in runtime)
-            runtime = prepare_audit_workspace(runtime)
-            logger.info("Audit workspace prepared and runtime paths isolated.")
-        except AuditRuntimeError as exc:
-            raise InvalidProjectError(f"Invalid project configuration: {exc}") from exc
-        
-        result.profile = getattr(runtime, "project_profile", "")
-
-        # Merge arguments with runtime config for v1.2.2 namespaced structure
-        effective_ai_enabled = ai_enabled if ai_enabled is not None else runtime.ai_review["enabled"]
-        effective_apply_safe_fixes = apply_safe_fixes if apply_safe_fixes is not None else runtime.output["apply_safe_fixes"]
-        
-        validate_ai_config(
-            ai_enabled=effective_ai_enabled,
-            ai_api_key=ai_api_key,
-            ai_model=ai_model,
-            ai_api_base=ai_api_base,
-            ai_provider=ai_provider or runtime.ai_review["provider"],
-            ai_api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
-        )
-
-        options = AuditOptions(
-            stage=stage,
-            project_detection=ProjectDetection(
-                auto_detect=True,
-                force_profile=getattr(runtime, "project_profile", ""),
-            ),
-            audit_rules=AuditRules(
-                role_identifiers=list(runtime.role_identifiers),
-                entity_whitelist={k: list(v) for k, v in runtime.entity_whitelist.items()},
-                apply_safe_fixes=effective_apply_safe_fixes,
-                latin_whitelist=list(getattr(runtime, "latin_whitelist", [])),
-            ),
-            ai_review=AIReview(
-                enabled=effective_ai_enabled or translate_missing,
-                provider=ai_provider or runtime.ai_review["provider"],
-                model=ai_model or runtime.ai_review["model"],
-                api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
-                batch_size=runtime.ai_review["batch_size"],
-                short_label_threshold=runtime.ai_review["short_label_threshold"],
-                translate_missing=translate_missing,
-            ),
-            output=OutputOptions(
-                results_dir=output_dir or runtime.results_dir,
-                retention_mode=results_retention_mode or runtime.output.get("retention_mode", "overwrite"),
-                archive_name_prefix=results_retention_prefix or runtime.output.get("archive_name_prefix", "audit"),
-            ),
-            # Power-user Artifact Overrides
-            glossary_file=glossary_path or runtime.glossary_file,
-            out_xlsx=out_xlsx,
-            config_schema=config_schema,
-            verbose=verbose,
-            ai_provider_override=ai_provider_override,
-            input_report=input_report,
-        )
-
-        # Step 2: Results Retention Management (Suicide Loop Prevention)
-        from l10n_audit.models import PRODUCER_STAGES, CONSUMER_STAGES
-        results_dir = options.effective_output_dir(runtime.results_dir)
-        
-        # Guard logic: Bypass if 'force' is enabled
-        if force:
-            logger.info("Force flag enabled. Bypassing stage-safety guards.")
-            manage_previous_results(results_dir, options)
-        elif stage in PRODUCER_STAGES:
-            # Producers can safely rotate results
-            manage_previous_results(results_dir, options)
-        elif stage in CONSUMER_STAGES:
-            # Consumers process existing findings.
-            # v1.3.1 fix: We now allow these stages to proceed even if the aggregate report 
-            # is missing, as they can still process individual JSON reports from per_tool/
-            report_path = results_dir / "final_audit_report.json"
-            if not report_path.exists():
-                logger.info("Consumer stage '%s': Aggregated report not found at %s. Proceeding with per-tool cache files.", stage, report_path)
-            else:
-                logger.info("Consumer stage '%s' validated. Input found at %s", stage, report_path)
-        else:
-            # Fallback for unrecognized/adhoc stages
-            manage_previous_results(results_dir, options)
-
-        # Step 3: Produce results and reports
-        issues, reports = run_engine(runtime, options, ai_provider=ai_provider_override)
-
-        # Step 4: Unified Fix Generation (v1.3.0)
-        # This replaces the old glossary-only fix logic with a unified plan
-        from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
-        from l10n_audit.fixes.fix_merger import merge_and_export_fixes, export_review_queue
-        
-        issue_dicts = [i.to_dict() if hasattr(i, "to_dict") else i for i in issues]
-        fix_plan = build_fix_plan(issue_dicts, runtime.project_root)
-        
-        # Save the full plan for future reference (internal)
-        fixes_dir = results_dir / ".cache" / "apply"
-        fixes_dir.mkdir(parents=True, exist_ok=True)
-        write_json({"plan": fix_plan}, fixes_dir / "fix_plan.json")
-        
-        # 4.1 Export Review Queue if any manual review is needed
-        review_required = [i for i in fix_plan if i["classification"] == "review_required"]
-        if review_required:
-            review_xlsx = results_dir / "review" / "review_queue.xlsx"
-            export_review_queue(fix_plan, runtime, review_xlsx)
-            logger.info(f"Review Required: {len(review_required)} items added to {review_xlsx}")
-            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {review_xlsx}")
-            
-        # 4.2 Immediate Auto-Fix Generation (.fix files next to originals)
-        if effective_apply_safe_fixes:
-            auto_fixes_en = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and i["locale"] == "en"}
-            auto_fixes_ar = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and (i["locale"] == "ar" or i["locale"] == runtime.target_locales[0])}
-            
-            if auto_fixes_en and runtime.original_en_file:
-                merge_and_export_fixes(runtime.original_en_file, auto_fixes_en, runtime=runtime)
-            if auto_fixes_ar and runtime.original_ar_file:
-                merge_and_export_fixes(runtime.original_ar_file, auto_fixes_ar, runtime=runtime)
-            
-            total_auto = len(auto_fixes_en) + len(auto_fixes_ar)
-            if total_auto > 0:
-                print(f"✅ [AUTO-FIXED]: {total_auto} safe corrections generated in .fix files.")
-
-        result.issues = issues
-        result.reports = reports
-        result.summary = AuditSummary.from_issues(issues)
-        # Populate total_keys from locale data (best effort)
-        try:
-            from l10n_audit.core.audit_runtime import load_locale_mapping
-            en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
-            ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
-            result.summary.total_keys_en = len(en_data)
-            result.summary.total_keys_ar = len(ar_data)
-        except Exception:
-            pass
-
-    except AuditError:
-        raise
-    except Exception as exc:
-        result.success = False
-        result.error_message = str(exc)
-        logger.exception("Unexpected error during audit: %s", exc)
-
-    result.mark_finished()
-    logger.info(
-        "run_audit done: stage=%s issues=%d duration=%dms",
-        stage, len(result.issues), result.duration_ms,
-    )
-    return result
-
-
-def load_runtime_from_path(project_path: Path):
-    """Load AuditPaths for *project_path* by temporarily changing the process
-    working directory to the project root.
-
-    This is a thin wrapper around :func:`core.audit_runtime.load_runtime` that
-    sets the project root correctly without forking a subprocess.
-    """
-    import os
-    from l10n_audit.core.audit_runtime import load_runtime
-
-    old_cwd = os.getcwd()
-    try:
-        os.chdir(project_path)
-        runtime = load_runtime(str(project_path / ".l10n-audit" / "cli.py"), validate=True)
-    finally:
-        os.chdir(old_cwd)
-    return runtime
-
-
-# ---------------------------------------------------------------------------
-# init_workspace
-# ---------------------------------------------------------------------------
-
-def init_workspace(
-    project_path: str | Path,
-    *,
-    force: bool = False,
-    channel: str = "stable",
-) -> dict[str, Any]:
-    """Initialise a workspace in *project_path*.
-
-    Parameters
-    ----------
-    project_path:
-        Directory in which to create ``.l10n-audit/``.
-    force:
-        Overwrite existing workspace.
-    channel:
-        Template channel to use.
-
-    Returns
-    -------
-    dict
-        ``{"success": bool, "message": str, "workspace_dir": str}``
-
-    Raises
-    ------
-    InvalidProjectError
-        If *project_path* is not a valid directory.
-    """
-    from l10n_audit.core.validators import validate_project_path
-    path = validate_project_path(project_path)
-
-    import os
-    from l10n_audit.core.workspace import init_workspace as _init_ws
-    old_cwd = os.getcwd()
-    try:
-        os.chdir(path)
-        _result = _init_ws(str(path), force=force, channel=channel)
-    finally:
-        os.chdir(old_cwd)
-
-    workspace_dir = path / ".l10n-audit"
-    return {
-        "success": True,
-        "message": "Workspace initialised successfully.",
-        "workspace_dir": str(workspace_dir),
-        "project_path": str(path),
-    }
-
-
-# ---------------------------------------------------------------------------
-# doctor_workspace
-# ---------------------------------------------------------------------------
-
-def doctor_workspace(project_path: str | Path) -> dict[str, Any]:
-    """Return a structured status report for *project_path*.
-
-    The returned dict has a stable schema suitable for consumption by HTTP APIs:
-
-    .. code-block:: json
-
-        {
-            "success": true,
-            "project_path": "/abs/path",
-            "framework": "flutter",
-            "profile": "flutter_arb",
-            "source_locale": "en",
-            "target_locales": ["ar"],
-            "translation_paths": {
-                "en": "/abs/path/lib/l10n/intl_en.arb",
-                "ar": "/abs/path/lib/l10n/intl_ar.arb"
-            },
-            "warnings": [],
-            "errors": []
-        }
-
-    Parameters
-    ----------
-    project_path:
-        Path to the project root.
-
-    Returns
-    -------
-    dict
-        Stable status schema. ``success`` will be ``false`` if errors are found.
-
-    Raises
-    ------
-    InvalidProjectError
-        If *project_path* does not exist.
-    """
-    from l10n_audit.core.validators import validate_project_path
-    path = validate_project_path(project_path)
-
-    warnings: list[str] = []
-    errors: list[str] = []
-
-    profile = ""
-    framework = ""
-    source_locale = ""
-    target_locales: list[str] = []
-    translation_paths: dict[str, str] = {}
-
-    try:
-        runtime = load_runtime_from_path(path)
-        profile = getattr(runtime, "project_profile", "")
-        framework = _infer_framework(profile)
-        source_locale = getattr(runtime, "source_locale", "")
-        target_locales = list(getattr(runtime, "target_locales", []))
-
-        # Translation file presence checks
-        if hasattr(runtime, "en_file"):
-            if runtime.en_file.exists():
-                translation_paths[source_locale or "en"] = str(runtime.en_file)
-            else:
-                errors.append(f"Source locale file not found: {runtime.en_file}")
-
-        if hasattr(runtime, "ar_file"):
-            target_locale = target_locales[0] if target_locales else "ar"
-            if runtime.ar_file.exists():
-                translation_paths[target_locale] = str(runtime.ar_file)
-            else:
-                errors.append(f"Target locale file not found: {runtime.ar_file}")
-
-        # Config file check
-        config_path = path / ".l10n-audit" / "config" / "config.json"
-        if not config_path.exists():
-            warnings.append(f"Config file not found at {config_path}. Run 'l10n-audit init' first.")
-
-        # Glossary check
-        if hasattr(runtime, "glossary_file") and not runtime.glossary_file.exists():
-            warnings.append(f"Glossary file not found: {runtime.glossary_file}")
-
-    except Exception as exc:
-        errors.append(f"Failed to load project runtime: {exc}")
-
-    success = len(errors) == 0
-    return {
-        "success": success,
-        "project_path": str(path),
-        "framework": framework,
-        "profile": profile,
-        "source_locale": source_locale,
-        "target_locales": target_locales,
-        "translation_paths": translation_paths,
-        "warnings": warnings,
-        "errors": errors,
-    }
-
-
-
-
-
-def _infer_framework(profile: str) -> str:
-    """Map a profile string to a user-friendly framework name."""
-    _map = {
-        "flutter_arb": "flutter",
-        "react_i18n": "react",
-        "laravel_php": "laravel",
-        "json_flat": "json",
-        "vue_i18n": "vue",
-        "android_xml": "android",
-        "ios_strings": "ios",
-    }
-    return _map.get(profile, profile)
-
-================
-File: .gitignore
-================
-# --- Python bytecode and caches ---
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# --- Virtual environments ---
-.venv/
-venv/
-env/
-ENV/
-
-# --- Test and type-check caches ---
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# --- Build and packaging artifacts ---
-build/
-dist/
-*.egg-info/
-.eggs/
-pip-wheel-metadata/
-
-# --- Editor and OS files ---
-.DS_Store
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# --- Generated reports and audit outputs ---
-Results/*
-!Results/.gitkeep
-reports_output/
-*.log
-
-# --- استبعاد ملفات أدوات التحليل الآلي (Repomix/Context) ---
-repomix*
-project-context.txt
-final-audit-toolkit.txt
-clean_project.txt
-clean_project*
-
-# --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
-# ملاحظة: تم استبعاد "مفاتيح" لأنه يحتوي على أدوات عمل خاصة بالمطور
-مفاتيح/*
-internal_notes/
-.dev_scripts/
-RELEASE_NOTE.md
-
-# --- إعدادات الحالة والبيئة المحلية ---
-vendor/
-.l10n-audit/status.json
-.l10n-audit/version.json
-
-================
 File: l10n_audit/models.py
 ================
 """
@@ -34651,7 +35239,7 @@ class ResultsRetention:
 # AuditOptions
 # ---------------------------------------------------------------------------
 
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 
 
 @dataclass
@@ -34995,7 +35583,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "l10n-audit-toolkit"
-version = "1.5.0"
+version = "1.5.1"
 description = "Cross-framework localization audit and translation QA toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35050,7 +35638,7 @@ File: README.md
 
 Automated localization auditing, validation, and repair — built for real-world production pipelines.
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 [![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 
 ---

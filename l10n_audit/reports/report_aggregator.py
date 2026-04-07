@@ -12,11 +12,23 @@ from pathlib import Path
 from typing import Any
 
 from l10n_audit.core.audit_report_utils import load_all_report_issues, severity_rank, summarize_issues, write_unified_json
-from l10n_audit.core.artifact_resolver import resolve_master_path, resolve_final_report_path
+from l10n_audit.core.artifact_resolver import (
+    resolve_master_path, 
+    resolve_final_report_path,
+    resolve_review_projection_path,
+    resolve_review_projection_json_path,
+    resolve_review_machine_queue_json_path,  # Added (Phase 9)
+)
 from l10n_audit.core.audit_runtime import compute_plan_id, compute_text_hash, load_locale_mapping, load_runtime, write_simple_xlsx
 from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
+from l10n_audit.core.locale_utils import (
+    resolve_issue_locale,
+    resolve_issue_current_value,
+    resolve_issue_candidate_value,
+    get_value_smart
+)
 
-REVIEW_QUEUE_COLUMNS = [
+REVIEW_PROJECTION_COLUMNS = [
     "key",
     "locale",
     "old_value",
@@ -38,6 +50,7 @@ REVIEW_QUEUE_COLUMNS = [
     "generated_at",
     "provenance",
 ]
+REVIEW_QUEUE_COLUMNS = REVIEW_PROJECTION_COLUMNS
 HIDDEN_WHEN_EMPTY = {"placeholders", "icu_message_audit"}
 
 
@@ -75,71 +88,19 @@ def recommendations(summary: dict[str, Any], safe_fixes: dict[str, int], review_
     return items or ["No action is required because no issues were found."]
 
 
-def review_locale(issue: dict[str, Any]) -> str:
-    locale = str(issue.get("locale", "")).strip()
-    source = str(issue.get("source", ""))
-    if locale in {"ar", "en"}:
-        return locale
-    if source in {"ar_locale_qc", "ar_semantic_qc", "terminology"}:
-        return "ar"
-    if source in {"locale_qc", "grammar"}:
-        return "en"
-    return locale or "ar"
 
-
-_SOURCE_LOCALE_MAP: dict[str, str] = {
-    "ar_locale_qc": "ar",
-    "ar_semantic_qc": "ar",
-    "en_locale_qc": "en",
-    "en_grammar_audit": "en",
-}
-
+# ---------------------------------------------------------------------------
+# Legacy Support for Regression Tests
+# ---------------------------------------------------------------------------
 
 def _resolve_issue_locale(issue: dict) -> str:
-    """Return the resolved locale for an issue, always one of 'ar', 'en', or 'unknown'.
+    """Legacy wrapper for tests."""
+    loc, _src = resolve_issue_locale(issue)
+    return loc or "unknown"
 
-    Resolution priority (strict):
-      1. Explicit locale field
-      2. Source-based inference via _SOURCE_LOCALE_MAP
-      3. Key prefix inference  ('ar.' / 'en.' via split)
-      4. File path inference   ('/ar/', 'ar.json', '/en/', 'en.json')
-      5. Fallback → 'unknown'
-
-    Never raises. Never returns an empty string.
-    """
-    # Input validation
-    if not isinstance(issue, dict):
-        return "unknown"
-
-    # 1. Explicit locale — normalize to lowercase
-    locale = str(issue.get("locale", "") or "").strip().lower()
-    if locale in {"ar", "en"}:
-        return locale
-
-    # 2. Source-based inference — normalize to lowercase
-    source = str(issue.get("source", "") or "").strip().lower()
-    if source in _SOURCE_LOCALE_MAP:
-        return _SOURCE_LOCALE_MAP[source]
-
-    # 3. Key prefix inference via split to avoid false positives (e.g. "archive")
-    key = str(issue.get("key", "") or "").strip()
-    if key:
-        first_segment = key.split(".")[0].lower()
-        if first_segment == "ar":
-            return "ar"
-        if first_segment == "en":
-            return "en"
-
-    # 4. File path inference — normalize to lowercase, unify separators
-    file_path = str(issue.get("file_path", "") or "").strip().lower().replace("\\", "/")
-    if file_path:
-        if "/ar/" in file_path or file_path.endswith("ar.json"):
-            return "ar"
-        if "/en/" in file_path or file_path.endswith("en.json"):
-            return "en"
-
-    # 5. Fallback
-    return "unknown"
+def _get_value_smart(target_key: str, locale_data: dict[str, object]) -> str:
+    """Legacy wrapper for tests."""
+    return get_value_smart(target_key, locale_data) or ""
 
 # ---------------------------------------------------------------------------
 # Phase 7: Candidate Safety Gate (Proper Nouns & Brand Identity)
@@ -189,6 +150,37 @@ def _is_unsafe_mutation(cur: str, fix: str) -> bool:
                 return True
                     
     return False
+
+
+def _should_suppress_brand_noise(issue: dict, current_value: str) -> bool:
+    """Return True for narrow v1 grammar/spelling brand noise."""
+    source = str(issue.get("source", "") or "")
+    issue_type = str(issue.get("issue_type", "") or "")
+    if source != "grammar" or issue_type not in {"grammar", "spelling"}:
+        return False
+
+    tokens = re.findall(r'\w+', str(current_value or ""), re.UNICODE)
+    if not tokens:
+        return False
+
+    tokens_lower = {token.lower() for token in tokens}
+    if any(token in _PROTECTED_ACRONYMS for token in tokens):
+        return True
+    if any(token in _PROTECTED_BRANDS for token in tokens_lower):
+        return True
+    return False
+
+
+def _should_suppress_capitalization_by_key_profile(issue: dict) -> bool:
+    """Return True for narrow v1 capitalization suppression by key suffix."""
+    source = str(issue.get("source", "") or "")
+    issue_type = str(issue.get("issue_type", "") or "")
+    key = str(issue.get("key", "") or "")
+    return (
+        source == "locale_qc"
+        and issue_type == "capitalization"
+        and key.endswith(("_label", "_btn", "_hint"))
+    )
 
 
 def _levenshtein_distance(s1: str, s2: str) -> int:
@@ -248,6 +240,53 @@ def _is_low_risk_fix(cur: str, fix: str) -> bool:
                 return True
                 
     return False
+
+
+def _contextual_guard_decision(issue: dict, current_value: str, suggested_fix: str) -> dict:
+    """Return a narrow v1 decision for suspicious grammar shifts.
+
+    This helper is intentionally rule-based and scoped to one pattern only:
+    ``Your ...`` -> ``You're ...``.
+    """
+    cur = str(current_value or "")
+    fix = str(suggested_fix or "")
+
+    if not (cur.startswith("Your ") and fix.startswith("You're ")):
+        return {"guard_status": "allow", "reason": "", "notes_token": ""}
+
+    word_count = len(fix.split())
+    if word_count <= 3:
+        return {
+            "guard_status": "veto",
+            "reason": "SUSPICIOUS_GRAMMAR_SHIFT",
+            "notes_token": "[CONFLICT:SUSPICIOUS_GRAMMAR_SHIFT]",
+        }
+
+    return {
+        "guard_status": "review",
+        "reason": "SUSPICIOUS_GRAMMAR_SHIFT",
+        "notes_token": "[REVIEW:SUSPICIOUS_GRAMMAR_SHIFT]",
+    }
+
+
+def _pattern_completion_guard_decision(issue: dict, current_value: str, suggested_fix: str) -> dict:
+    """Return a narrow v1 veto for suspicious token addition."""
+    cur = str(current_value or "")
+    fix = str(suggested_fix or "")
+
+    if _is_low_risk_fix(cur, fix):
+        return {"guard_status": "allow", "reason": "", "notes_token": ""}
+
+    tokens_cur = re.findall(r'\w+', cur, re.UNICODE)
+    tokens_fix = re.findall(r'\w+', fix, re.UNICODE)
+    if tokens_cur and len(tokens_fix) > len(tokens_cur) and tokens_fix[:len(tokens_cur)] == tokens_cur:
+        return {
+            "guard_status": "veto",
+            "reason": "PATTERN_COMPLETION_VETO",
+            "notes_token": "[CONFLICT:PATTERN_COMPLETION_VETO]",
+        }
+
+    return {"guard_status": "allow", "reason": "", "notes_token": ""}
 
 
 def _resolve_candidate_value(
@@ -326,7 +365,27 @@ def _resolve_candidate_value(
             "notes_token": "[CONFLICT:SAFETY_VETO]",
         }
 
-    # 5. Safe suggested fix
+    # 5. Contextual guard — narrow suspicious grammar veto/review
+    guard = _contextual_guard_decision(issue, cur, fix)
+    if guard["guard_status"] in {"veto", "review"}:
+        return {
+            "candidate_value": "",
+            "resolution_mode": "conflict",
+            "conflict_flag": str(guard["reason"] or ""),
+            "notes_token": str(guard["notes_token"] or ""),
+        }
+
+    # 6. Pattern completion guard — narrow suspicious token addition veto
+    pattern_guard = _pattern_completion_guard_decision(issue, cur, fix)
+    if pattern_guard["guard_status"] == "veto":
+        return {
+            "candidate_value": "",
+            "resolution_mode": "conflict",
+            "conflict_flag": str(pattern_guard["reason"] or ""),
+            "notes_token": str(pattern_guard["notes_token"] or ""),
+        }
+
+    # 7. Safe suggested fix
     return {
         "candidate_value": fix,
         "resolution_mode": "suggested_fix",
@@ -400,40 +459,64 @@ def _project_approved_new(issue: dict, resolution: dict) -> str:
     return ""
 
 
+def _is_merge_compatible_review_issue(
+    existing: dict[str, str],
+    resolution: dict,
+    projected_approved_new: str,
+) -> bool:
+    """Return True when an incoming issue preserves the representative outcome shape."""
+    existing_suggested_fix = str(existing.get("suggested_fix", "") or "")
+    existing_suggested_hash = str(existing.get("suggested_hash", "") or "")
+    existing_approved_new = str(existing.get("approved_new", "") or "")
+
+    incoming_resolution_mode = str(resolution.get("resolution_mode", "") or "")
+    incoming_candidate = str(resolution.get("candidate_value", "") or "")
+    incoming_candidate_hash = compute_text_hash(incoming_candidate)
+    incoming_approved_new = str(projected_approved_new or "")
+
+    if incoming_resolution_mode in ("conflict", "no_candidate"):
+        return existing_suggested_fix == "" and existing_approved_new == ""
+
+    if not existing_suggested_fix and not existing_approved_new and incoming_candidate:
+        return True
+
+    if existing_suggested_fix != incoming_candidate or existing_suggested_hash != incoming_candidate_hash:
+        return False
+
+    if existing_approved_new and incoming_approved_new and existing_approved_new != incoming_approved_new:
+        return False
+
+    return True
+
+
+
+
 def old_value_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_data: dict[str, object]) -> str:
-    details = issue.get("details", {})
-    explicit = str(details.get("old", ""))
-    if explicit:
-        return explicit
-    locale = _resolve_issue_locale(issue)
-    key = str(issue.get("key", ""))
+    locale, _source = resolve_issue_locale(issue)
     if locale == "en":
-        return str(en_data.get(key, ""))
+        val, _determination = resolve_issue_current_value(issue, locale_data=en_data)
+        return val or ""
     if locale == "ar":
-        return str(ar_data.get(key, ""))
+        val, _determination = resolve_issue_current_value(issue, locale_data=ar_data)
+        return val or ""
     return ""
 
 
 def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_data: dict[str, object]) -> str:
-    # v1.3.1 - Prioritize top-level fields populated by AI review or merging
-    for field in ("suggested_fix", "suggestion", "approved_new"):
-        val = str(issue.get(field) or "")
-        if val:
-            return val
+    # 1. Try resolving candidate value via shared logic
+    val, _source = resolve_issue_candidate_value(issue)
+    if val:
+        return val
 
-    details = issue.get("details", {})
-    for field in ("new", "candidate_value", "expected_ar", "use_instead"):
-        value = str(details.get(field, ""))
-        if value:
-            return value
-
-    locale = _resolve_issue_locale(issue)
+    # 2. Contextual fallback for missing keys
+    locale, _l_source = resolve_issue_locale(issue)
     issue_type = str(issue.get("issue_type", ""))
     key = str(issue.get("key", ""))
     if issue_type in {"confirmed_missing_key", "missing_in_ar", "in_en_not_ar"} and locale == "ar":
-        return str(en_data.get(key, ""))
+        return get_value_smart(key, en_data) or ""
     if issue_type in {"missing_in_en", "in_ar_not_en"} and locale == "en":
-        return str(ar_data.get(key, ""))
+        return get_value_smart(key, ar_data) or ""
+
     return ""
 
 
@@ -600,14 +683,19 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         if str(issue.get("severity", "")).lower() == "info":
             continue
             
-        locale = _resolve_issue_locale(issue)
+        locale, _l_source = resolve_issue_locale(issue)
+        locale = locale or "unknown"
         key = str(issue.get("key", ""))
         issue_type = str(issue.get("issue_type", ""))
         current_value = old_value_for_issue(issue, en_data, ar_data)
-        suggested_fix = suggested_fix_for_issue(issue, en_data, ar_data)
         message = str(issue.get("message", ""))
         source = str(issue.get("source", ""))
         severity = str(issue.get("severity", ""))
+        if _should_suppress_brand_noise(issue, current_value):
+            continue
+        if _should_suppress_capitalization_by_key_profile(issue):
+            continue
+        suggested_fix = suggested_fix_for_issue(issue, en_data, ar_data)
         resolution = _resolve_candidate_value(issue, current_value, suggested_fix)
         resolved_fix = resolution["candidate_value"]
         notes_token = resolution["notes_token"]
@@ -618,6 +706,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         row_key = (key, locale)
         if row_key in rows_by_key:
             existing = rows_by_key[row_key]
+            merge_compatible = _is_merge_compatible_review_issue(existing, resolution, projected_approved_new)
             # Merge unique issue types
             if issue_type not in existing["issue_type"].split(" | "):
                 existing["issue_type"] += f" | {issue_type}"
@@ -634,25 +723,26 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             prov_segment = f"{source}|{issue_type}|{severity}"
             if prov_segment not in existing["provenance"].split(" || "):
                 existing["provenance"] += f" || {prov_segment}"
-            # Force clear when resolution signals conflict or no candidate
-            resolution_mode = resolution["resolution_mode"]
-            if resolution_mode in ("conflict", "no_candidate"):
-                existing["suggested_fix"] = ""
-                existing["suggested_hash"] = compute_text_hash("")
-            else:
-                # Prioritize AI suggestions if they exist
-                is_ai = source in ("ai_review", "ai_suggestion") or "ai_suggestion" in issue_type
-                if is_ai and resolved_fix:
-                    existing["suggested_fix"] = resolved_fix
-                    existing["suggested_hash"] = compute_text_hash(resolved_fix)
-                    if "|ai_reviewed" not in existing["provenance"]:
-                        existing["provenance"] += "|ai_reviewed"
-                elif not existing["suggested_fix"] and resolved_fix:
-                    existing["suggested_fix"] = resolved_fix
-                    existing["suggested_hash"] = compute_text_hash(resolved_fix)
-            # Project approved_new if not already set
-            if not existing["approved_new"] and projected_approved_new:
-                existing["approved_new"] = projected_approved_new
+            if merge_compatible:
+                # Force clear when resolution signals conflict or no candidate
+                resolution_mode = resolution["resolution_mode"]
+                if resolution_mode in ("conflict", "no_candidate"):
+                    existing["suggested_fix"] = ""
+                    existing["suggested_hash"] = compute_text_hash("")
+                else:
+                    # Prioritize AI suggestions if they exist
+                    is_ai = source in ("ai_review", "ai_suggestion") or "ai_suggestion" in issue_type
+                    if is_ai and resolved_fix:
+                        existing["suggested_fix"] = resolved_fix
+                        existing["suggested_hash"] = compute_text_hash(resolved_fix)
+                        if "|ai_reviewed" not in existing["provenance"]:
+                            existing["provenance"] += "|ai_reviewed"
+                    elif not existing["suggested_fix"] and resolved_fix:
+                        existing["suggested_fix"] = resolved_fix
+                        existing["suggested_hash"] = compute_text_hash(resolved_fix)
+                # Project approved_new if not already set
+                if not existing["approved_new"] and projected_approved_new:
+                    existing["approved_new"] = projected_approved_new
             rows_by_key[row_key] = _normalize_review_row(existing)
         else:
             resolved_notes = " | ".join(filter(None, [message, notes_token, decision_token]))
@@ -849,6 +939,7 @@ def write_audit_master(
     json_file: Path,
     review_json: Path,
     review_xlsx: Path,
+    review_machine: Path,
     issues: list,
     review_rows: list,
     payload: dict,
@@ -949,8 +1040,11 @@ def write_audit_master(
     artifacts_reg = {
         "master_path":               _rel(master_file),
         "final_report_json_path":    _rel(json_file),
-        "review_queue_json_path":    _rel(review_json),
+        "review_projection_json_path": _rel(review_json),
+        "review_machine_queue_json_path": _rel(review_machine),
+        "review_queue_json_path":    _rel(results_dir / "review" / "review_queue.json"),
         "review_queue_xlsx_path":    _rel(review_xlsx),
+        "review_projection_xlsx_path": _rel(review_xlsx),
         "aggregated_issues_path":    _rel(aggr_file),
         "final_report_md_path":      _rel(results_dir / "final" / "final_audit_report.md"),
         "final_report_en_md_path":   _rel(results_dir / "final" / "final_audit_report_en.md"),
@@ -966,7 +1060,9 @@ def write_audit_master(
         "sources": {
             "aggregated_issues_path": _rel(aggr_file),
             "final_audit_report_path": _rel(json_file),
-            "review_queue_json_path": _rel(review_json),
+            "review_projection_json_path": _rel(review_json),
+            "review_machine_queue_json_path": _rel(review_machine),
+            "review_queue_json_path": _rel(results_dir / "review" / "review_queue.json"),
             "review_queue_xlsx_path": _rel(review_xlsx)
         },
         "issue_inventory": issues,
@@ -1007,9 +1103,9 @@ def main() -> None:
     parser.add_argument("--out-ar", default=str(runtime.results_dir / "final" / "final_audit_report_ar.md"))
     parser.add_argument("--out-md", default=str(runtime.results_dir / "final" / "final_audit_report.md"))
     parser.add_argument("--out-json", default=str(runtime.results_dir / "final" / "final_audit_report.json"))
-    parser.add_argument("--out-normalized", default=str(runtime.results_dir / "normalized" / "aggregated_issues.json"))
-    parser.add_argument("--out-review-xlsx", default=str(runtime.results_dir / "review" / "review_queue.xlsx"))
-    parser.add_argument("--out-review-json", default=str(runtime.results_dir / "review" / "review_queue.json"))
+    parser.add_argument("--out-final-json", default=str(resolve_final_report_path(runtime)))
+    parser.add_argument("--out-review-xlsx", default=str(resolve_review_projection_path(runtime)))
+    parser.add_argument("--out-review-json", default=str(resolve_review_projection_json_path(runtime)))
     parser.add_argument("--sources", default="")
     args = parser.parse_args()
 
@@ -1033,9 +1129,11 @@ def main() -> None:
         "priority_order": priority_order(issues),
         "recommendations": recommendations(summary, safe_fixes, review_rows),
         "artifacts": {
-            "dashboard": "Results/final/final_audit_report.md",
-            "review_queue": "Results/review/review_queue.xlsx",
-            "final_locale": "Results/final_locale/ar.final.json",
+            "final_report_md": "Results/final/final_audit_report.md",
+            "final_report_json": "Results/final/final_audit_report.json",
+            "review_projection": "Results/review/review_projection.xlsx",
+            "review_projection_json": "Results/review/review_projection.json",
+            "aggregated_issues": "Results/normalized/aggregated_issues.json"
         },
         "workflow": [
             "Run Audit",
@@ -1057,8 +1155,8 @@ def main() -> None:
     Path(args.out_ar).write_text(markdown, encoding="utf-8")
     write_unified_json(Path(args.out_json), payload)
     write_unified_json(Path(args.out_normalized), {"included_sources": payload["included_sources"], "issues": issues})
-    write_unified_json(Path(args.out_review_json), {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
-    write_simple_xlsx(review_rows, REVIEW_QUEUE_COLUMNS, Path(args.out_review_xlsx), sheet_name="Review Queue")
+    write_unified_json(Path(args.out_review_json), {"columns": REVIEW_PROJECTION_COLUMNS, "rows": review_rows})
+    write_simple_xlsx(review_rows, REVIEW_PROJECTION_COLUMNS, Path(args.out_review_xlsx), sheet_name="Review Queue")
 
     try:
         write_audit_master(
@@ -1414,8 +1512,9 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         md_file = final_dir / "final_audit_report.md"
         json_file = final_dir / "final_audit_report.json"
         aggr_file = normalized_dir / "aggregated_issues.json"
-        review_json = review_dir / "review_queue.json"
-        review_xlsx = review_dir / "review_queue.xlsx"
+        review_json = resolve_review_projection_json_path(runtime)
+        review_xlsx = resolve_review_projection_path(runtime)
+        review_machine = resolve_review_machine_queue_json_path(runtime)  # Added (Phase 9)
 
         md_file.write_text(markdown, encoding="utf-8")
         logger.debug("Phase G2/G3: Multilingual markdown variants successfully removed. Dead flags cleared.")
@@ -1430,7 +1529,17 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
                 "(classification: compatibility_required; replacement: audit_master.json[issue_inventory]). "
                 "Path: %s", aggr_file
             )
-            write_unified_json(review_json, {"columns": REVIEW_QUEUE_COLUMNS, "rows": review_rows})
+            write_unified_json(review_json, {"columns": REVIEW_PROJECTION_COLUMNS, "rows": review_rows})
+            
+            # --- Phase 9: Explicit Machine Queue Emission ---
+            # Distinct from pure analysis (review_projection.json)
+            write_unified_json(review_machine, {"review_queue": review_rows, "plan_id_source": "report_aggregator"})
+            
+            # Legacy compatibility fallback (best-effort)
+            try:
+                write_unified_json(resolve_review_queue_json_path(runtime), {"rows": review_rows})
+            except Exception:
+                pass
             
             try:
                 write_audit_master(
@@ -1439,6 +1548,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
                     json_file=json_file,
                     review_json=review_json,
                     review_xlsx=review_xlsx,
+                    review_machine=review_machine,
                     issues=issues,
                     review_rows=review_rows,
                     payload=payload,
@@ -1465,12 +1575,13 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         artifacts.extend([
             ReportArtifact(name="Final Report (Markdown)", path=str(md_file), format="markdown", category="summary"),
             ReportArtifact(name="Final Report (JSON)", path=str(json_file), format="json", category="summary"),
-            ReportArtifact(name="Review Queue (JSON)", path=str(review_json), format="json", category="review"),
+            ReportArtifact(name="Review Projection (JSON)", path=str(review_json), format="json", category="review"),
+            ReportArtifact(name="Review Machine Queue (JSON)", path=str(review_machine), format="json", category="machine"),
         ])
 
         try:
-            write_simple_xlsx(review_rows, REVIEW_QUEUE_COLUMNS, review_xlsx, sheet_name="Review Queue")
-            artifacts.append(ReportArtifact(name="Review Queue (Excel)", path=str(review_xlsx), format="xlsx", category="review"))
+            write_simple_xlsx(review_rows, REVIEW_PROJECTION_COLUMNS, review_xlsx, sheet_name="Review Queue")
+            artifacts.append(ReportArtifact(name="Review Projection (Excel)", path=str(review_xlsx), format="xlsx", category="review"))
         except Exception as xlsx_exc:
             logger.warning("Could not write review XLSX: %s", xlsx_exc)
 

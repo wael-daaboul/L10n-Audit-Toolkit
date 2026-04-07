@@ -7,7 +7,6 @@
   بشكل جماعي، مما يوفر الوقت في المشاريع الكبيرة مع الحفاظ على نسخة احتياطية (.fix).
 """
 import logging
-import datetime
 from pathlib import Path
 from typing import Dict, Optional, Any, List
 
@@ -16,6 +15,108 @@ from l10n_audit.core.locale_loaders.loader_factory import load_locale_mapping
 from l10n_audit.core.audit_runtime import write_json, write_simple_xlsx, compute_text_hash
 
 logger = logging.getLogger("l10n_audit.fixes")
+
+
+def _normalized_non_empty_string(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value if value.strip() else None
+
+
+def _record_review_export_rejection(
+    runtime: Any,
+    item: Dict[str, Any],
+    missing_fields: List[str],
+) -> None:
+    rejection = {
+        "key": str(item.get("key", "")),
+        "source": str(item.get("source", "")),
+        "issue_type": str(item.get("issue_type", "")),
+        "missing_fields": missing_fields,
+        "reason": "incomplete_review_export_contract",
+    }
+    if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        runtime.metadata.setdefault("review_export_rejections", []).append(rejection)
+        invalid_entry = {
+            "key": str(item.get("key", "")),
+            "plan_id": str(item.get("plan_id", "")),
+            "missing_fields": list(missing_fields),
+            "raw_item_snapshot": dict(item),
+        }
+        runtime.metadata.setdefault("invalid_review_rows", []).append(invalid_entry)
+        counter = runtime.metadata.setdefault("invalid_review_rows_reasons_breakdown", {})
+        if isinstance(counter, dict):
+            for field in missing_fields:
+                breakdown_key = f"missing_{field}"
+                counter[breakdown_key] = int(counter.get(breakdown_key, 0)) + 1
+        runtime.metadata["invalid_review_rows_count"] = len(runtime.metadata.get("invalid_review_rows", []))
+        return
+    logger.debug("Dropping review export item: %s", rejection)
+
+
+def validate_review_row(item: Dict[str, Any]) -> tuple[bool, List[str]]:
+    key = _normalized_non_empty_string(item.get("key"))
+    locale = _normalized_non_empty_string(item.get("locale"))
+    issue_type = _normalized_non_empty_string(item.get("issue_type"))
+    message = _normalized_non_empty_string(item.get("message"))
+    current_value = _normalized_non_empty_string(item.get("current_value"))
+    candidate_value = _normalized_non_empty_string(item.get("candidate_value"))
+    generated_at = _normalized_non_empty_string(item.get("generated_at"))
+    approved_new = candidate_value
+
+    missing_fields: List[str] = []
+    if key is None:
+        missing_fields.append("key")
+    if locale not in {"ar", "en"}:
+        missing_fields.append("locale")
+    if issue_type is None:
+        missing_fields.append("issue_type")
+    if message is None:
+        missing_fields.append("message")
+    if current_value is None:
+        missing_fields.append("current_value")
+    if candidate_value is None:
+        missing_fields.append("candidate_value")
+    if candidate_value is not None and approved_new is None:
+        missing_fields.append("approved_new")
+    if generated_at is None:
+        missing_fields.append("generated_at")
+    return len(missing_fields) == 0, missing_fields
+
+
+def build_validated_row(item: Dict[str, Any], runtime: Any) -> Dict[str, Any] | None:
+    is_valid, missing_fields = validate_review_row(item)
+    if not is_valid:
+        _record_review_export_rejection(runtime, item, missing_fields)
+        return None
+
+    key = _normalized_non_empty_string(item.get("key"))
+    locale = _normalized_non_empty_string(item.get("locale"))
+    issue_type = _normalized_non_empty_string(item.get("issue_type"))
+    message = _normalized_non_empty_string(item.get("message"))
+    current_value = _normalized_non_empty_string(item.get("current_value"))
+    candidate_value = _normalized_non_empty_string(item.get("candidate_value"))
+    approved_new = candidate_value
+    source_old_value = current_value
+    status = str(item.get("status", "")).strip() or "pending"
+    plan_id = str(item.get("plan_id", "")).strip() or f"PLAN-{compute_text_hash(f'{key}|{locale}')[:12]}"
+    generated_at = _normalized_non_empty_string(item.get("generated_at"))
+
+    return {
+        "key": key,
+        "locale": locale,
+        "issue_type": issue_type,
+        "message": message,
+        "current_value": current_value,
+        "candidate_value": candidate_value,
+        "approved_new": approved_new,
+        "status": status,
+        "source_old_value": source_old_value,
+        "source_hash": compute_text_hash(current_value),
+        "suggested_hash": compute_text_hash(candidate_value),
+        "plan_id": plan_id,
+        "generated_at": generated_at,
+    }
 
 def merge_mappings(base: Dict[str, Any], auto: Dict[str, str], review: Dict[str, str]) -> Dict[str, Any]:
     """
@@ -112,21 +213,21 @@ def export_review_queue(
         return output_path
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
+        runtime.metadata.setdefault("invalid_review_rows", [])
+        runtime.metadata.setdefault("invalid_review_rows_reasons_breakdown", {})
+        runtime.metadata.setdefault("invalid_review_rows_count", 0)
     
     # Prepare data for export
     export_data = []
     for item in review_items:
-        row = dict(item)
-        row.setdefault("status", "pending")
-        row.setdefault("approved_new", item.get("approved_new") or item.get("candidate_value") or "")
-        
-        # Add metadata for integrity checks (as expected by apply_review_fixes.py)
-        row.setdefault("source_old_value", item.get("current_value", ""))
-        row.setdefault("source_hash", compute_text_hash(str(item.get("current_value", ""))))
-        row.setdefault("suggested_hash", compute_text_hash(str(item.get("candidate_value", ""))))
-        row.setdefault("plan_id", "PLAN-" + str(abs(hash(str(item.get("key", "")) + str(item.get("locale", "")))) % 100000000))
-        row.setdefault("generated_at", datetime.datetime.now().isoformat())
-        export_data.append(row)
+        row = build_validated_row(item, runtime)
+        if row is not None:
+            export_data.append(row)
+
+    if not export_data:
+        logger.info("No valid review_required items were exportable for review queue: %s", output_path)
+        return output_path
 
     # Required columns for apply_review_fixes.py
     columns = [

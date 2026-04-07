@@ -1,5 +1,4 @@
 from __future__ import annotations
-import litellm
 import json
 import logging
 from typing import Any, Protocol, runtime_checkable

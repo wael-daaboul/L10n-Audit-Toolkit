@@ -92,6 +92,7 @@ def test_fix_plan_ignores_unverified_ai():
             "key": "k1",
             "source": "ai_review",
             "code": "AI_SUGGESTION",
+            "locale": "ar",
             "verified": False,
             "suggestion": "bad suggestion",
             "details": {"old": "old", "new": "bad suggestion"}
@@ -100,6 +101,7 @@ def test_fix_plan_ignores_unverified_ai():
             "key": "k2",
             "source": "ai_review",
             "code": "AI_SUGGESTION",
+            "locale": "ar",
             "verified": True,
             "suggestion": "good suggestion",
             "details": {"old": "old", "new": "good suggestion"}

@@ -319,7 +319,7 @@ class ResultsRetention:
 # AuditOptions
 # ---------------------------------------------------------------------------
 
-VERSION = "1.5.0"
+VERSION = "1.5.4"
 
 
 @dataclass

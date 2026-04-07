@@ -47,6 +47,15 @@ RemovalReadiness = Literal[
     "removed",
 ]
 
+ArtifactRole = Literal[
+    "authoritative_master",
+    "human_apply_contract",
+    "analytical_projection",
+    "machine_consumer_queue",
+    "compatibility_alias",
+    "legacy_fallback",
+]
+
 
 @dataclass(frozen=True)
 class ArtifactEntry:
@@ -60,6 +69,9 @@ class ArtifactEntry:
 
     classification: Classification
     """Current lifecycle classification."""
+
+    artifact_role: ArtifactRole
+    """Semantic role in the artifact lifecycle contract."""
 
     removal_readiness: RemovalReadiness
     """Decommission readiness for Phase F+."""
@@ -91,6 +103,7 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         name="audit_master",
         path_pattern="artifacts/audit_master.json",
         classification="active_required",
+        artifact_role="authoritative_master",
         removal_readiness="keep",
         active_consumers=[
             "artifact_resolver.load_master_artifacts",
@@ -114,6 +127,7 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         name="review_queue_xlsx",
         path_pattern="review/review_queue.xlsx",
         classification="active_required",
+        artifact_role="human_apply_contract",
         removal_readiness="keep",
         active_consumers=[
             "apply_review_fixes.main (CLI --review-queue default)",
@@ -131,36 +145,101 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         deprecation_note="Never deprecate. Core user-facing contract for apply workflow.",
     ),
 
-    # ── 3. review/review_queue.json ──────────────────────────────────────────
+    # ── 3. review/review_projection.json ────────────────────────────────────
+    ArtifactEntry(
+        name="review_projection_json",
+        path_pattern="review/review_projection.json",
+        classification="active_required",
+        artifact_role="analytical_projection",
+        removal_readiness="keep",
+        active_consumers=[
+            "report_aggregator.run_stage (analytical review projection write)",
+            "artifact_resolver.resolve_review_projection_json_path",
+            "audit_master.json artifacts registry entry",
+        ],
+        replacement="self — canonical analytical JSON projection artifact",
+        evidence=(
+            "artifact_resolver.py exposes resolve_review_projection_json_path for reporting consumers. "
+            "report_aggregator.py writes review_projection.json as the analytical/reporting representation "
+            "separate from machine-consumer and human-apply artifacts."
+        ),
+        deprecation_note="Keep as the analytical/reporting JSON surface.",
+    ),
+
+    # ── 4. review/review_projection.xlsx ────────────────────────────────────
+    ArtifactEntry(
+        name="review_projection_xlsx",
+        path_pattern="review/review_projection.xlsx",
+        classification="active_required",
+        artifact_role="analytical_projection",
+        removal_readiness="keep",
+        active_consumers=[
+            "report_aggregator.run_stage (analytical XLSX write)",
+            "artifact_resolver.resolve_review_projection_path",
+            "api.py report artifact list",
+        ],
+        replacement="self — analytical workbook for reporting consumers",
+        evidence=(
+            "report_aggregator.py writes review_projection.xlsx separately from review_queue.xlsx. "
+            "artifact_resolver.py exposes it as a distinct analytical path."
+        ),
+        deprecation_note="Keep as the analytical workbook artifact.",
+    ),
+
+    # ── 5. review/review_machine_queue.json ─────────────────────────────────
+    ArtifactEntry(
+        name="review_machine_queue_json",
+        path_pattern="review/review_machine_queue.json",
+        classification="active_required",
+        artifact_role="machine_consumer_queue",
+        removal_readiness="keep",
+        active_consumers=[
+            "ai_review.load_issues (preferred machine path after final report)",
+            "artifact_resolver.resolve_review_machine_queue_json_path",
+            "report_aggregator.run_stage (always written for machine consumers)",
+            "audit_master.json artifacts registry entry",
+        ],
+        replacement="self — canonical machine-consumer queue artifact",
+        evidence=(
+            "artifact_resolver.py exposes resolve_review_machine_queue_json_path as the primary "
+            "machine-consumer JSON path. report_aggregator.py writes review_machine_queue.json "
+            "explicitly for machine consumers. ai_review.py prefers this path over legacy "
+            "review_queue.json when final_audit_report.json is absent."
+        ),
+        deprecation_note="Never deprecate while machine consumers rely on a standalone queue JSON artifact.",
+    ),
+
+    # ── 6. review/review_queue.json ──────────────────────────────────────────
     ArtifactEntry(
         name="review_queue_json",
         path_pattern="review/review_queue.json",
-        classification="active_required",
-        removal_readiness="keep",
+        classification="compatibility_required",
+        artifact_role="compatibility_alias",
+        removal_readiness="warn_only",
         active_consumers=[
-            "ai_review.load_issues (line 28): fallback when final_audit_report.json absent",
-            "report_aggregator run_stage (line 857): always written",
+            "ai_review.load_issues (legacy fallback after review_machine_queue.json)",
+            "report_aggregator.run_stage (compatibility mirror write only)",
             "artifact_resolver.resolve_review_queue_path",
             "audit_master.json artifacts registry entry",
         ],
-        replacement="audit_master.json[review_projection] for machine consumers",
+        replacement="review/review_machine_queue.json (primary machine queue) or audit_master.json[review_projection]",
         evidence=(
-            "ai_review.py line 28: reads review_queue.json when final report absent. "
-            "This is a first-class fallback for the ai-review stage. "
-            "Removing would break ai-review when reports stage hasn't run yet."
+            "ai_review.py now prefers review_machine_queue.json and only falls back to "
+            "review_queue.json for compatibility. report_aggregator.py still mirrors rows "
+            "into review_queue.json as a legacy alias for older consumers and existing runs."
         ),
         deprecation_note=(
-            "Technically: review_queue.json could be replaced by master hydration in ai_review.py. "
-            "However it is an active fallback for the ai-review consumer. "
-            "Classify as keep for now; demote to warn_only after ai_review migrates to master."
+            "Legacy compatibility alias only. Must not be treated as the authoritative machine queue. "
+            "Retained to avoid breaking old consumers; eligible for removal after compatibility window."
         ),
     ),
 
-    # ── 4. final/final_audit_report.json ─────────────────────────────────────
+    # ── 7. final/final_audit_report.json ─────────────────────────────────────
     ArtifactEntry(
         name="final_audit_report_json",
         path_pattern="final/final_audit_report.json",
         classification="active_required",
+        artifact_role="authoritative_master",
         removal_readiness="keep",
         active_consumers=[
             "ai_review.load_issues (line 26): primary load path",
@@ -180,11 +259,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         deprecation_note="Never deprecate until ai_review migrates to master-hydration path.",
     ),
 
-    # ── 5. final/final_audit_report.md ───────────────────────────────────────
+    # ── 8. final/final_audit_report.md ───────────────────────────────────────
     ArtifactEntry(
         name="final_audit_report_md",
         path_pattern="final/final_audit_report.md",
         classification="active_required",
+        artifact_role="analytical_projection",
         removal_readiness="keep",
         active_consumers=[
             "report_aggregator run_stage (line 854): always written",
@@ -200,11 +280,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         deprecation_note="Never deprecate. Primary human-readable output.",
     ),
 
-    # ── 6. final/final_audit_report_en.md ─────────────────────────────────── 
+    # ── 9. final/final_audit_report_en.md ─────────────────────────────────── 
     ArtifactEntry(
         name="final_audit_report_en_md",
         path_pattern="final/final_audit_report_en.md",
         classification="removed",
+        artifact_role="compatibility_alias",
         removal_readiness="removed",
         active_consumers=[],
         replacement="final/final_audit_report.md (identical content currently)",
@@ -218,11 +299,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         removal_phase="G2",
     ),
 
-    # ── 7. final/final_audit_report_ar.md ─────────────────────────────────── 
+    # ── 8. final/final_audit_report_ar.md ─────────────────────────────────── 
     ArtifactEntry(
         name="final_audit_report_ar_md",
         path_pattern="final/final_audit_report_ar.md",
         classification="removed",
+        artifact_role="compatibility_alias",
         removal_readiness="removed",
         active_consumers=[],
         replacement="final/final_audit_report.md (identical content currently)",
@@ -235,11 +317,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         removal_phase="G2",
     ),
 
-    # ── 8. normalized/aggregated_issues.json ─────────────────────────────────
+    # ── 9. normalized/aggregated_issues.json ─────────────────────────────────
     ArtifactEntry(
         name="aggregated_issues_json",
         path_pattern="normalized/aggregated_issues.json",
         classification="compatibility_required",
+        artifact_role="legacy_fallback",
         removal_readiness="warn_only",
         active_consumers=[
             "artifact_resolver.resolve_aggregated_issues_path (resolver only)",
@@ -260,11 +343,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         ),
     ),
 
-    # ── 9. per_tool/*/*.json (raw tool reports) ───────────────────────────────
+    # ── 10. per_tool/*/*.json (raw tool reports) ───────────────────────────────
     ArtifactEntry(
         name="per_tool_json",
         path_pattern="per_tool/{tool}/{tool}_report.json",
         classification="compatibility_required",
+        artifact_role="legacy_fallback",
         removal_readiness="warn_only",
         active_consumers=[
             "context_evaluator.load_en_languagetool_signals (line 135): fallback if .cache absent",
@@ -289,11 +373,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         ),
     ),
 
-    # ── 10. per_tool/*/*.csv  ─────────────────────────────────────────────────
+    # ── 11. per_tool/*/*.csv  ─────────────────────────────────────────────────
     ArtifactEntry(
         name="per_tool_csv",
         path_pattern=".cache/raw_tools/{tool}/{tool}_report.csv",
         classification="optional_legacy",
+        artifact_role="legacy_fallback",
         removal_readiness="warn_only",
         active_consumers=[],
         replacement="None — no downstream code reads tool CSVs",
@@ -309,11 +394,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         ),
     ),
 
-    # ── 11. per_tool/*/*.xlsx ─────────────────────────────────────────────────
+    # ── 12. per_tool/*/*.xlsx ─────────────────────────────────────────────────
     ArtifactEntry(
         name="per_tool_xlsx",
         path_pattern=".cache/raw_tools/{tool}/{tool}_report.xlsx",
         classification="optional_legacy",
+        artifact_role="legacy_fallback",
         removal_readiness="warn_only",
         active_consumers=[],
         replacement="None — no downstream code reads tool XLSXs",
@@ -328,11 +414,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         ),
     ),
 
-    # ── 12. .cache/apply/fix_plan.xlsx ───────────────────────────────────────
+    # ── 13. .cache/apply/fix_plan.xlsx ───────────────────────────────────────
     ArtifactEntry(
         name="fix_plan_xlsx",
         path_pattern=".cache/apply/fix_plan.xlsx",
         classification="optional_legacy",
+        artifact_role="legacy_fallback",
         removal_readiness="warn_only",
         active_consumers=[],
         replacement=".cache/apply/fix_plan.json (machine-readable equivalent)",
@@ -348,11 +435,12 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
         ),
     ),
 
-    # ── 13. fixes/ legacy directory (old write path) ─────────────────────────
+    # ── 14. fixes/ legacy directory (old write path) ─────────────────────────
     ArtifactEntry(
         name="fixes_legacy_dir",
         path_pattern="fixes/fix_plan.json",
         classification="deprecated_candidate",
+        artifact_role="legacy_fallback",
         removal_readiness="warn_only",
         active_consumers=[
             "artifact_resolver._LEGACY_FALLBACKS (line 55-57): read fallback only",
@@ -394,7 +482,7 @@ def get_by_name(name: str) -> ArtifactEntry | None:
 def summary_dict() -> dict:
     """Produce a JSON-serializable summary of the registry for embedding in audit_master."""
     return {
-        "schema_version": "phase_E_v1",
+        "schema_version": "phase_E_v2",
         "total": len(LEGACY_ARTIFACT_REGISTRY),
         "by_classification": {
             classification: [e.name for e in get_by_classification(classification)]  # type: ignore[arg-type]
@@ -407,12 +495,25 @@ def summary_dict() -> dict:
                 "removed",
             )
         },
+        "by_role": {
+            role: [e.name for e in LEGACY_ARTIFACT_REGISTRY if e.artifact_role == role]
+            for role in (
+                "authoritative_master",
+                "human_apply_contract",
+                "analytical_projection",
+                "machine_consumer_queue",
+                "compatibility_alias",
+                "legacy_fallback",
+            )
+        },
         "entries": [
             {
                 "name": e.name,
                 "path_pattern": e.path_pattern,
                 "classification": e.classification,
+                "artifact_role": e.artifact_role,
                 "removal_readiness": e.removal_readiness,
+                "active_consumers": list(e.active_consumers),
                 "replacement": e.replacement,
                 "deprecation_note": e.deprecation_note,
                 "removal_phase": e.removal_phase,

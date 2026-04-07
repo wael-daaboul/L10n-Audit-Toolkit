@@ -42,10 +42,10 @@ def test_phase8_semantic_blocking():
     assert approved == "" # Semantic change is NOT mechanical
     assert dq["decision_quality"] == "suggestion_only"
     
-    # 6. Phrase Expansion (Pay -> Pay Now) -> SUGGESTION_ONLY
+    # 6. Phrase Expansion (Pay -> Pay Now) -> BLOCKED by Pattern Completion Guard v1
     approved, dq = get_row_fields("Pay", "Pay Now")
     assert approved == "" # expansion is NOT mechanical
-    assert dq["decision_quality"] == "suggestion_only"
+    assert dq["decision_quality"] == "blocked"
 
 def test_safety_priority_over_dq():
     # 7. Brand safety veto is now exact-case (Phase 7 tightening).
@@ -61,4 +61,3 @@ def test_levenshtein_distance_logic():
     from l10n_audit.reports.report_aggregator import _levenshtein_distance
     assert _levenshtein_distance("submit", "send") > 2
     assert _levenshtein_distance("mision", "mission") == 1
-
