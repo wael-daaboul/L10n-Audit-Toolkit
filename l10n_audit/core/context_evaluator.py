@@ -12,6 +12,17 @@ from l10n_audit.core.languagetool_layer import get_languagetool_layer, lt_findin
 
 SENTENCE_END_RE = re.compile(r"[.!?؟]$")
 WORD_RE = re.compile(r"[A-Za-z\u0600-\u06FF0-9]+")
+PLACEHOLDER_RE = re.compile(r"\{\{[^{}]+\}\}|\{[^{}]+\}")
+
+ACTION_CUE_MAP = {
+    "add": ("أضف", "إضافة"),
+    "save": ("احفظ", "حفظ"),
+    "send": ("أرسل", "إرسال"),
+    "delete": ("احذف", "حذف"),
+    "approve": ("وافق", "موافقة"),
+    "select": ("اختر", "اختيار"),
+    "enter": ("أدخل", "إدخال"),
+}
 
 TEXT_TYPE_HINTS = {
     "button": {"button", "btn", "cta", "submit", "save", "cancel"},
@@ -112,19 +123,49 @@ def arabic_sentence_shape(ar_value: str) -> str:
 def action_mismatch_flags(en_value: str, ar_value: str) -> list[str]:
     en_lower = en_value.casefold()
     flags: list[str] = []
-    action_terms = {
-        "add": ("أضف", "إضافة"),
-        "save": ("احفظ", "حفظ"),
-        "send": ("أرسل", "إرسال"),
-        "delete": ("احذف", "حذف"),
-        "approve": ("وافق", "موافقة"),
-        "select": ("اختر", "اختيار"),
-        "enter": ("أدخل", "إدخال"),
-    }
-    for term, arabic_candidates in action_terms.items():
+    for term, arabic_candidates in ACTION_CUE_MAP.items():
         if term in en_lower and not any(candidate in ar_value for candidate in arabic_candidates):
             flags.append(f"missing_action:{term}")
     return flags
+
+
+def _extract_semantic_cues(text: str) -> set[str]:
+    lowered = text.casefold()
+    cues: set[str] = set()
+
+    shape = english_sentence_shape(text) if re.search(r"[A-Za-z]", text) else arabic_sentence_shape(text)
+    cues.add(f"shape:{shape}")
+
+    for action_key, arabic_candidates in ACTION_CUE_MAP.items():
+        if action_key in lowered or any(candidate in text for candidate in arabic_candidates):
+            cues.add(f"action:{action_key}")
+
+    for placeholder in PLACEHOLDER_RE.findall(text):
+        cues.add(f"placeholder:{placeholder}")
+
+    for number in re.findall(r"\d+", text):
+        cues.add(f"number:{number}")
+
+    return cues
+
+
+def semantic_similarity(source_text: str, target_text: str) -> float:
+    """Return a deterministic semantic cue similarity in [0.0, 1.0].
+
+    This is intentionally heuristic and explainable: it compares language-agnostic
+    semantic cues such as action intent, placeholders, numbers, and sentence shape.
+    It does not attempt probabilistic or embedding-based meaning inference.
+    """
+    source_cues = _extract_semantic_cues(source_text)
+    target_cues = _extract_semantic_cues(target_text)
+
+    if not source_cues and not target_cues:
+        return 1.0
+
+    union = source_cues | target_cues
+    if not union:
+        return 1.0
+    return round(len(source_cues & target_cues) / len(union), 4)
 
 
 def load_en_languagetool_signals(results_dir: Path) -> dict[str, dict[str, Any]]:
@@ -240,7 +281,7 @@ def evaluate_candidate_change(
 ) -> dict[str, Any]:
     flags = list(bundle.get("context_sensitive_term_flags", []))
     semantic_risk = "low"
-    review_reasons: list[str] = []
+    evidence_reasons: list[str] = []
     inferred_text_type = str(bundle.get("inferred_text_type", "text"))
     en_value = str(bundle.get("en_value", ""))
     ar_value = str(bundle.get("ar_value", ""))
@@ -249,10 +290,18 @@ def evaluate_candidate_change(
     expected_shape = str(bundle.get("english_sentence_shape", ""))
     text_role = str(bundle.get("text_role", ""))
     action_hint = str(bundle.get("action_hint", ""))
+    current_similarity = float(bundle.get("current_semantic_similarity", semantic_similarity(en_value, ar_value)))
+    candidate_similarity = semantic_similarity(en_value, candidate_text)
+    similarity_drop = round(max(0.0, current_similarity - candidate_similarity), 4)
+    shape_preserved = expected_shape == candidate_shape or (
+        expected_shape == "phrase" and candidate_shape == current_shape
+    )
+    action_preserved = not any(flag.startswith("missing_action:") for flag in action_mismatch_flags(en_value, candidate_text))
+    entity_alignment_ok = True
 
-    if bundle.get("has_context_sensitive_terms"):
+    if bundle.get("has_context_sensitive_terms") and candidate_text.strip() != ar_value.strip():
         semantic_risk = "medium"
-        review_reasons.append("Possible role/entity ambiguity detected in the English and Arabic pair.")
+        evidence_reasons.append("context_sensitive_term_risk")
 
     en_lower = en_value.casefold()
     # Check if candidate mentions a person role when the source mentioned an entity/admin term
@@ -265,38 +314,86 @@ def evaluate_candidate_change(
     if source_is_entity and candidate_person and current_entity:
         semantic_risk = "high"
         flags.append("role_entity_misalignment")
-        review_reasons.append("Candidate changes an administrative/entity reference into a person role.")
+        evidence_reasons.append("role_entity_misalignment")
+        entity_alignment_ok = False
 
     if (is_sentence_like(en_value) or inferred_text_type in {"helper_text", "subtitle", "dialog_body", "notification_body"}) and is_short_label(candidate_text):
         semantic_risk = "high"
         flags.append("structural_mismatch")
-        review_reasons.append("Candidate collapses a sentence-like string into a short label or entity term.")
+        evidence_reasons.append("structural_mismatch")
+        shape_preserved = False
 
     if expected_shape == "sentence_like" and candidate_shape == "short_label":
         semantic_risk = "high"
         flags.append("sentence_collapse")
-        review_reasons.append("Candidate does not preserve the sentence-like shape of the English source.")
+        evidence_reasons.append("sentence_collapse")
+        shape_preserved = False
 
     if current_shape == "sentence_like" and candidate_shape == "short_label":
         semantic_risk = "high"
         flags.append("sentence_collapse")
-        review_reasons.append("Candidate shortens the current Arabic sentence into a short label.")
+        evidence_reasons.append("sentence_collapse")
+        shape_preserved = False
 
     if text_role == "message" and candidate_shape == "short_label" and expected_shape != "short_label":
         semantic_risk = "high"
         flags.append("message_label_mismatch")
-        review_reasons.append("Candidate turns a message-style string into a label-like Arabic phrase.")
+        evidence_reasons.append("message_label_mismatch")
+        shape_preserved = False
 
     if action_hint == "action" and expected_shape == "sentence_like" and candidate_shape == "short_label":
         semantic_risk = "high"
         flags.append("action_loss")
-        review_reasons.append("Candidate removes the action-oriented instruction carried by the source sentence.")
+        evidence_reasons.append("action_loss")
+        action_preserved = False
+
+    if candidate_similarity < 0.35 and similarity_drop >= 0.15:
+        if semantic_risk != "high":
+            semantic_risk = "high" if not shape_preserved or not action_preserved else "medium"
+        flags.append("semantic_similarity_low")
+        evidence_reasons.append("semantic_similarity_low")
+    elif candidate_similarity < 0.55 and similarity_drop >= 0.1 and semantic_risk == "low":
+        semantic_risk = "medium"
+        flags.append("semantic_similarity_medium")
+        evidence_reasons.append("semantic_similarity_drop")
+
+    if not shape_preserved and semantic_risk == "low":
+        semantic_risk = "medium"
+    if not action_preserved and semantic_risk == "low":
+        semantic_risk = "medium"
+    if not entity_alignment_ok and semantic_risk != "high":
+        semantic_risk = "high"
+
+    semantic_evidence = {
+        "current_semantic_similarity": current_similarity,
+        "candidate_semantic_similarity": candidate_similarity,
+        "similarity_drop": similarity_drop,
+        "shape_preserved": shape_preserved,
+        "action_preserved": action_preserved,
+        "entity_alignment_ok": entity_alignment_ok,
+    }
+
+    reason_fragments: list[str] = []
+    if "role_entity_misalignment" in evidence_reasons:
+        reason_fragments.append("role/entity alignment changed")
+    if "sentence_collapse" in evidence_reasons or "structural_mismatch" in evidence_reasons or "message_label_mismatch" in evidence_reasons:
+        reason_fragments.append("sentence shape was not preserved")
+    if "action_loss" in evidence_reasons:
+        reason_fragments.append("action intent was not preserved")
+    if "semantic_similarity_low" in evidence_reasons or "semantic_similarity_drop" in evidence_reasons:
+        reason_fragments.append(
+            f"semantic similarity dropped from {current_similarity:.2f} to {candidate_similarity:.2f}"
+        )
+    if "context_sensitive_term_risk" in evidence_reasons and not reason_fragments:
+        reason_fragments.append("context-sensitive role/entity ambiguity remains")
 
     return {
         "context_flags": sorted(set(flags)),
         "semantic_risk": semantic_risk,
         "review_required": semantic_risk in {"medium", "high"},
-        "review_reason": " ".join(review_reasons).strip(),
+        "review_reason": "; ".join(reason_fragments).strip(),
+        "semantic_similarity": candidate_similarity,
+        "semantic_evidence": semantic_evidence,
     }
 
 
@@ -345,6 +442,7 @@ def build_context_bundle(
         review_reason = "Possible person/department or role/entity ambiguity. Human review required."
         if any(flag.startswith("missing_action:") for flag in semantic_flags):
             review_reason = "Possible meaning loss in the Arabic sentence. Human review required."
+    current_similarity = semantic_similarity(en_value, ar_value)
 
     return {
         "key": key,
@@ -373,4 +471,5 @@ def build_context_bundle(
         "has_context_sensitive_terms": bool(semantic_flags),
         "semantic_risk": semantic_risk,
         "review_reason": review_reason,
+        "current_semantic_similarity": current_similarity,
     }

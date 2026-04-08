@@ -29,6 +29,7 @@ from typing import Any, List, Optional
 import pytest
 
 from l10n_audit.core.controlled_consumption import (
+    ControlledConsumptionError,
     SIGNAL_TO_ACTION_MAP,
     ConsumableAction,
     ConsumptionManifest,
@@ -40,6 +41,9 @@ from l10n_audit.core.controlled_consumption import (
     _hash_report,
     _is_forbidden_target,
     generate_consumption_manifest,
+    load_adaptation_report,
+    serialise_manifest,
+    write_manifest_file,
 )
 
 
@@ -108,6 +112,26 @@ def test_absent_enabled_key_returns_none():
     report = _eligible_report()
     result = generate_consumption_manifest(report, {}, _current_config())
     assert result is None
+
+
+def test_load_adaptation_report_rejects_missing_fields(tmp_path):
+    path = tmp_path / "adaptation_report.json"
+    path.write_text(json.dumps({"project_id": "p"}), encoding="utf-8")
+
+    with pytest.raises(ControlledConsumptionError, match="missing required fields"):
+        load_adaptation_report(str(path))
+
+
+def test_write_manifest_file_persists_explicit_path(tmp_path):
+    manifest = generate_consumption_manifest(_eligible_report(), _default_config(), _current_config())
+    assert manifest is not None
+
+    out_path = tmp_path / "explicit_manifest.json"
+    written = write_manifest_file(manifest, str(out_path))
+
+    assert written == str(out_path)
+    assert out_path.exists()
+    assert json.loads(out_path.read_text(encoding="utf-8")) == serialise_manifest(manifest)
 
 
 def test_non_dict_config_returns_none():

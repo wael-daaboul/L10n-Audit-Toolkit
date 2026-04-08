@@ -341,6 +341,55 @@ def _build_learning_profile(store: ProjectMemoryStore) -> LearningProfile:
     )
 
 
+def load_learning_profile(path: str) -> LearningProfile:
+    """Load a LearningProfile JSON payload from disk with strict validation."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        raise ValueError(f"Learning profile not found: {path!r}")
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Corrupt learning profile JSON at {path!r}: {exc}")
+
+    if not isinstance(raw, dict):
+        raise ValueError("Learning profile payload must be a JSON object")
+
+    required = (
+        "project_id",
+        "run_count",
+        "avg_total_issues",
+        "avg_auto_fix_rate",
+        "avg_ai_review_rate",
+        "avg_manual_review_rate",
+        "avg_context_adjusted_rate",
+        "dominant_category",
+        "arabic_run_count",
+        "calibration_active_runs",
+        "routing_enabled_runs",
+        "first_seen",
+        "last_seen",
+    )
+    missing = [field_name for field_name in required if field_name not in raw]
+    if missing:
+        raise ValueError(f"Learning profile missing required fields: {missing}")
+
+    return LearningProfile(
+        project_id=str(raw["project_id"]),
+        run_count=int(raw["run_count"]),
+        avg_total_issues=round(float(raw["avg_total_issues"]), 4),
+        avg_auto_fix_rate=round(float(raw["avg_auto_fix_rate"]), 4),
+        avg_ai_review_rate=round(float(raw["avg_ai_review_rate"]), 4),
+        avg_manual_review_rate=round(float(raw["avg_manual_review_rate"]), 4),
+        avg_context_adjusted_rate=round(float(raw["avg_context_adjusted_rate"]), 4),
+        dominant_category=str(raw["dominant_category"]),
+        arabic_run_count=int(raw["arabic_run_count"]),
+        calibration_active_runs=int(raw["calibration_active_runs"]),
+        routing_enabled_runs=int(raw["routing_enabled_runs"]),
+        first_seen=float(raw["first_seen"]),
+        last_seen=float(raw["last_seen"]),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------

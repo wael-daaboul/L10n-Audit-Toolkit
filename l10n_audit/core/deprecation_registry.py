@@ -56,6 +56,13 @@ ArtifactRole = Literal[
     "legacy_fallback",
 ]
 
+GovernanceClassification = Literal[
+    "primary_workflow",
+    "internal_only",
+    "compatibility_only",
+    "deprecated_candidate",
+]
+
 
 @dataclass(frozen=True)
 class ArtifactEntry:
@@ -170,20 +177,19 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
     ArtifactEntry(
         name="review_projection_xlsx",
         path_pattern="review/review_projection.xlsx",
-        classification="active_required",
+        classification="deprecated_candidate",
         artifact_role="analytical_projection",
-        removal_readiness="keep",
+        removal_readiness="remove_now",
         active_consumers=[
-            "report_aggregator.run_stage (analytical XLSX write)",
             "artifact_resolver.resolve_review_projection_path",
-            "api.py report artifact list",
         ],
-        replacement="self — analytical workbook for reporting consumers",
+        replacement="review/review_projection.json (analytical) or audit_master.json[review_projection]",
         evidence=(
-            "report_aggregator.py writes review_projection.xlsx separately from review_queue.xlsx. "
-            "artifact_resolver.py exposes it as a distinct analytical path."
+            "Patch 1 stops emitting review_projection.xlsx from the run workflow. "
+            "artifact_resolver.py still exposes the conventional path for controlled migration, "
+            "but report_aggregator.py no longer returns or writes it as a primary artifact."
         ),
-        deprecation_note="Keep as the analytical workbook artifact.",
+        deprecation_note="Deprecated. review_projection.xlsx is analytical-only and not part of the human apply workflow.",
     ),
 
     # ── 5. review/review_machine_queue.json ─────────────────────────────────
@@ -462,6 +468,125 @@ LEGACY_ARTIFACT_REGISTRY: list[ArtifactEntry] = [
 ]
 
 
+_GOVERNANCE_CLASSIFICATION_BY_NAME: dict[str, GovernanceClassification] = {
+    "audit_master": "internal_only",
+    "review_queue_xlsx": "primary_workflow",
+    "review_final_xlsx": "primary_workflow",
+    "review_projection_json": "internal_only",
+    "review_projection_xlsx": "deprecated_candidate",
+    "review_machine_queue_json": "internal_only",
+    "review_queue_json": "compatibility_only",
+    "final_audit_report_json": "internal_only",
+    "final_audit_report_md": "primary_workflow",
+    "aggregated_issues_json": "compatibility_only",
+    "per_tool_json": "compatibility_only",
+    "per_tool_csv": "compatibility_only",
+    "per_tool_xlsx": "compatibility_only",
+    "fix_plan_xlsx": "compatibility_only",
+    "fixes_legacy_dir": "deprecated_candidate",
+    "adaptation_report_json": "primary_workflow",
+    "consumption_manifest_json": "primary_workflow",
+    "reviewed_manifest_json": "primary_workflow",
+    "manifest_receipt_json": "primary_workflow",
+    "manifest_rollback_records": "internal_only",
+    "apply_rejection_report_json": "internal_only",
+    "final_locale_fix_files": "primary_workflow",
+    "final_locale_ar_final_json": "compatibility_only",
+}
+
+
+_ADDITIVE_GOVERNANCE_ENTRIES: tuple[dict[str, str], ...] = (
+    {
+        "name": "review_final_xlsx",
+        "path_pattern": "review/review_final.xlsx",
+        "classification": "active_required",
+        "artifact_role": "human_apply_contract",
+        "replacement": "self — frozen execution contract for apply",
+        "deprecation_note": "Primary execution contract workbook consumed by apply.",
+    },
+    {
+        "name": "adaptation_report_json",
+        "path_pattern": ".cache/adaptation/adaptation_report.json",
+        "classification": "active_required",
+        "artifact_role": "analytical_projection",
+        "replacement": "self — explicit Phase 14 artifact",
+        "deprecation_note": "Primary adaptation artifact bridging learning profile to manifest generation.",
+    },
+    {
+        "name": "consumption_manifest_json",
+        "path_pattern": ".cache/consumption_manifests/{project}_{manifest}.json",
+        "classification": "active_required",
+        "artifact_role": "analytical_projection",
+        "replacement": "self — explicit manifest workflow artifact",
+        "deprecation_note": "Primary explicit manifest review input.",
+    },
+    {
+        "name": "reviewed_manifest_json",
+        "path_pattern": ".cache/reviewed_manifests/{project}_{reviewed}.json",
+        "classification": "active_required",
+        "artifact_role": "analytical_projection",
+        "replacement": "self — explicit reviewed manifest artifact",
+        "deprecation_note": "Primary explicit human-approved manifest artifact.",
+    },
+    {
+        "name": "manifest_receipt_json",
+        "path_pattern": ".cache/application_receipts/{project}_{receipt}.json",
+        "classification": "active_required",
+        "artifact_role": "analytical_projection",
+        "replacement": "self — application receipt artifact",
+        "deprecation_note": "Primary workflow receipt proving manifest application outcome.",
+    },
+    {
+        "name": "manifest_rollback_records",
+        "path_pattern": ".cache/application_receipts/*#rollback_records",
+        "classification": "active_required",
+        "artifact_role": "legacy_fallback",
+        "replacement": "embedded rollback_records in application receipt",
+        "deprecation_note": "Internal rollback payload carried inside application receipts.",
+    },
+    {
+        "name": "apply_rejection_report_json",
+        "path_pattern": ".cache/apply/rejection_report.json",
+        "classification": "active_required",
+        "artifact_role": "legacy_fallback",
+        "replacement": "self — machine-readable prepare-apply rejection report",
+        "deprecation_note": "Internal-only rejection diagnostics for prepare-apply.",
+    },
+    {
+        "name": "final_locale_fix_files",
+        "path_pattern": "final_locale/*.fix",
+        "classification": "active_required",
+        "artifact_role": "analytical_projection",
+        "replacement": "self — generated localized fix outputs",
+        "deprecation_note": "Primary user-facing generated fix artifacts.",
+    },
+    {
+        "name": "final_locale_ar_final_json",
+        "path_pattern": "final_locale/ar.final.json",
+        "classification": "compatibility_required",
+        "artifact_role": "compatibility_alias",
+        "replacement": "final_locale/*.fix or apply workflow outputs",
+        "deprecation_note": "Compatibility-only final locale JSON artifact.",
+    },
+)
+
+for _entry in _ADDITIVE_GOVERNANCE_ENTRIES:
+    if all(existing.name != _entry["name"] for existing in LEGACY_ARTIFACT_REGISTRY):
+        LEGACY_ARTIFACT_REGISTRY.append(
+            ArtifactEntry(
+                name=_entry["name"],
+                path_pattern=_entry["path_pattern"],
+                classification=_entry["classification"],  # type: ignore[arg-type]
+                artifact_role=_entry["artifact_role"],  # type: ignore[arg-type]
+                removal_readiness="keep" if _entry["classification"] == "active_required" else "warn_only",
+                active_consumers=[],
+                replacement=_entry["replacement"],
+                evidence="Patch 8 additive artifact governance convergence entry.",
+                deprecation_note=_entry["deprecation_note"],
+            )
+        )
+
+
 # ---------------------------------------------------------------------------
 # Convenience lookups
 # ---------------------------------------------------------------------------
@@ -477,6 +602,33 @@ def get_by_name(name: str) -> ArtifactEntry | None:
         if entry.name == name:
             return entry
     return None
+
+
+def get_governance_classification(name: str) -> GovernanceClassification | None:
+    """Return the converged governance classification for an artifact entry."""
+    return _GOVERNANCE_CLASSIFICATION_BY_NAME.get(name)
+
+
+def list_by_governance_classification(
+    classification: GovernanceClassification,
+) -> list[ArtifactEntry]:
+    """Return entries for a converged governance classification in stable order."""
+    return [
+        entry
+        for entry in LEGACY_ARTIFACT_REGISTRY
+        if get_governance_classification(entry.name) == classification
+    ]
+
+
+def validate_governance_registry() -> list[str]:
+    """Return missing-governance errors for registry entries."""
+    missing: list[str] = []
+    for entry in LEGACY_ARTIFACT_REGISTRY:
+        if entry.classification == "removed":
+            continue
+        if entry.name not in _GOVERNANCE_CLASSIFICATION_BY_NAME:
+            missing.append(entry.name)
+    return missing
 
 
 def summary_dict() -> dict:
@@ -506,11 +658,22 @@ def summary_dict() -> dict:
                 "legacy_fallback",
             )
         },
+        "by_governance_classification": {
+            classification: [e.name for e in list_by_governance_classification(classification)]
+            for classification in (
+                "primary_workflow",
+                "internal_only",
+                "compatibility_only",
+                "deprecated_candidate",
+            )
+        },
+        "governance_validation_errors": validate_governance_registry(),
         "entries": [
             {
                 "name": e.name,
                 "path_pattern": e.path_pattern,
                 "classification": e.classification,
+                "governance_classification": get_governance_classification(e.name),
                 "artifact_role": e.artifact_role,
                 "removal_readiness": e.removal_readiness,
                 "active_consumers": list(e.active_consumers),

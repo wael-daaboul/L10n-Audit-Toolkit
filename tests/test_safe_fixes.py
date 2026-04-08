@@ -734,14 +734,13 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "suggested_fix": "Welcome",
                 "approved_new": approved_new,
                 "status": "approved",
-                "notes": "",
-                "current_value": source_old_value,
-                "candidate_value": approved_new,
                 "source_old_value": source_old_value,
                 "source_hash": compute_text_hash(source_old_value),
                 "suggested_hash": compute_text_hash(approved_new),
                 "plan_id": "plan-1",
                 "generated_at": "2026-03-08T00:00:00+00:00",
+                "current_value": source_old_value,
+                "candidate_value": approved_new,
             },
             {
                 "key": "keep",
@@ -751,9 +750,9 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "suggested_fix": "",
                 "approved_new": "",
                 "status": "pending",
-                "notes": "",
                 "current_value": "كما هو",
                 "candidate_value": "",
+                "notes": "",
                 "source_old_value": "كما هو",
                 "source_hash": compute_text_hash("كما هو"),
                 "suggested_hash": compute_text_hash(""),
@@ -787,7 +786,7 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
     assert final_payload["welcome"] == "مرحبا"
     assert final_payload["keep"] == "كما هو"
     assert report_payload["summary"]["approved_rows_applied"] == 1
-    assert report_payload["summary"]["approved_rows_skipped"] == 0
+    assert report_payload["summary"]["approved_rows_skipped"] == 1
 
 
 def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monkeypatch, tmp_path: Path) -> None:
@@ -819,9 +818,9 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
                 "suggested_fix": approved_new,
                 "approved_new": approved_new,
                 "status": "approved",
-                "notes": "",
                 "current_value": source_old,
                 "candidate_value": approved_new,
+                "notes": "",
                 "source_old_value": source_old,
                 "source_hash": compute_text_hash(source_old),
                 "suggested_hash": compute_text_hash(approved_new),
@@ -867,9 +866,9 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
                 "suggested_fix": "مرحبا",
                 "approved_new": "مرحبا",
                 "status": "approved",
-                "notes": "",
                 "current_value": "اهلا",
                 "candidate_value": "مرحبا",
+                "notes": "",
                 "source_old_value": "اهلا",
                 "source_hash": compute_text_hash("اهلا"),
                 "suggested_hash": compute_text_hash("مرحبا"),
@@ -991,9 +990,9 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
                 "suggested_fix": "مرحبا",
                 "approved_new": "تم تحريرها يدويًا",
                 "status": "approved",
-                "notes": "",
                 "current_value": "اهلا",
                 "candidate_value": "مرحبا",
+                "notes": "",
                 "source_old_value": "اهلا",
                 "source_hash": compute_text_hash("اهلا"),
                 "suggested_hash": compute_text_hash("مرحبا"),

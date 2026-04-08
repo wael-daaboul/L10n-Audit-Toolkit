@@ -34,11 +34,13 @@ logger = logging.getLogger("l10n_audit.artifact_resolver")
 _CONVENTIONS: dict[str, str] = {
     # User-facing and master outputs (unchanged)
     "review_queue_xlsx_path":      "review/review_queue.xlsx",
+    "review_final_xlsx_path":      "review/review_final.xlsx",
     "review_projection_xlsx_path": "review/review_projection.xlsx",
     "review_projection_json_path": "review/review_projection.json",
     
     # Machine-consumer review artifacts (Phase 9)
     "review_machine_queue_json_path": "review/review_machine_queue.json",
+    "adaptation_report_path":         ".cache/adaptation/adaptation_report.json",
     
     # Legacy / Compatibility aliases
     "review_queue_json_path":      "review/review_queue.json",
@@ -64,6 +66,27 @@ _LEGACY_FALLBACKS: dict[str, str] = {
     "fix_plan_xlsx_path":        "fixes/fix_plan.xlsx",
     "ar_fixed_json_path":        "fixes/ar.fixed.json",
     "raw_reports_root":          "per_tool",
+}
+
+_PRIMARY_SURFACE_KEYS: tuple[str, ...] = (
+    "review_queue_xlsx_path",
+    "review_final_xlsx_path",
+    "final_report_md_path",
+    "adaptation_report_path",
+)
+
+_ARTIFACT_KEY_TO_REGISTRY_NAME: dict[str, str] = {
+    "review_queue_xlsx_path": "review_queue_xlsx",
+    "review_final_xlsx_path": "review_final_xlsx",
+    "review_projection_xlsx_path": "review_projection_xlsx",
+    "review_projection_json_path": "review_projection_json",
+    "review_machine_queue_json_path": "review_machine_queue_json",
+    "review_queue_json_path": "review_queue_json",
+    "aggregated_issues_path": "aggregated_issues_json",
+    "final_report_json_path": "final_audit_report_json",
+    "final_report_md_path": "final_audit_report_md",
+    "fix_plan_xlsx_path": "fix_plan_xlsx",
+    "adaptation_report_path": "adaptation_report_json",
 }
 
 
@@ -195,6 +218,21 @@ def resolve_artifact_path(
     return results_dir
 
 
+def get_registry_name_for_artifact_key(artifact_key: str) -> str | None:
+    """Return the registry entry name associated with an artifact key."""
+    return _ARTIFACT_KEY_TO_REGISTRY_NAME.get(artifact_key)
+
+
+def list_primary_artifact_keys() -> list[str]:
+    """Return the deterministic primary user-facing artifact key surface."""
+    return list(_PRIMARY_SURFACE_KEYS)
+
+
+def list_primary_artifact_paths(runtime) -> list[Path]:
+    """Resolve the deterministic primary user-facing artifact path surface."""
+    return [resolve_artifact_path(runtime, artifact_key) for artifact_key in _PRIMARY_SURFACE_KEYS]
+
+
 # ---------------------------------------------------------------------------
 # Convenience wrappers (typed, documented, zero-surprise)
 # ---------------------------------------------------------------------------
@@ -206,6 +244,11 @@ def resolve_review_queue_path(runtime) -> Path:
     when the file does not yet exist so callers can check ``.exists()``.
     """
     return resolve_artifact_path(runtime, "review_queue_xlsx_path")
+
+
+def resolve_review_final_path(runtime) -> Path:
+    """Resolve the frozen review workbook consumed by apply."""
+    return resolve_artifact_path(runtime, "review_final_xlsx_path")
 
 
 def resolve_review_queue_json_path(runtime) -> Path:
@@ -250,6 +293,11 @@ def resolve_fix_plan_path(runtime) -> Path:
 def resolve_master_path(runtime) -> Path:
     """Resolve ``artifacts/audit_master.json``."""
     return resolve_artifact_path(runtime, "master_path")
+
+
+def resolve_adaptation_report_path(runtime) -> Path:
+    """Resolve the explicit Phase 14 adaptation report JSON path."""
+    return resolve_artifact_path(runtime, "adaptation_report_path")
 
 
 def resolve_ar_fixed_json_path(runtime) -> Path:

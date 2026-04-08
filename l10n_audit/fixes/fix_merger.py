@@ -12,9 +12,40 @@ from typing import Dict, Optional, Any, List
 
 from l10n_audit.core.locale_exporters.exporter_factory import export_locale_mapping
 from l10n_audit.core.locale_loaders.loader_factory import load_locale_mapping
-from l10n_audit.core.audit_runtime import write_json, write_simple_xlsx, compute_text_hash
+from l10n_audit.core.audit_runtime import read_simple_xlsx, write_json, write_simple_xlsx, compute_text_hash
 
 logger = logging.getLogger("l10n_audit.fixes")
+
+REVIEW_FINAL_COLUMNS = [
+    "key",
+    "locale",
+    "issue_type",
+    "current_value",
+    "candidate_value",
+    "approved_new",
+    "status",
+    "review_note",
+    "source_old_value",
+    "source_hash",
+    "suggested_hash",
+    "plan_id",
+    "generated_at",
+]
+
+_REQUIRED_PREPARE_QUEUE_FIELDS = (
+    "key",
+    "locale",
+    "issue_type",
+    "current_value",
+    "candidate_value",
+    "status",
+    "review_note",
+    "source_old_value",
+    "source_hash",
+    "suggested_hash",
+    "plan_id",
+    "generated_at",
+)
 
 
 def _normalized_non_empty_string(value: Any) -> str | None:
@@ -243,3 +274,182 @@ def export_review_queue(
     
     logger.info(f"Exported {len(export_data)} items to review queue: {output_path}")
     return output_path
+
+
+def _prepare_apply_rejection(
+    row_index: int,
+    row: Dict[str, Any],
+    reason_code: str,
+    details: Dict[str, Any],
+) -> Dict[str, Any]:
+    return {
+        "row_index": row_index,
+        "plan_id": str(row.get("plan_id", "") or ""),
+        "key": str(row.get("key", "") or ""),
+        "locale": str(row.get("locale", "") or ""),
+        "reason_code": reason_code,
+        "details": details,
+    }
+
+
+def _validate_prepare_apply_row(row: Dict[str, Any], row_index: int) -> tuple[Dict[str, str] | None, Dict[str, Any] | None]:
+    normalized = {field: "" if row.get(field) is None else str(row.get(field)) for field in _REQUIRED_PREPARE_QUEUE_FIELDS}
+
+    for field in (
+        "key",
+        "locale",
+        "issue_type",
+        "current_value",
+        "plan_id",
+        "generated_at",
+        "source_old_value",
+        "source_hash",
+        "suggested_hash",
+    ):
+        if not normalized[field].strip():
+            return None, _prepare_apply_rejection(
+                row_index,
+                row,
+                "missing_required_field",
+                {"field": field},
+            )
+
+    if normalized["locale"].strip() not in {"ar", "en"}:
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "invalid_locale",
+            {"locale": normalized["locale"]},
+        )
+
+    if normalized["status"].strip().lower() != "approved":
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "invalid_status_for_freeze",
+            {"status": normalized["status"]},
+        )
+
+    if not normalized["candidate_value"].strip():
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "candidate_value_empty",
+            {"status": normalized["status"]},
+        )
+
+    if normalized["source_old_value"] != normalized["current_value"]:
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "source_value_mismatch",
+            {
+                "current_value": normalized["current_value"],
+                "source_old_value": normalized["source_old_value"],
+            },
+        )
+
+    expected_source_hash = compute_text_hash(normalized["current_value"])
+    if expected_source_hash != normalized["source_hash"]:
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "source_hash_mismatch",
+            {
+                "expected_source_hash": expected_source_hash,
+                "actual_source_hash": normalized["source_hash"],
+            },
+        )
+
+    expected_suggested_hash = compute_text_hash(normalized["candidate_value"])
+    if expected_suggested_hash != normalized["suggested_hash"]:
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "suggested_hash_mismatch",
+            {
+                "expected_suggested_hash": expected_suggested_hash,
+                "actual_suggested_hash": normalized["suggested_hash"],
+            },
+        )
+
+    return {
+        "key": normalized["key"],
+        "locale": normalized["locale"],
+        "issue_type": normalized["issue_type"],
+        "current_value": normalized["current_value"],
+        "candidate_value": normalized["candidate_value"],
+        "approved_new": normalized["candidate_value"],
+        "status": "approved",
+        "review_note": normalized["review_note"],
+        "source_old_value": normalized["source_old_value"],
+        "source_hash": expected_source_hash,
+        "suggested_hash": expected_suggested_hash,
+        "plan_id": normalized["plan_id"],
+        "generated_at": normalized["generated_at"],
+    }, None
+
+
+def prepare_apply_workbook(
+    review_queue_path: Path,
+    out_final_path: Path,
+    rejection_report_path: Path,
+) -> Dict[str, Any]:
+    out_final_path.parent.mkdir(parents=True, exist_ok=True)
+    rejection_report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        rows = read_simple_xlsx(review_queue_path, required_columns=list(_REQUIRED_PREPARE_QUEUE_FIELDS))
+    except Exception as exc:
+        write_simple_xlsx([], REVIEW_FINAL_COLUMNS, out_final_path, sheet_name="Review Final")
+        report = {
+            "summary": {
+                "total_rows": 0,
+                "accepted_rows": 0,
+                "rejected_rows": 1,
+            },
+            "rejections": [
+                _prepare_apply_rejection(
+                    0,
+                    {},
+                    "invalid_row_shape",
+                    {"error": str(exc)},
+                )
+            ],
+        }
+        write_json(report, rejection_report_path)
+        return report
+
+    accepted_rows: List[Dict[str, str]] = []
+    rejections: List[Dict[str, Any]] = []
+
+    for idx, row in enumerate(rows, start=2):
+        if not isinstance(row, dict):
+            rejections.append(
+                _prepare_apply_rejection(
+                    idx,
+                    {},
+                    "invalid_row_shape",
+                    {"python_type": type(row).__name__},
+                )
+            )
+            continue
+
+        accepted_row, rejection = _validate_prepare_apply_row(row, idx)
+        if rejection is not None:
+            rejections.append(rejection)
+            continue
+        accepted_rows.append(accepted_row)
+
+    write_simple_xlsx(accepted_rows, REVIEW_FINAL_COLUMNS, out_final_path, sheet_name="Review Final")
+
+    report = {
+        "summary": {
+            "total_rows": len(rows),
+            "accepted_rows": len(accepted_rows),
+            "rejected_rows": len(rejections),
+        },
+        "rejections": rejections,
+    }
+    write_json(report, rejection_report_path)
+    return report

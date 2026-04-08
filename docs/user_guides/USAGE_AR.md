@@ -24,7 +24,12 @@
 | `l10n-audit init` | **تهيئة بيئة العمل:** يقوم بإنشاء مجلد `.l10n-audit` في مسار مشروعك، ويستكشف تلقائياً نوع إطار العمل لضبط الإعدادات. |
 | `l10n-audit doctor` | **تشخيص المشروع:** فحص بيئة العمل، التأكد من وجود Java (JRE 11+) لمحرك القواعد، وجاهزية مفاتيح الذكاء الاصطناعي. |
 | `l10n-audit run` | **أمر التشغيل:** لتشغيل عمليات التدقيق. يتم عزل ملفاتك في مجلد `workspace` قبل الفحص لضمان الأمان. |
-| `l10n-audit apply` | **دمج الإصلاحات:** دمج الاقتراحات المعتمدة من ملف المراجعة (Excel) في ملفات المشروع الأصلية. |
+| `l10n-audit prepare-apply` | **تجميد الصفوف المعتمدة:** قراءة `review_queue.xlsx` وبناء `review_final.xlsx` كعقد تنفيذي نهائي. |
+| `l10n-audit apply` | **دمج الإصلاحات:** تنفيذ الصفوف المعتمدة من `review_final.xlsx` فقط في ملفات المشروع الأصلية. |
+| `l10n-audit generate-adaptation-report` | **توليد تقرير التكيّف:** بناء `adaptation_report.json` صراحةً من `LearningProfile` محفوظ. |
+| `l10n-audit generate-manifest` | **توليد manifest:** تحويل `adaptation_report.json` إلى Consumption Manifest قابل للمراجعة. |
+| `l10n-audit review-manifest` | **مراجعة manifest:** بناء Reviewed Manifest منفصل من manifest + approvals JSON. |
+| `l10n-audit apply-manifest` | **تطبيق manifest:** تنفيذ الإجراءات المعتمدة فقط على `config.json` مع receipt واضح. |
 | `l10n-audit update` | **جلب التحديثات للقواعد:** يحدث القواعد العالمية والقواميس الافتراضية في مساحة عملك المحلية. |
 
 ---
@@ -51,7 +56,80 @@
 
 | المفتاح | الشرح بالعربية |
 | :--- | :--- |
-| `--all` | **التطبيق الشامل:** دمج كافة الاقتراحات (بما فيها الذكاء الاصطناعي) دفعة واحدة دون انتظار المراجعة اليدوية. |
+| `--all` | **التطبيق الشامل:** تنفيذ كل الصفوف التي تم تجميدها مسبقاً داخل `review_final.xlsx`. |
+
+### prepare-apply
+
+يقوم هذا الأمر بتحويل ملف المراجعة القابل للتعديل:
+
+`Results/review/review_queue.xlsx`
+
+إلى ملف نهائي مجمّد:
+
+`Results/review/review_final.xlsx`
+
+📌 الهدف:
+تحويل workspace قابل للتحرير إلى contract حتمي وآمن للتنفيذ.
+
+⚠️ ملاحظات:
+- يجب تشغيل هذا الأمر بعد الانتهاء من التعديلات على `review_queue.xlsx`
+- إذا تم تعديل `review_queue.xlsx` بعد تشغيل `prepare-apply`، يجب إعادة تشغيله
+
+### apply
+
+يقوم هذا الأمر بتطبيق الإصلاحات المعتمدة من:
+
+`Results/review/review_final.xlsx`
+
+⚠️ ملاحظات:
+- هذا الملف مجمّد (`immutable`) ولا يجب تعديله يدويًا
+- أي تعديل يجب أن يتم عبر `review_queue.xlsx` ثم إعادة تشغيل `prepare-apply`
+
+### 4️⃣ مسار العمل الجديد للتطبيق
+
+```text
+1. run -> review_queue.xlsx
+2. مراجعة بشرية وتعديل الصفوف
+3. prepare-apply -> review_final.xlsx
+4. apply -> تنفيذ الصفوف المعتمدة فقط من review_final.xlsx
+```
+
+### 5️⃣ مسار التكيّف والـ manifest
+
+```text
+1. generate-adaptation-report -> adaptation_report.json
+2. generate-manifest -> consumption manifest
+3. review-manifest -> reviewed manifest
+4. apply-manifest -> manifest receipt + تحديث config.json
+```
+
+هذا المسار مستقل عن `run -> prepare-apply -> apply` ولا يعمل تلقائياً داخل `run`.
+
+| File | Role |
+| :--- | :--- |
+| `review_queue.xlsx` | Editable human review workspace |
+| `review_final.xlsx` | Frozen execution contract |
+
+### الفرق بين review_queue و review_final
+
+- `review_queue.xlsx`:
+  ملف قابل للتحرير، تُضاف إليه اقتراحات AI والمراجعات البشرية
+
+- `review_final.xlsx`:
+  ملف مجمّد يتم إنشاؤه عبر `prepare-apply`
+  وهو المصدر الوحيد الذي يعتمد عليه أمر `apply`
+
+⚠️ يمنع التعديل اليدوي على `review_final.xlsx`
+
+### تدفق اقتراحات AI
+
+- جميع اقتراحات AI تذهب فقط إلى:
+  `review_queue.xlsx`
+
+- لا يتم نقل أي اقتراح مباشرة إلى `review_final.xlsx`
+
+- لا تصبح التغييرات قابلة للتطبيق إلا بعد:
+  `prepare-apply`
 
 ---
 

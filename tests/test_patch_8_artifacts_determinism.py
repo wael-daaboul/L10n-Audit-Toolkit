@@ -2,11 +2,15 @@ import pytest
 from pathlib import Path
 from l10n_audit.core.audit_runtime import AuditPaths
 from l10n_audit.core.artifact_resolver import (
+    list_primary_artifact_keys,
+    list_primary_artifact_paths,
     resolve_review_queue_path,
+    resolve_review_final_path,
     resolve_review_queue_json_path,
     resolve_review_projection_path,
     resolve_review_projection_json_path,
-    resolve_final_report_path
+    resolve_final_report_path,
+    resolve_adaptation_report_path,
 )
 
 @pytest.fixture
@@ -70,20 +74,42 @@ def test_resolve_differentiation(mock_runtime):
     assert apply_path != analytical_path
 
 def test_aggregator_cli_defaults(mock_runtime, monkeypatch):
-    """Prove aggregator defaults to analytical paths in its CLI."""
+    """Prove aggregator defaults to the human queue workbook in its CLI."""
     from l10n_audit.reports.report_aggregator import main as aggregator_main
     import sys
     
     # Mock runtime load
     monkeypatch.setattr("l10n_audit.reports.report_aggregator.load_runtime", lambda _: mock_runtime)
     
-    # We won't actually run main because it calls aggregate_reports, 
-    # but we will check it can import and has the functions.
-    from l10n_audit.core.artifact_resolver import resolve_review_projection_path
-    assert resolve_review_projection_path(mock_runtime).name == "review_projection.xlsx"
+    # We won't actually run main because it calls aggregate_reports,
+    # but we will check the canonical workbook path used by the CLI default.
+    from l10n_audit.core.artifact_resolver import resolve_review_queue_path
+    assert resolve_review_queue_path(mock_runtime).name == "review_queue.xlsx"
 
 def test_apply_cli_defaults(mock_runtime, monkeypatch):
-    """Prove apply defaults to canonical queue in its CLI."""
-    from l10n_audit.fixes.apply_review_fixes import resolve_review_queue_path
-    path = resolve_review_queue_path(mock_runtime)
-    assert path.name == "review_queue.xlsx"
+    """Prove the canonical review queue path remains distinct from the apply final workbook."""
+    queue_path = resolve_review_queue_path(mock_runtime)
+    final_path = resolve_review_final_path(mock_runtime)
+    assert queue_path.name == "review_queue.xlsx"
+    assert final_path.name == "review_final.xlsx"
+    assert queue_path != final_path
+
+
+def test_primary_artifact_surface_is_deterministic(mock_runtime):
+    keys = list_primary_artifact_keys()
+    paths = list_primary_artifact_paths(mock_runtime)
+
+    assert keys == [
+        "review_queue_xlsx_path",
+        "review_final_xlsx_path",
+        "final_report_md_path",
+        "adaptation_report_path",
+    ]
+    assert paths == [
+        resolve_review_queue_path(mock_runtime),
+        resolve_review_final_path(mock_runtime),
+        mock_runtime.results_dir / "final" / "final_audit_report.md",
+        resolve_adaptation_report_path(mock_runtime),
+    ]
+    assert resolve_review_projection_path(mock_runtime) not in paths
+    assert resolve_review_queue_json_path(mock_runtime) not in paths

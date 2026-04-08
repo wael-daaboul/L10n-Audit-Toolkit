@@ -440,6 +440,39 @@ def _serialise_reviewed_manifest(rm: ReviewedManifest) -> Dict[str, Any]:
     }
 
 
+def write_reviewed_manifest_file(reviewed_manifest: ReviewedManifest, path: str) -> str:
+    """Persist a ReviewedManifest atomically to an explicit path."""
+    _atomic_write_json(path, _serialise_reviewed_manifest(reviewed_manifest))
+    return path
+
+
+def load_approvals_file(path: str) -> Dict[str, Dict[str, Any]]:
+    """Load a strict approvals JSON mapping for review-manifest workflow."""
+    raw = _load_json_file(path)
+    if not isinstance(raw, dict):
+        raise ManifestApplicationError("Approvals payload must be a JSON object")
+
+    approvals: Dict[str, Dict[str, Any]] = {}
+    for action_id, decision in raw.items():
+        if not isinstance(action_id, str) or not action_id.strip():
+            raise ManifestApplicationError("Approvals payload contains an empty action_id")
+        if not isinstance(decision, dict):
+            raise ManifestApplicationError(
+                f"Approval entry for action {action_id!r} must be a JSON object"
+            )
+        status = str(decision.get("status", "")).strip()
+        if status not in _APPROVAL_STATUSES:
+            raise ManifestApplicationError(
+                f"Approval entry for action {action_id!r} has invalid status {status!r}"
+            )
+        approvals[action_id] = {
+            "status": status,
+            "approved_by": str(decision.get("approved_by", "")),
+            "note": str(decision.get("note", "")),
+        }
+    return approvals
+
+
 # ---------------------------------------------------------------------------
 # Public helper: load_manifest
 # ---------------------------------------------------------------------------
@@ -470,6 +503,7 @@ def generate_reviewed_manifest(
     manifest_path: str,
     approvals: Dict[str, Dict[str, Any]],
     results_dir: str,
+    out_path: Optional[str] = None,
 ) -> "ReviewedManifest":
     """Build a ReviewedManifest from a ConsumptionManifest and human approval decisions.
 
@@ -539,9 +573,12 @@ def generate_reviewed_manifest(
     )
 
     # Persist to .cache/reviewed_manifests/
-    cache_dir = os.path.join(results_dir, ".cache", "reviewed_manifests")
-    filename  = f"{project_id}_{reviewed_manifest_id}.json"
-    path      = os.path.join(cache_dir, filename)
+    if out_path:
+        path = out_path
+    else:
+        cache_dir = os.path.join(results_dir, ".cache", "reviewed_manifests")
+        filename  = f"{project_id}_{reviewed_manifest_id}.json"
+        path      = os.path.join(cache_dir, filename)
     _atomic_write_json(path, _serialise_reviewed_manifest(reviewed))
     logger.debug("manifest_application: reviewed manifest written to %s", path)
 

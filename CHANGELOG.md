@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.6.0] — Final Decision Intelligence Closure
+
+### Added
+- Decision Quality Contract (formalized schema)
+- Lightweight validation for decision quality output
+- Finalized and frozen metric naming
+
+### Improved
+- Guaranteed determinism in decision quality analysis
+- Clear separation between decision-making and decision-measurement
+
+### Notes
+- This release marks the system as:
+  - Architecturally complete
+  - Decision-intelligence complete
+  - Production-ready with measurable quality
+
 ## [1.5.2] - 2026-04-07
 
 ### Added

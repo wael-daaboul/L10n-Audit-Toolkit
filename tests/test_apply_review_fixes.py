@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from l10n_audit.core.audit_runtime import compute_text_hash, write_simple_xlsx
+import pytest
+
+from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, write_simple_xlsx
 from l10n_audit.fixes.apply_review_fixes import run_apply
 
 
@@ -107,6 +109,70 @@ def test_apply_rejects_missing_required_fields(tmp_path: Path) -> None:
     assert set(report["skipped"][0]["missing_fields"]) == {"current_value", "candidate_value"}
 
 
+def test_apply_rejects_missing_approved_new_even_when_candidate_value_exists(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    final_workbook = runtime.results_dir / "review" / "review_final.xlsx"
+    write_simple_xlsx(
+        [
+            {
+                "key": "welcome",
+                "locale": "ar",
+                "issue_type": "confirmed_missing_key",
+                "status": "approved",
+                "source_old_value": "اهلا",
+                "source_hash": compute_text_hash("اهلا"),
+                "suggested_hash": compute_text_hash("مرحبا"),
+                "plan_id": "plan-1",
+                "generated_at": "2026-03-08T00:00:00+00:00",
+                "current_value": "اهلا",
+                "candidate_value": "مرحبا",
+            }
+        ],
+        [
+            "key", "locale", "issue_type", "status", "source_old_value",
+            "source_hash", "suggested_hash", "plan_id", "generated_at",
+            "current_value", "candidate_value",
+        ],
+        final_workbook,
+        sheet_name="Review Final",
+    )
+
+    with pytest.raises(AuditRuntimeError):
+        run_apply(runtime, final_workbook, out_final_json=str(runtime.results_dir / "final.json"))
+
+
+def test_apply_rejects_queue_shaped_workbook_without_fallback(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    queue_like = runtime.results_dir / "review" / "review_final.xlsx"
+    write_simple_xlsx(
+        [
+            {
+                "key": "welcome",
+                "locale": "ar",
+                "issue_type": "confirmed_missing_key",
+                "current_value": "اهلا",
+                "candidate_value": "مرحبا",
+                "status": "approved",
+                "review_note": "",
+                "source_old_value": "اهلا",
+                "source_hash": compute_text_hash("اهلا"),
+                "suggested_hash": compute_text_hash("مرحبا"),
+                "plan_id": "plan-1",
+                "generated_at": "2026-03-08T00:00:00+00:00",
+            }
+        ],
+        [
+            "key", "locale", "issue_type", "current_value", "candidate_value", "status",
+            "review_note", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at",
+        ],
+        queue_like,
+        sheet_name="Review Queue",
+    )
+
+    with pytest.raises(AuditRuntimeError):
+        run_apply(runtime, queue_like, out_final_json=str(runtime.results_dir / "final.json"))
+
+
 def test_apply_rejects_duplicate_application(tmp_path: Path) -> None:
     runtime = _make_runtime(tmp_path)
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
@@ -123,6 +189,18 @@ def test_apply_rejects_duplicate_application(tmp_path: Path) -> None:
     reasons = [item["reason"] for item in report["skipped"]]
     assert "duplicate_application" in reasons
     assert runtime.metadata["applied_suggestions"] == [compute_text_hash("مرحبا")]
+
+
+def test_apply_skips_non_approved_final_rows_with_explicit_reason(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    final_workbook = runtime.results_dir / "review" / "review_final.xlsx"
+    _write_review_queue(final_workbook, [_review_row(status="pending")])
+
+    report = run_apply(runtime, final_workbook, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 0
+    assert report["summary"]["approved_rows_skipped"] == 1
+    assert report["skipped"][0]["reason"] == "not_approved_status"
 
 
 def test_apply_accepts_valid_row(tmp_path: Path) -> None:

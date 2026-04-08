@@ -38,9 +38,15 @@ import logging
 import os
 import tempfile
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("l10n_audit.controlled_consumption")
+
+
+class ControlledConsumptionError(Exception):
+    """Raised when explicit manifest workflow inputs are missing or invalid."""
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -476,6 +482,94 @@ def _write_manifest(manifest: ConsumptionManifest, results_dir: str) -> None:
             raise
     except Exception as exc:
         logger.debug("controlled_consumption: manifest write failed (%s) — pipeline unaffected", exc)
+
+
+def serialise_manifest(manifest: ConsumptionManifest) -> Dict[str, Any]:
+    """Return the deterministic JSON payload for a ConsumptionManifest."""
+    def _serialise_action(a: ConsumableAction) -> Dict[str, Any]:
+        return {
+            "action_id":         a.action_id,
+            "proposal_id":       a.proposal_id,
+            "signal_key":        a.signal_key,
+            "action_type":       a.action_type,
+            "target_config_key": a.target_config_key,
+            "suggested_value":   a.suggested_value,
+            "current_value":     a.current_value,
+            "justification":     a.justification,
+            "rollback_key":      a.rollback_key,
+            "safety_checks_passed": a.safety_checks_passed,
+            "approved_by_default":  a.approved_by_default,
+        }
+
+    return {
+        "manifest_id":         manifest.manifest_id,
+        "schema_version":      manifest.schema_version,
+        "project_id":          manifest.project_id,
+        "mode":                manifest.mode,
+        "source_profile_hash": manifest.source_profile_hash,
+        "source_report_hash":  manifest.source_report_hash,
+        "generated_actions":   [_serialise_action(a) for a in manifest.generated_actions],
+        "rejected_candidates": manifest.rejected_candidates,
+        "governance_rejections": manifest.governance_rejections,
+    }
+
+
+def write_manifest_file(manifest: ConsumptionManifest, path: str) -> str:
+    """Atomically persist a ConsumptionManifest to an explicit path."""
+    payload = serialise_manifest(manifest)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, target)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    return str(target)
+
+
+def load_adaptation_report(path: str) -> Any:
+    """Load a minimal AdaptationReport-like object from JSON on disk."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        raise ControlledConsumptionError(f"Adaptation report not found: {path!r}")
+    except json.JSONDecodeError as exc:
+        raise ControlledConsumptionError(f"Corrupt adaptation report JSON at {path!r}: {exc}")
+
+    if not isinstance(raw, dict):
+        raise ControlledConsumptionError("Adaptation report payload must be a JSON object")
+
+    missing = [
+        field_name
+        for field_name in ("project_id", "mode", "run_count_basis", "profile_hash", "proposals")
+        if field_name not in raw
+    ]
+    if missing:
+        raise ControlledConsumptionError(
+            f"Adaptation report missing required fields: {missing}"
+        )
+    if not isinstance(raw.get("proposals"), list):
+        raise ControlledConsumptionError("Adaptation report field 'proposals' must be a list")
+
+    proposals = [SimpleNamespace(**proposal) for proposal in raw.get("proposals", []) if isinstance(proposal, dict)]
+    if len(proposals) != len(raw.get("proposals", [])):
+        raise ControlledConsumptionError("Adaptation report proposals must contain only JSON objects")
+
+    return SimpleNamespace(
+        project_id=str(raw.get("project_id", "")),
+        mode=str(raw.get("mode", "")),
+        run_count_basis=int(raw.get("run_count_basis", 0)),
+        profile_hash=str(raw.get("profile_hash", "")),
+        proposals=proposals,
+        safety_rejections=list(raw.get("safety_rejections", []) or []),
+    )
 
 
 # ---------------------------------------------------------------------------

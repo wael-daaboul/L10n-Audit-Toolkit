@@ -7,7 +7,14 @@ from typing import Any
 import pytest
 
 from l10n_audit.core.languagetool_layer import LTFinding
-from l10n_audit.core.decision_engine import DecisionContext, DecisionResult, evaluate_findings, RouteAction
+from l10n_audit.core.decision_engine import (
+    DECISION_EXPLANATION_CODES,
+    DecisionContext,
+    DecisionResult,
+    evaluate_findings,
+    score_finding,
+    RouteAction,
+)
 from l10n_audit.audits.en_grammar_audit import build_languagetool_findings, _lt_finding_to_audit_dict
 
 
@@ -331,3 +338,90 @@ def test_arabic_pipeline_decision_injection() -> None:
     assert rows[0]["decision"]["route"] == "auto_fix"     # Has "new" and fix_mode "auto_safe"
     assert rows[1]["decision"]["route"] == "manual_review" # Has empty "new" -> rule_empty_suggestion -> manual_review
     assert rows[2]["decision"]["route"] == "manual_review" # No "new" -> get("new", "") == "" -> empty -> manual_review
+
+
+def test_score_finding_exposes_explanation_factors() -> None:
+    finding = LTFinding(
+        key="k1", rule_id="R1", issue_category="grammar", message="m",
+        original_text="o", suggested_text="fixed", offset=0, error_length=1, is_simple_fix=True
+    )
+
+    score = score_finding(finding, DecisionContext(findings=[finding], source="en"))
+
+    assert score["base_confidence"] == 0.5
+    assert score["confidence"] == 1.0
+    assert [factor["code"] for factor in score["score_factors"]] == ["simple_fix_bonus", "grammar_signal"]
+    assert [factor["kind"] for factor in score["score_factors"]] == ["bonus", "bonus"]
+    assert [factor["source"] for factor in score["score_factors"]] == ["base_rule", "category_signal"]
+    assert score["explanation_codes"] == ["simple_fix_bonus", "grammar_signal"]
+    assert score["evidence_sources"] == ["base_rule", "category_signal"]
+    assert set(score["explanation_codes"]).issubset(set(DECISION_EXPLANATION_CODES))
+
+
+def test_missing_suggestion_emits_penalty_explanation() -> None:
+    finding = LTFinding(
+        key="k1", rule_id="R1", issue_category="grammar", message="m",
+        original_text="o", suggested_text="", offset=0, error_length=1, is_simple_fix=True
+    )
+
+    result = evaluate_findings(DecisionContext(findings=[finding], source="en"))
+
+    assert result.ai_review == [finding]
+    explanation = finding._decision_explanation
+    assert explanation["final_confidence"] == pytest.approx(0.6)
+    assert explanation["risk"] == "high"
+    assert "missing_suggestion_penalty" in explanation["explanation_codes"]
+    assert explanation["route_after_context"] == RouteAction.AI_REVIEW
+
+
+def test_legacy_finding_score_is_unchanged_without_semantic_evidence() -> None:
+    finding = LTFinding(
+        key="k1", rule_id="R1", issue_category="grammar", message="m",
+        original_text="o", suggested_text="fixed", offset=0, error_length=1, is_simple_fix=True
+    )
+
+    score = score_finding(finding, DecisionContext(findings=[finding], source="en"))
+
+    assert score["confidence"] == 1.0
+    assert "meaning_loss_high_penalty" not in score["explanation_codes"]
+    assert "meaning_loss_medium_penalty" not in score["explanation_codes"]
+    assert "feedback_weighting" not in score["evidence_sources"]
+
+
+def test_medium_semantic_risk_lowers_confidence() -> None:
+    finding = LTFinding(
+        key="k1", rule_id="R1", issue_category="grammar", message="m",
+        original_text="o", suggested_text="fixed", offset=0, error_length=1, is_simple_fix=True
+    )
+    finding.semantic_risk = "medium"
+    finding.semantic_evidence = {
+        "shape_preserved": True,
+        "action_preserved": True,
+        "entity_alignment_ok": True,
+    }
+
+    score = score_finding(finding, DecisionContext(findings=[finding], source="en"))
+
+    assert score["confidence"] == pytest.approx(0.85)
+    assert "meaning_loss_medium_penalty" in score["explanation_codes"]
+    semantic_factor = next(factor for factor in score["score_factors"] if factor["code"] == "meaning_loss_medium_penalty")
+    assert semantic_factor["kind"] == "penalty"
+    assert semantic_factor["source"] == "semantic_evidence"
+
+
+def test_high_semantic_risk_lowers_confidence_more_than_medium() -> None:
+    finding = LTFinding(
+        key="k1", rule_id="R1", issue_category="grammar", message="m",
+        original_text="o", suggested_text="fixed", offset=0, error_length=1, is_simple_fix=True
+    )
+    finding.semantic_risk = "high"
+    finding.semantic_evidence = {
+        "shape_preserved": True,
+        "action_preserved": True,
+        "entity_alignment_ok": True,
+    }
+
+    score = score_finding(finding, DecisionContext(findings=[finding], source="en"))
+
+    assert score["confidence"] == pytest.approx(0.7)
+    assert "meaning_loss_high_penalty" in score["explanation_codes"]

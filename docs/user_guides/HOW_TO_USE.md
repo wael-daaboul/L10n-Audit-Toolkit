@@ -51,15 +51,32 @@ export OPENROUTER_API_KEY="your-key"
 l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
 ```
 
-### 4. Applying Fixes (Included in 1.5.0)
-After running audits or `ai-review`, you can merge the results back into your original source files.
+### 4. Freeze Approved Rows
+After human review, freeze the approved rows into the execution-safe workbook:
+```bash
+l10n-audit prepare-apply
+```
 
-**Interactive Apply (Recommended)**: Review the generated `Review Queue` (XLSX/JSON) first, set the `status` to `approved` for the keys you want, and run:
+| File | Role |
+| :--- | :--- |
+| `review_queue.xlsx` | Editable human review workspace |
+| `review_final.xlsx` | Frozen execution contract |
+
+### 5. Applying Fixes (Included in 1.5.0)
+After `prepare-apply`, you can merge the frozen results back into your original source files.
+
+**Interactive Apply (Recommended)**: Review `review_queue.xlsx`, run `prepare-apply`, then execute:
 ```bash
 l10n-audit apply
 ```
 
-**Bulk Apply (AI + Safe)**: To force-apply all suggestions including AI-generated ones without individual review:
+`apply` reads only `review_final.xlsx`. It does not read `review_queue.xlsx` directly.
+
+The explicit adaptive configuration workflow is separate:
+
+`generate-adaptation-report -> generate-manifest -> review-manifest -> apply-manifest`
+
+**Bulk Apply (AI + Safe)**: To force-apply all rows already frozen into `review_final.xlsx`:
 ```bash
 l10n-audit apply --all
 ```
@@ -118,15 +135,32 @@ export OPENROUTER_API_KEY="your-key"
 l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
 ```
 
-### 4. تطبيق الإصلاحات (مضمنة في 1.5.0)
-بعد تدقيق الملفات أو مراجعتها بالذكاء الاصطناعي، يمكنك دمج النتائج مرة أخرى في كود مشروعك الأصلي.
+### 4. تجميد الصفوف المعتمدة
+بعد المراجعة البشرية، جمّد الصفوف المعتمدة داخل ملف التنفيذ النهائي:
+```bash
+l10n-audit prepare-apply
+```
 
-**التطبيق المخصص**: راجع ملف `Review Queue` (Excel)، واضبط الحالة إلى `approved` للمفاتيح التي تم قبولها، ثم شغّل:
+| File | Role |
+| :--- | :--- |
+| `review_queue.xlsx` | Editable human review workspace |
+| `review_final.xlsx` | Frozen execution contract |
+
+### 5. تطبيق الإصلاحات (مضمنة في 1.5.0)
+بعد `prepare-apply` يمكنك دمج النتائج المجمّدة مرة أخرى في كود مشروعك الأصلي.
+
+**التطبيق المخصص**: راجع ملف `review_queue.xlsx`، ثم شغّل `prepare-apply`، ثم نفّذ:
 ```bash
 l10n-audit apply
 ```
 
-**التطبيق الشامل (إصلاحات آلية + ذكاء اصطناعي)**: لتطبيق كل الاقتراحات دفعة واحدة دون مراجعة فردية:
+يقرأ `apply` فقط `review_final.xlsx` ولا يقرأ `review_queue.xlsx` مباشرة.
+
+مسار التكيّف الخاص بالإعدادات مستقل وصريح:
+
+`generate-adaptation-report -> generate-manifest -> review-manifest -> apply-manifest`
+
+**التطبيق الشامل (إصلاحات آلية + ذكاء اصطناعي)**: لتطبيق كل الصفوف التي تم تجميدها داخل `review_final.xlsx`:
 ```bash
 l10n-audit apply --all
 ```

@@ -8,6 +8,7 @@ from zipfile import ZipFile
 import xml.etree.ElementTree as ET
 from l10n_audit.reports.report_aggregator import build_review_queue, REVIEW_QUEUE_COLUMNS, _normalize_review_row
 from l10n_audit.core.audit_runtime import write_simple_xlsx
+from l10n_audit.fixes.fix_merger import REVIEW_FINAL_COLUMNS
 
 def _runtime():
     return type("Runtime", (), {
@@ -161,3 +162,21 @@ def test_workflow_semantics_hardened():
     })
     assert r3["suggested_fix"] == "" # Cleared effective-only
     assert r3["needs_review"] == "Yes"
+
+
+def test_review_final_column_freeze():
+    assert REVIEW_FINAL_COLUMNS == [
+        "key",
+        "locale",
+        "issue_type",
+        "current_value",
+        "candidate_value",
+        "approved_new",
+        "status",
+        "review_note",
+        "source_old_value",
+        "source_hash",
+        "suggested_hash",
+        "plan_id",
+        "generated_at",
+    ]

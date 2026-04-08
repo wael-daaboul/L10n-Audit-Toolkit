@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -6,7 +7,14 @@ import pytest
 from l10n_audit.core.audit_runtime import AuditRuntimeError
 from l10n_audit.core.audit_report_utils import load_all_report_issues
 from l10n_audit.core.audit_runtime import read_simple_xlsx
-from l10n_audit.reports.report_aggregator import build_review_queue, _resolve_issue_locale, suggested_fix_for_issue
+from l10n_audit.reports.report_aggregator import (
+    REVIEW_PROJECTION_COLUMNS,
+    REVIEW_QUEUE_WORKBOOK_COLUMNS,
+    build_human_review_queue,
+    build_review_queue,
+    _resolve_issue_locale,
+    suggested_fix_for_issue,
+)
 
 from conftest import write_json
 
@@ -125,9 +133,9 @@ def test_simple_xlsx_reader_supports_reordered_columns_and_multiline_unicode(tmp
     from l10n_audit.core.audit_runtime import write_simple_xlsx
 
     path = tmp_path / "queue_reordered.xlsx"
-    rows = [{"approved_new": "مرحبا\n%s", "status": "approved", "key": "welcome"}]
-    write_simple_xlsx(rows, ["approved_new", "status", "key"], path, sheet_name="Queue")
-    assert read_simple_xlsx(path, required_columns=["key", "status", "approved_new"]) == rows
+    rows = [{"candidate_value": "مرحبا\n%s", "status": "approved", "key": "welcome"}]
+    write_simple_xlsx(rows, ["candidate_value", "status", "key"], path, sheet_name="Queue")
+    assert read_simple_xlsx(path, required_columns=["key", "status", "candidate_value"]) == rows
 
 
 def test_simple_xlsx_reader_uses_cell_references_not_encounter_order(tmp_path: Path) -> None:
@@ -314,3 +322,138 @@ class TestAggregatorPatches:
             }
         }
         assert suggested_fix_for_issue(issue, {}, {}) == "talk to us"
+
+
+def test_human_review_queue_workbook_contract_excludes_approved_new(tmp_path: Path) -> None:
+    issues = [
+        {
+            "source": "grammar",
+            "key": "any_time",
+            "issue_type": "grammar",
+            "severity": "medium",
+            "message": "Grammar check",
+            "details": {
+                "old": "Any time",
+                "new": "At any time.",
+            },
+        }
+    ]
+
+    runtime = type(
+        "Runtime",
+        (),
+        {
+            "en_file": tmp_path / "en.json",
+            "ar_file": tmp_path / "ar.json",
+            "locale_format": "json",
+            "source_locale": "en",
+            "target_locales": ("ar",),
+        },
+    )()
+    write_json(runtime.en_file, {"any_time": "Any time"})
+    write_json(runtime.ar_file, {})
+
+    projection_rows = build_review_queue(issues, runtime)
+    human_rows = build_human_review_queue(projection_rows)
+
+    assert list(human_rows[0].keys()) == REVIEW_QUEUE_WORKBOOK_COLUMNS
+    assert "approved_new" not in human_rows[0]
+    assert human_rows[0]["current_value"] == "Any time"
+    assert human_rows[0]["candidate_value"] == "At any time."
+    assert human_rows[0]["review_note"] == projection_rows[0]["notes"]
+
+
+def test_human_review_queue_is_not_projection_alias() -> None:
+    projection_rows = [
+        {
+            "key": "welcome",
+            "locale": "ar",
+            "old_value": "اهلا",
+            "issue_type": "grammar",
+            "suggested_fix": "مرحبا",
+            "approved_new": "",
+            "needs_review": "Yes",
+            "status": "pending",
+            "notes": "Needs review",
+            "context_type": "",
+            "context_flags": "",
+            "semantic_risk": "",
+            "lt_signals": "",
+            "review_reason": "",
+            "source_old_value": "اهلا",
+            "source_hash": "source-hash",
+            "suggested_hash": "suggested-hash",
+            "plan_id": "plan-1",
+            "generated_at": "2026-03-08T00:00:00+00:00",
+            "provenance": "grammar|grammar|medium",
+        }
+    ]
+
+    human_rows = build_human_review_queue(projection_rows)
+
+    assert list(projection_rows[0].keys()) == REVIEW_PROJECTION_COLUMNS
+    assert list(human_rows[0].keys()) == REVIEW_QUEUE_WORKBOOK_COLUMNS
+    assert human_rows[0]["candidate_value"] == projection_rows[0]["suggested_fix"]
+    assert "approved_new" not in human_rows[0]
+
+
+def test_run_stage_emits_review_queue_xlsx_not_review_projection_xlsx(monkeypatch, tmp_path: Path) -> None:
+    from l10n_audit.reports.report_aggregator import run_stage
+
+    runtime = SimpleNamespace(
+        project_root=tmp_path,
+        results_dir=tmp_path / "Results",
+        en_file=tmp_path / "en.json",
+        ar_file=tmp_path / "ar.json",
+        source_locale="en",
+        target_locales=("ar",),
+    )
+    runtime.results_dir.mkdir(parents=True, exist_ok=True)
+    write_json(runtime.en_file, {"welcome": "Welcome"})
+    write_json(runtime.ar_file, {"welcome": "اهلا"})
+
+    issue = {
+        "source": "grammar",
+        "key": "welcome",
+        "locale": "ar",
+        "issue_type": "grammar",
+        "severity": "medium",
+        "message": "Grammar check",
+        "current_value": "اهلا",
+        "suggested_fix": "مرحبا",
+    }
+
+    monkeypatch.setattr(
+        "l10n_audit.reports.report_aggregator.load_all_report_issues",
+        lambda *args, **kwargs: ({"grammar": [issue]}, [issue], []),
+    )
+    monkeypatch.setattr(
+        "l10n_audit.reports.report_aggregator.load_locale_mapping",
+        lambda path, *_args, **_kwargs: {"welcome": "Welcome"} if path == runtime.en_file else {"welcome": "اهلا"},
+    )
+    monkeypatch.setattr(
+        "l10n_audit.reports.report_aggregator.build_fix_plan",
+        lambda issues: [
+            {
+                "key": "welcome",
+                "locale": "ar",
+                "issue_type": "grammar",
+                "candidate_value": "مرحبا",
+                "classification": "review_required",
+            }
+        ],
+    )
+
+    options = SimpleNamespace(
+        input_report=None,
+        strict_deprecations=False,
+        effective_output_dir=lambda results_dir: results_dir,
+    )
+
+    artifacts = run_stage(runtime, options)
+    artifact_names = [artifact.name for artifact in artifacts]
+
+    assert "Review Queue (Excel)" in artifact_names
+    assert "Review Projection (Excel)" not in artifact_names
+    assert (runtime.results_dir / "review" / "review_queue.xlsx").exists()
+    assert not (runtime.results_dir / "review" / "review_projection.xlsx").exists()

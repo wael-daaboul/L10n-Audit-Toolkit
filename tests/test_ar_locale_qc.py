@@ -76,7 +76,7 @@ def test_ar_locale_qc_blocks_context_sensitive_admin_rewrite(tmp_path: Path, too
     assert finding["new"] == ""
     assert finding["context_type"] == "helper_text"
     assert finding["semantic_risk"] == "high"
-    assert "Possible role/entity ambiguity" in finding["review_reason"]
+    assert "role/entity alignment changed" in finding["review_reason"]
 
 
 def test_ar_locale_qc_skips_punctuation_rewrite_for_technical_mixed_text(tmp_path: Path, tools_dir: Path) -> None:

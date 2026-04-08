@@ -5,13 +5,18 @@ from pathlib import Path
 from unittest.mock import MagicMock
 from l10n_audit.core.audit_runtime import AuditPaths
 from l10n_audit.core.artifact_resolver import (
+    get_registry_name_for_artifact_key,
     resolve_review_queue_path,
     resolve_review_machine_queue_json_path,
     resolve_review_projection_json_path,
     resolve_review_queue_json_path,
     resolve_final_report_path
 )
-from l10n_audit.core.deprecation_registry import get_by_name, summary_dict
+from l10n_audit.core.deprecation_registry import (
+    get_by_name,
+    get_governance_classification,
+    summary_dict,
+)
 
 sys.modules.setdefault("litellm", MagicMock())
 
@@ -153,3 +158,23 @@ def test_aggregator_emits_separated_roles(mock_runtime):
     analytical_path = resolve_review_projection_json_path(mock_runtime)
     
     assert machine_path != analytical_path
+
+
+def test_projection_xlsx_is_deprecated_not_primary_human_workflow():
+    projection_xlsx = get_by_name("review_projection_xlsx")
+
+    assert projection_xlsx is not None
+    assert projection_xlsx.classification == "deprecated_candidate"
+    assert projection_xlsx.removal_readiness == "remove_now"
+
+
+def test_review_workflow_governance_roles_are_converged():
+    assert get_governance_classification("review_queue_xlsx") == "primary_workflow"
+    assert get_governance_classification("review_final_xlsx") == "primary_workflow"
+    assert get_governance_classification("review_projection_xlsx") == "deprecated_candidate"
+
+
+def test_warning_registry_name_mapping_has_no_alias_drift():
+    assert get_registry_name_for_artifact_key("review_queue_xlsx_path") == "review_queue_xlsx"
+    assert get_registry_name_for_artifact_key("review_final_xlsx_path") == "review_final_xlsx"
+    assert get_registry_name_for_artifact_key("review_projection_xlsx_path") == "review_projection_xlsx"

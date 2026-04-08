@@ -18,6 +18,7 @@ Contract under test:
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,6 +26,7 @@ import pytest
 
 from l10n_audit.core.adaptation_intelligence import (
     ALLOWED_SIGNAL_KEYS,
+    AdaptationIntelligenceError,
     AdaptationProposal,
     AdaptationReport,
     _analyze_proposals,
@@ -36,6 +38,9 @@ from l10n_audit.core.adaptation_intelligence import (
     _resolve_thresholds,
     _validate_safety,
     compute_adaptation_report,
+    load_adaptation_report,
+    serialise_adaptation_report,
+    write_adaptation_report,
 )
 
 
@@ -120,6 +125,29 @@ def test_determinism_three_runs():
             assert p_ref.signal_key == p_r.signal_key
             assert p_ref.signal_value == p_r.signal_value
             assert p_ref.reasoning == p_r.reasoning
+
+
+def test_adaptation_report_serialisation_is_deterministic():
+    profile = _Profile()
+    config = _default_config("suggest")
+
+    report_a = compute_adaptation_report(profile, config)
+    report_b = compute_adaptation_report(profile, config)
+
+    assert report_a is not None
+    assert report_b is not None
+    assert serialise_adaptation_report(report_a) == serialise_adaptation_report(report_b)
+
+
+def test_write_and_load_adaptation_report_round_trip(tmp_path):
+    report = compute_adaptation_report(_Profile(), _default_config("prepare_bounded_actions"))
+    assert report is not None
+
+    path = tmp_path / "adaptation_report.json"
+    write_adaptation_report(report, str(path))
+    loaded = load_adaptation_report(str(path))
+
+    assert serialise_adaptation_report(loaded) == serialise_adaptation_report(report)
 
 
 def test_determinism_profile_hash_stable():
@@ -319,6 +347,14 @@ def test_prepare_bounded_actions_observations_unchanged():
             assert p.bounded_action_key is None, (
                 f"Observation {p.signal_key!r} must not have a bounded_action_key"
             )
+
+
+def test_load_adaptation_report_corrupt_json_fails_loudly(tmp_path):
+    path = tmp_path / "bad.json"
+    path.write_text("{bad json", encoding="utf-8")
+
+    with pytest.raises(AdaptationIntelligenceError, match="Corrupt adaptation report JSON"):
+        load_adaptation_report(str(path))
 
 
 # ---------------------------------------------------------------------------

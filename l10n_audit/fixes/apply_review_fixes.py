@@ -16,7 +16,7 @@ from l10n_audit.core.artifact_resolver import (
     resolve_ar_fixed_json_path, 
     resolve_fix_plan_path, 
     resolve_master_path,
-    resolve_review_queue_path,
+    resolve_review_final_path,
 )
 
 logger = logging.getLogger("l10n_audit.fixes")
@@ -228,7 +228,7 @@ def _validate_apply_row(
 
 
 def reconcile_master_from_xlsx(xlsx_path: str, master_path: str) -> None:
-    """Sync human edits from review_queue.xlsx into audit_master.json.
+    """Sync frozen edits from review_final.xlsx into audit_master.json.
 
     Matches rows by plan_id only. Never creates new rows — only updates
     existing ones. Missing plan_ids and missing XLSX columns are ignored.
@@ -464,7 +464,7 @@ def reconcile_master(results_dir: Path, all_rows: list[dict], applied_keys: set[
 
 
 def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_final_json: str | None = None, out_report: str | None = None) -> dict:
-    # Phase 1 — Master Reconciliation: sync XLSX human edits → audit_master.json BEFORE apply
+    # Phase 1 — Master Reconciliation: sync frozen workbook edits → audit_master.json BEFORE apply
     if review_queue_path.exists():
         _master_path = resolve_master_path(runtime)
         try:
@@ -475,7 +475,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
                 f"Cause: {_rec_exc}"
             ) from _rec_exc
     else:
-        logger.warning("run_apply: review_queue_path does not exist (%s) — skipping pre-apply reconciliation.", review_queue_path)
+        logger.warning("run_apply: review_final workbook does not exist (%s) — skipping pre-apply reconciliation.", review_queue_path)
 
     # 1. Load auto_fixes from previous run's fix_plan
     auto_fixes_en = {}
@@ -495,7 +495,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
         except Exception as e:
             logger.warning(f"Could not load previous fix plan: {e}")
 
-    # 2. Load approved fixes from Excel
+    # 2. Load approved fixes from the frozen workbook
     rows = read_simple_xlsx(review_queue_path, required_columns=REQUIRED_REVIEW_COLUMNS)
     review_fixes_en = {}
     review_fixes_ar = {}
@@ -530,6 +530,16 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
     for row in rows:
         status = str(row.get("status", "")).strip().lower()
         if not apply_all and status != "approved":
+            rejection = _record_apply_rejection(runtime, row, "not_approved_status", actual=status)
+            skipped.append(rejection)
+            apply_trace.append(
+                _build_apply_trace_entry(
+                    row,
+                    status="skipped",
+                    reason="not_approved_status",
+                    decision_context={"status": status},
+                )
+            )
             continue
         
         locale_hint = str(row.get("locale", "")).strip()
@@ -783,7 +793,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
 def main() -> None:
     runtime = load_runtime(__file__)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--review-queue", default=str(resolve_review_queue_path(runtime)))
+    parser.add_argument("--review-queue", default=str(resolve_review_final_path(runtime)))
     parser.add_argument("--out-final-json", default=str(runtime.results_dir / "final_locale" / "ar.final.json"))
     parser.add_argument("--out-report", default=str(runtime.results_dir / "final_locale" / "review_fixes_report.json"))
     parser.add_argument("--all", action="store_true", help="Apply all fixes even if not approved.")

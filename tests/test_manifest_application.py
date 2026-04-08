@@ -44,6 +44,7 @@ from l10n_audit.core.manifest_application import (
     _validate_approved_action,
     _apply_single_action,
     load_manifest,
+    load_approvals_file,
     generate_reviewed_manifest,
     apply_manifest,
     rollback_application,
@@ -237,6 +238,29 @@ def test_generate_reviewed_manifest_produces_separate_artifact(tmp_path):
     files = [f for f in os.listdir(cache_dir) if f.endswith(".json")]
     assert len(files) == 1
     assert reviewed.reviewed_manifest_id in files[0]
+
+
+def test_generate_reviewed_manifest_writes_explicit_output_path(tmp_path):
+    manifest_path = _make_manifest_file(tmp_path)
+    approvals = {"act_000000000001": {"status": "approved", "approved_by": "me", "note": ""}}
+    reviewed_out = tmp_path / "reviewed_explicit.json"
+
+    reviewed = generate_reviewed_manifest(manifest_path, approvals, str(tmp_path), out_path=str(reviewed_out))
+
+    assert reviewed_out.exists()
+    payload = json.loads(reviewed_out.read_text(encoding="utf-8"))
+    assert payload["reviewed_manifest_id"] == reviewed.reviewed_manifest_id
+
+
+def test_load_approvals_file_invalid_status_raises(tmp_path):
+    approvals_path = tmp_path / "approvals.json"
+    approvals_path.write_text(
+        json.dumps({"act_1": {"status": "invalid", "approved_by": "me", "note": ""}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ManifestApplicationError, match="invalid status"):
+        load_approvals_file(str(approvals_path))
 
 
 # ---------------------------------------------------------------------------

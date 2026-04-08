@@ -56,6 +56,15 @@ l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o"
 ## Results & Review
 AI suggestions are written to the standard results directory:
 - **XLSX Review Queue:** `Results/review/review_queue.xlsx` (Look for `ai_review` in the `issue_type` column).
+- **Frozen Execution Workbook:** `Results/review/review_final.xlsx` after running `l10n-audit prepare-apply`.
 - **Consolidated Report:** `Results/final/final_audit_report.md`.
 
-AI suggestions are **never automatically applied**. They must be approved in the review queue before being injected into the final locale file.
+AI suggestions flow only into `review_queue.xlsx`. They never flow directly into `review_final.xlsx`.
+
+AI suggestions are **never automatically applied**. They must be reviewed in `review_queue.xlsx`, frozen by `prepare-apply`, and then executed from `review_final.xlsx`.
+
+The adaptive config workflow is separate:
+
+`generate-adaptation-report -> generate-manifest -> review-manifest -> apply-manifest`
+
+AI review suggestions do not bypass this chain and do not write directly to manifest artifacts.

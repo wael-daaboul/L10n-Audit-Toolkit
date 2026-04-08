@@ -24,7 +24,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
 # LearningProfile is imported TYPE_CHECKING-only to avoid circular imports.
@@ -34,6 +38,10 @@ if TYPE_CHECKING:
     from l10n_audit.core.project_memory import LearningProfile
 
 logger = logging.getLogger("l10n_audit.adaptation_intelligence")
+
+
+class AdaptationIntelligenceError(Exception):
+    """Raised when explicit adaptation report workflow inputs are invalid."""
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -116,6 +124,107 @@ class AdaptationReport:
     profile_hash: str
     proposals: List[AdaptationProposal] = field(default_factory=list)
     safety_rejections: List[str] = field(default_factory=list)
+
+
+def serialise_adaptation_report(report: AdaptationReport) -> Dict[str, Any]:
+    """Return the deterministic JSON payload for an AdaptationReport."""
+    return {
+        "schema_version": _VERSION,
+        "project_id": report.project_id,
+        "mode": report.mode,
+        "run_count_basis": report.run_count_basis,
+        "profile_hash": report.profile_hash,
+        "proposals": [
+            {
+                "proposal_id": p.proposal_id,
+                "signal_key": p.signal_key,
+                "signal_value": p.signal_value,
+                "threshold_used": p.threshold_used,
+                "proposal_type": p.proposal_type,
+                "reasoning": p.reasoning,
+                "source_run_count": p.source_run_count,
+                "profile_hash": p.profile_hash,
+                "bounded_action_key": p.bounded_action_key,
+            }
+            for p in report.proposals
+        ],
+        "safety_rejections": list(report.safety_rejections),
+    }
+
+
+def write_adaptation_report(report: AdaptationReport, path: str) -> str:
+    """Persist an AdaptationReport atomically to an explicit path."""
+    payload = serialise_adaptation_report(report)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=str(target.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, target)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    return str(target)
+
+
+def load_adaptation_report(path: str) -> AdaptationReport:
+    """Load an AdaptationReport from JSON with strict shape validation."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except FileNotFoundError:
+        raise AdaptationIntelligenceError(f"Adaptation report not found: {path!r}")
+    except json.JSONDecodeError as exc:
+        raise AdaptationIntelligenceError(f"Corrupt adaptation report JSON at {path!r}: {exc}")
+
+    if not isinstance(raw, dict):
+        raise AdaptationIntelligenceError("Adaptation report payload must be a JSON object")
+    if raw.get("schema_version") != _VERSION:
+        raise AdaptationIntelligenceError(
+            f"Unsupported adaptation report schema_version {raw.get('schema_version')!r}"
+        )
+    missing = [
+        field_name
+        for field_name in ("project_id", "mode", "run_count_basis", "profile_hash", "proposals")
+        if field_name not in raw
+    ]
+    if missing:
+        raise AdaptationIntelligenceError(
+            f"Adaptation report missing required fields: {missing}"
+        )
+    if not isinstance(raw.get("proposals"), list):
+        raise AdaptationIntelligenceError("Adaptation report field 'proposals' must be a list")
+
+    proposals: List[AdaptationProposal] = []
+    for proposal in raw.get("proposals", []):
+        if not isinstance(proposal, dict):
+            raise AdaptationIntelligenceError("Adaptation report proposals must contain only JSON objects")
+        proposals.append(
+            AdaptationProposal(
+                proposal_id=str(proposal.get("proposal_id", "")),
+                signal_key=str(proposal.get("signal_key", "")),
+                signal_value=float(proposal.get("signal_value", 0.0)),
+                threshold_used=float(proposal.get("threshold_used", 0.0)),
+                proposal_type=str(proposal.get("proposal_type", "")),
+                reasoning=str(proposal.get("reasoning", "")),
+                source_run_count=int(proposal.get("source_run_count", 0)),
+                profile_hash=str(proposal.get("profile_hash", "")),
+                bounded_action_key=proposal.get("bounded_action_key"),
+            )
+        )
+
+    return AdaptationReport(
+        project_id=str(raw.get("project_id", "")),
+        mode=str(raw.get("mode", "")),
+        run_count_basis=int(raw.get("run_count_basis", 0)),
+        profile_hash=str(raw.get("profile_hash", "")),
+        proposals=proposals,
+        safety_rejections=list(raw.get("safety_rejections", []) or []),
+    )
 
 
 # ---------------------------------------------------------------------------

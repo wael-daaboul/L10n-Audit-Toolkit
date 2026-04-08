@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -14,7 +15,7 @@ from l10n_audit.core.workspace import (
     workspace_config_path,
     workspace_status,
 )
-from l10n_audit.core.artifact_resolver import resolve_review_queue_path
+from l10n_audit.core.artifact_resolver import resolve_review_final_path
 
 
 # ---------------------------------------------------------------------------
@@ -354,12 +355,16 @@ def cmd_apply(args: argparse.Namespace) -> int:
     
     from l10n_audit.fixes.apply_review_fixes import run_apply
     
-    # Deterministic lookup using artifact resolver (Phase 8)
-    review_queue = Path(args.review_queue) if args.review_queue else resolve_review_queue_path(runtime)
+    # Deterministic lookup using artifact resolver: apply consumes the frozen workbook only.
+    review_queue = Path(args.review_queue) if args.review_queue else resolve_review_final_path(runtime)
     
     if not review_queue.exists():
-        print(f"❌ Error: Review queue not found at {review_queue}")
-        print("   Please run an audit first or specify the path with --review-queue")
+        print("ERROR: review_final.xlsx not found.")
+        print("")
+        print("Run:")
+        print("  l10n-audit prepare-apply")
+        print("")
+        print("before executing apply.")
         return 1
 
     print(f"🛠️ Applying fixes from: {review_queue.name}")
@@ -382,6 +387,174 @@ def cmd_apply(args: argparse.Namespace) -> int:
         print(f"   - Result: Generated .fix files next to original locale files.")
     
     return 0
+
+
+def cmd_prepare_apply(args: argparse.Namespace) -> int:
+    path_val = getattr(args, "path", ".")
+    project_root = find_project_root(Path(path_val).resolve())
+
+    from l10n_audit.core.audit_runtime import load_runtime
+    runtime = load_runtime(project_root / "cli_anchor", validate=False)
+
+    from l10n_audit.fixes.fix_merger import prepare_apply_workbook
+
+    review_queue = Path(args.review_queue) if args.review_queue else (runtime.results_dir / "review" / "review_queue.xlsx")
+    out_final = Path(args.out_final) if args.out_final else (runtime.results_dir / "review" / "review_final.xlsx")
+    rejection_report = Path(args.rejection_report) if args.rejection_report else (runtime.results_dir / ".cache" / "apply" / "rejection_report.json")
+
+    if not review_queue.exists():
+        print(f"❌ Error: Review queue not found at {review_queue}")
+        print("   Please run an audit first or specify the path with --review-queue")
+        return 1
+
+    report = prepare_apply_workbook(review_queue, out_final, rejection_report)
+
+    print(f"🧊 Prepared final workbook: {out_final}")
+    print(f"📝 Rejection report: {rejection_report}")
+    print(f"   - Total rows    : {report['summary']['total_rows']}")
+    print(f"   - Accepted rows : {report['summary']['accepted_rows']}")
+    print(f"   - Rejected rows : {report['summary']['rejected_rows']}")
+    return 0
+
+
+def cmd_generate_manifest(args: argparse.Namespace) -> int:
+    path_val = getattr(args, "path", ".")
+    project_root = find_project_root(Path(path_val).resolve())
+    results_dir = project_root / ".l10n-audit" / "Results"
+    config_path = workspace_config_path(project_root)
+
+    from l10n_audit.core.controlled_consumption import (
+        ControlledConsumptionError,
+        generate_consumption_manifest,
+        write_manifest_file,
+    )
+    from l10n_audit.core.adaptation_intelligence import load_adaptation_report
+
+    try:
+        report = load_adaptation_report(args.input_report)
+        with open(config_path, "r", encoding="utf-8") as fh:
+            current_config = json.load(fh)
+        mode = args.mode or "review_ready"
+        manifest = generate_consumption_manifest(
+            report,
+            {
+                "enabled": True,
+                "mode": mode,
+                "allowed_signal_keys": ["calibration_rarely_active"],
+                "allowed_action_types": ["config_suggestion"],
+                "emit_manifest": False,
+            },
+            current_config=current_config if isinstance(current_config, dict) else {},
+            results_dir=str(results_dir),
+        )
+        if manifest is None:
+            raise ControlledConsumptionError("Consumption manifest generation returned no output")
+
+        out_path = args.manifest_out or str(
+            results_dir / ".cache" / "consumption_manifests" / f"{manifest.project_id}_{manifest.manifest_id}.json"
+        )
+        write_manifest_file(manifest, out_path)
+        print(f"Generated manifest: {out_path}")
+        print(f"  Actions: {len(manifest.generated_actions)}")
+        print(f"  Rejected candidates: {len(manifest.rejected_candidates)}")
+        return 0
+    except (ControlledConsumptionError, OSError, json.JSONDecodeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_review_manifest(args: argparse.Namespace) -> int:
+    path_val = getattr(args, "path", ".")
+    project_root = find_project_root(Path(path_val).resolve())
+    results_dir = project_root / ".l10n-audit" / "Results"
+
+    from l10n_audit.core.manifest_application import (
+        ManifestApplicationError,
+        generate_reviewed_manifest,
+        load_approvals_file,
+    )
+
+    try:
+        approvals = load_approvals_file(args.approvals)
+        reviewed = generate_reviewed_manifest(
+            args.manifest,
+            approvals,
+            str(results_dir),
+            out_path=args.reviewed_out,
+        )
+        reviewed_path = args.reviewed_out or str(
+            results_dir / ".cache" / "reviewed_manifests" / f"{reviewed.project_id}_{reviewed.reviewed_manifest_id}.json"
+        )
+        print(f"Reviewed manifest: {reviewed_path}")
+        print(f"  Reviewed actions: {len(reviewed.approved_actions)}")
+        return 0
+    except ManifestApplicationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_apply_manifest(args: argparse.Namespace) -> int:
+    path_val = getattr(args, "path", ".")
+    project_root = find_project_root(Path(path_val).resolve())
+    results_dir = project_root / ".l10n-audit" / "Results"
+    config_path = args.config or str(workspace_config_path(project_root))
+
+    from l10n_audit.core.manifest_application import ManifestApplicationError, apply_manifest
+
+    try:
+        receipt = apply_manifest(
+            args.reviewed_manifest,
+            args.manifest,
+            config_path,
+            str(results_dir),
+        )
+        print(f"Applied manifest: {receipt.source_reviewed_manifest_id}")
+        print(f"  Applied actions: {len(receipt.applied_actions)}")
+        print(f"  Skipped actions: {len(receipt.skipped_actions)}")
+        print(f"  Failed actions: {len(receipt.failed_actions)}")
+        return 0
+    except ManifestApplicationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_generate_adaptation_report(args: argparse.Namespace) -> int:
+    path_val = getattr(args, "path", ".")
+    project_root = find_project_root(Path(path_val).resolve())
+    results_dir = project_root / ".l10n-audit" / "Results"
+
+    from l10n_audit.core.adaptation_intelligence import (
+        AdaptationIntelligenceError,
+        compute_adaptation_report,
+        write_adaptation_report,
+    )
+    from l10n_audit.core.project_memory import load_learning_profile
+
+    try:
+        profile = load_learning_profile(args.learning_profile)
+        report = compute_adaptation_report(
+            profile,
+            {
+                "enabled": True,
+                "mode": args.mode,
+                "min_runs_required": 5,
+                "thresholds": {},
+            },
+        )
+        if report is None:
+            raise AdaptationIntelligenceError(
+                f"Adaptation report generation produced no output for mode {args.mode!r}"
+            )
+
+        out_report = args.out_report or str(results_dir / ".cache" / "adaptation" / "adaptation_report.json")
+        write_adaptation_report(report, out_report)
+        print(f"Generated adaptation report: {out_report}")
+        print(f"  Proposals: {len(report.proposals)}")
+        print(f"  Safety rejections: {len(report.safety_rejections)}")
+        return 0
+    except (AdaptationIntelligenceError, ValueError, OSError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
 
 # ---------------------------------------------------------------------------
@@ -448,11 +621,112 @@ def build_parser() -> argparse.ArgumentParser:
     self_update_parser = subparsers.add_parser("self-update", help="Show how to update the global launcher")
     self_update_parser.set_defaults(func=cmd_self_update)
 
-    apply_parser = subparsers.add_parser("apply", help="Apply approved fixes from the review queue to original files")
+    apply_parser = subparsers.add_parser(
+        "apply",
+        help="Applies approved fixes from a frozen review_final.xlsx workbook.",
+        description=(
+            "Applies approved fixes from a frozen review_final.xlsx workbook.\n\n"
+            "This command does NOT read review_queue.xlsx directly.\n"
+            "You must run `prepare-apply` first.\n"
+            "Workflow: run -> review_queue.xlsx -> prepare-apply -> review_final.xlsx -> apply"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
     apply_parser.add_argument("--path", default=".", help="Project root path")
-    apply_parser.add_argument("--review-queue", help="Path to review_queue.xlsx (optional)")
+    apply_parser.add_argument("--review-queue", help="Path to the frozen review_final.xlsx workbook (optional)")
     apply_parser.add_argument("--all", action="store_true", help="Force-apply all suggestions (including AI) regardless of status")
     apply_parser.set_defaults(func=cmd_apply)
+
+    prepare_apply_parser = subparsers.add_parser(
+        "prepare-apply",
+        help="Freezes approved rows from review_queue.xlsx into review_final.xlsx.",
+        description=(
+            "Freezes approved rows from review_queue.xlsx into review_final.xlsx.\n\n"
+            "review_queue.xlsx is the editable human review workspace.\n"
+            "review_final.xlsx is the frozen execution contract consumed by apply.\n"
+            "Workflow: run -> review_queue.xlsx -> prepare-apply -> review_final.xlsx -> apply"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    prepare_apply_parser.add_argument("--path", default=".", help="Project root path")
+    prepare_apply_parser.add_argument("--review-queue", help="Path to review_queue.xlsx (optional)")
+    prepare_apply_parser.add_argument("--out-final", help="Path to review_final.xlsx (optional)")
+    prepare_apply_parser.add_argument("--rejection-report", help="Path to rejection_report.json (optional)")
+    prepare_apply_parser.set_defaults(func=cmd_prepare_apply)
+
+    generate_manifest_parser = subparsers.add_parser(
+        "generate-manifest",
+        help="Generate a ConsumptionManifest from an adaptation report.",
+        description=(
+            "Transforms adaptation_report.json into a reviewable consumption manifest.\n\n"
+            "Adaptive workflow: generate-adaptation-report -> generate-manifest -> "
+            "review-manifest -> apply-manifest"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    generate_manifest_parser.add_argument("--path", default=".", help="Project root path")
+    generate_manifest_parser.add_argument("--input-report", required=True, help="Path to adaptation report JSON")
+    generate_manifest_parser.add_argument("--manifest-out", help="Explicit output path for the generated manifest")
+    generate_manifest_parser.add_argument(
+        "--mode",
+        choices=["generate_manifest", "review_ready"],
+        default="review_ready",
+        help="Controlled consumption mode for explicit manifest generation",
+    )
+    generate_manifest_parser.set_defaults(func=cmd_generate_manifest)
+
+    generate_adaptation_parser = subparsers.add_parser(
+        "generate-adaptation-report",
+        help="Generate an AdaptationReport from a learning profile.",
+        description=(
+            "Builds adaptation_report.json from a saved learning profile.\n\n"
+            "Adaptive workflow: generate-adaptation-report -> generate-manifest -> "
+            "review-manifest -> apply-manifest"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    generate_adaptation_parser.add_argument("--path", default=".", help="Project root path")
+    generate_adaptation_parser.add_argument("--learning-profile", required=True, help="Path to LearningProfile JSON")
+    generate_adaptation_parser.add_argument("--out-report", help="Explicit output path for adaptation_report.json")
+    generate_adaptation_parser.add_argument(
+        "--mode",
+        choices=["suggest", "prepare_bounded_actions"],
+        required=True,
+        help="Explicit adaptation analysis mode",
+    )
+    generate_adaptation_parser.set_defaults(func=cmd_generate_adaptation_report)
+
+    review_manifest_parser = subparsers.add_parser(
+        "review-manifest",
+        help="Build a ReviewedManifest from a manifest and explicit approvals JSON.",
+        description=(
+            "Builds a reviewed manifest from a consumption manifest and explicit approvals.\n\n"
+            "Adaptive workflow: generate-adaptation-report -> generate-manifest -> "
+            "review-manifest -> apply-manifest"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    review_manifest_parser.add_argument("--path", default=".", help="Project root path")
+    review_manifest_parser.add_argument("--manifest", required=True, help="Path to the source consumption manifest")
+    review_manifest_parser.add_argument("--approvals", required=True, help="Path to approvals JSON")
+    review_manifest_parser.add_argument("--reviewed-out", help="Explicit output path for the reviewed manifest")
+    review_manifest_parser.set_defaults(func=cmd_review_manifest)
+
+    apply_manifest_parser = subparsers.add_parser(
+        "apply-manifest",
+        help="Apply approved actions from a reviewed manifest to config.json.",
+        description=(
+            "Applies approved actions from a reviewed manifest to config.json.\n\n"
+            "Adaptive workflow: generate-adaptation-report -> generate-manifest -> "
+            "review-manifest -> apply-manifest"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    apply_manifest_parser.add_argument("--path", default=".", help="Project root path")
+    apply_manifest_parser.add_argument("--manifest", required=True, help="Path to the source consumption manifest")
+    apply_manifest_parser.add_argument("--reviewed-manifest", required=True, help="Path to the reviewed manifest")
+    apply_manifest_parser.add_argument("--config", help="Explicit config.json path (optional)")
+    apply_manifest_parser.set_defaults(func=cmd_apply_manifest)
 
     deprecations_parser = subparsers.add_parser("deprecations", help="Show the current state of legacy artifacts decommissioning.")
     deprecations_parser.set_defaults(func=cmd_deprecations)

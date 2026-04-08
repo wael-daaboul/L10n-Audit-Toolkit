@@ -15,6 +15,7 @@ from l10n_audit.core.audit_report_utils import load_all_report_issues, severity_
 from l10n_audit.core.artifact_resolver import (
     resolve_master_path, 
     resolve_final_report_path,
+    resolve_review_queue_path,
     resolve_review_projection_path,
     resolve_review_projection_json_path,
     resolve_review_machine_queue_json_path,  # Added (Phase 9)
@@ -51,6 +52,20 @@ REVIEW_PROJECTION_COLUMNS = [
     "provenance",
 ]
 REVIEW_QUEUE_COLUMNS = REVIEW_PROJECTION_COLUMNS
+REVIEW_QUEUE_WORKBOOK_COLUMNS = [
+    "key",
+    "locale",
+    "issue_type",
+    "current_value",
+    "candidate_value",
+    "status",
+    "review_note",
+    "source_old_value",
+    "source_hash",
+    "suggested_hash",
+    "plan_id",
+    "generated_at",
+]
 HIDDEN_WHEN_EMPTY = {"placeholders", "icu_message_audit"}
 
 
@@ -86,6 +101,33 @@ def recommendations(summary: dict[str, Any], safe_fixes: dict[str, int], review_
     if review_rows:
         items.append("Resolve pending items in `Results/review/review_queue.xlsx`, then apply approved rows with `python -m fixes.apply_review_fixes`.")
     return items or ["No action is required because no issues were found."]
+
+
+def build_human_review_queue(review_rows: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Build the canonical human workbook rows for ``review_queue.xlsx``.
+
+    This is the only human-edit contract emitted by the run workflow.
+    ``review_projection.xlsx`` is not part of the human apply workflow.
+    """
+    human_rows: list[dict[str, str]] = []
+    for row in review_rows:
+        human_rows.append(
+            {
+                "key": str(row.get("key", "") or ""),
+                "locale": str(row.get("locale", "") or ""),
+                "issue_type": str(row.get("issue_type", "") or ""),
+                "current_value": str(row.get("old_value", "") or ""),
+                "candidate_value": str(row.get("suggested_fix", "") or ""),
+                "status": str(row.get("status", "") or ""),
+                "review_note": str(row.get("notes", "") or ""),
+                "source_old_value": str(row.get("source_old_value", "") or ""),
+                "source_hash": str(row.get("source_hash", "") or ""),
+                "suggested_hash": str(row.get("suggested_hash", "") or ""),
+                "plan_id": str(row.get("plan_id", "") or ""),
+                "generated_at": str(row.get("generated_at", "") or ""),
+            }
+        )
+    return human_rows
 
 
 
@@ -851,7 +893,7 @@ def render_markdown(
         "",
         "## Review Queue",
         "",
-        "Open `Results/review/review_queue.xlsx`, update `approved_new`, then set `status` to `approved` for rows you want to apply.",
+        "Open `Results/review/review_queue.xlsx`, update `candidate_value` and `review_note` as needed, then set `status` to `approved` for rows you want to apply.",
         "",
         "## Prioritized Review",
         "",
@@ -1018,7 +1060,7 @@ def write_audit_master(
 
     # ── Phase A: review_projection_metadata ────────────────────────────────
     rp_meta = {
-        "review_queue_columns":     list(REVIEW_QUEUE_COLUMNS),
+        "review_queue_columns":     list(REVIEW_QUEUE_WORKBOOK_COLUMNS),
         "projection_generated_at": now_iso,
         "projection_source":       "legacy_generated",
         "projection_mode":         "build_review_queue",
@@ -1044,7 +1086,7 @@ def write_audit_master(
         "review_machine_queue_json_path": _rel(review_machine),
         "review_queue_json_path":    _rel(results_dir / "review" / "review_queue.json"),
         "review_queue_xlsx_path":    _rel(review_xlsx),
-        "review_projection_xlsx_path": _rel(review_xlsx),
+        "review_projection_xlsx_path": None,
         "aggregated_issues_path":    _rel(aggr_file),
         "final_report_md_path":      _rel(results_dir / "final" / "final_audit_report.md"),
         "final_report_en_md_path":   _rel(results_dir / "final" / "final_audit_report_en.md"),
@@ -1104,7 +1146,7 @@ def main() -> None:
     parser.add_argument("--out-md", default=str(runtime.results_dir / "final" / "final_audit_report.md"))
     parser.add_argument("--out-json", default=str(runtime.results_dir / "final" / "final_audit_report.json"))
     parser.add_argument("--out-final-json", default=str(resolve_final_report_path(runtime)))
-    parser.add_argument("--out-review-xlsx", default=str(resolve_review_projection_path(runtime)))
+    parser.add_argument("--out-review-xlsx", default=str(resolve_review_queue_path(runtime)))
     parser.add_argument("--out-review-json", default=str(resolve_review_projection_json_path(runtime)))
     parser.add_argument("--sources", default="")
     args = parser.parse_args()
@@ -1131,7 +1173,7 @@ def main() -> None:
         "artifacts": {
             "final_report_md": "Results/final/final_audit_report.md",
             "final_report_json": "Results/final/final_audit_report.json",
-            "review_projection": "Results/review/review_projection.xlsx",
+            "review_queue": "Results/review/review_queue.xlsx",
             "review_projection_json": "Results/review/review_projection.json",
             "aggregated_issues": "Results/normalized/aggregated_issues.json"
         },
@@ -1156,7 +1198,7 @@ def main() -> None:
     write_unified_json(Path(args.out_json), payload)
     write_unified_json(Path(args.out_normalized), {"included_sources": payload["included_sources"], "issues": issues})
     write_unified_json(Path(args.out_review_json), {"columns": REVIEW_PROJECTION_COLUMNS, "rows": review_rows})
-    write_simple_xlsx(review_rows, REVIEW_PROJECTION_COLUMNS, Path(args.out_review_xlsx), sheet_name="Review Queue")
+    write_simple_xlsx(build_human_review_queue(review_rows), REVIEW_QUEUE_WORKBOOK_COLUMNS, Path(args.out_review_xlsx), sheet_name="Review Queue")
 
     try:
         write_audit_master(
@@ -1513,7 +1555,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         json_file = final_dir / "final_audit_report.json"
         aggr_file = normalized_dir / "aggregated_issues.json"
         review_json = resolve_review_projection_json_path(runtime)
-        review_xlsx = resolve_review_projection_path(runtime)
+        review_xlsx = resolve_review_queue_path(runtime)
         review_machine = resolve_review_machine_queue_json_path(runtime)  # Added (Phase 9)
 
         md_file.write_text(markdown, encoding="utf-8")
@@ -1580,8 +1622,9 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         ])
 
         try:
-            write_simple_xlsx(review_rows, REVIEW_PROJECTION_COLUMNS, review_xlsx, sheet_name="Review Queue")
-            artifacts.append(ReportArtifact(name="Review Projection (Excel)", path=str(review_xlsx), format="xlsx", category="review"))
+            human_review_rows = build_human_review_queue(review_rows)
+            write_simple_xlsx(human_review_rows, REVIEW_QUEUE_WORKBOOK_COLUMNS, review_xlsx, sheet_name="Review Queue")
+            artifacts.append(ReportArtifact(name="Review Queue (Excel)", path=str(review_xlsx), format="xlsx", category="review"))
         except Exception as xlsx_exc:
             logger.warning("Could not write review XLSX: %s", xlsx_exc)
 
