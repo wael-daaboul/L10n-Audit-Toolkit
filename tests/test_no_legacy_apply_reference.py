@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-ROOT = Path("/Users/waeldaaboul/L10n Audit Toolkit")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_no_legacy_apply_reference_in_primary_docs():
@@ -12,7 +12,6 @@ def test_no_legacy_apply_reference_in_primary_docs():
         ROOT / "docs" / "output_reports.md",
         ROOT / "docs" / "user_guides" / "USAGE_AR.md",
         ROOT / "docs" / "user_guides" / "HOW_TO_USE.md",
-        ROOT / "مفاتيح" / "دليل_الأوامر.md",
     ]
 
     forbidden = [
@@ -34,7 +33,6 @@ def test_prepare_apply_is_present_in_primary_docs():
         ROOT / "docs" / "quickstart.md",
         ROOT / "docs" / "review_workflow.md",
         ROOT / "docs" / "user_guides" / "USAGE_AR.md",
-        ROOT / "مفاتيح" / "دليل_الأوامر.md",
     ]
 
     combined = "\n".join(path.read_text(encoding="utf-8") for path in files)

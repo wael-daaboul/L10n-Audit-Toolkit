@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-ROOT = Path("/Users/waeldaaboul/L10n Audit Toolkit")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_apply_surface_no_legacy_direct_queue_reference():
