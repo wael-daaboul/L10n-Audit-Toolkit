@@ -183,7 +183,7 @@ def issue_code_from_type(issue_type: str) -> IssueCode:
 
 def issue_from_dict(raw: dict[str, Any]) -> AuditIssue:
     """Create an :class:`AuditIssue` from a raw dict (from any audit module)."""
-    issue_type = str(raw.get("issue_type") or raw.get("type") or "")
+    issue_type = str(raw.get("issue_type") or raw.get("type") or "").strip() or "unknown"
     code: IssueCode = raw.get("code") or issue_code_from_type(issue_type)  # type: ignore[assignment]
     file_val = raw.get("file") or ""
     if isinstance(file_val, Path):

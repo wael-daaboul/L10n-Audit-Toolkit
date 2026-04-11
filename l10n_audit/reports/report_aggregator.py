@@ -552,7 +552,7 @@ def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], a
 
     # 2. Contextual fallback for missing keys
     locale, _l_source = resolve_issue_locale(issue)
-    issue_type = str(issue.get("issue_type", ""))
+    issue_type = str(issue.get("issue_type") or "").strip() or "unknown"
     key = str(issue.get("key", ""))
     if issue_type in {"confirmed_missing_key", "missing_in_ar", "in_en_not_ar"} and locale == "ar":
         return get_value_smart(key, en_data) or ""
@@ -572,7 +572,10 @@ def _normalize_review_row(row: dict) -> dict:
     ]:
         if field in normalized:
             val = normalized[field]
-            normalized[field] = "" if val is None else str(val)
+            if field == "issue_type":
+                normalized[field] = str(val or "").strip() or "unknown"
+            else:
+                normalized[field] = "" if val is None else str(val)
 
     # Normalize notes (Stable, unique segments)
     notes = normalized.get("notes", "")
@@ -728,7 +731,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         locale, _l_source = resolve_issue_locale(issue)
         locale = locale or "unknown"
         key = str(issue.get("key", ""))
-        issue_type = str(issue.get("issue_type", ""))
+        issue_type = str(issue.get("issue_type") or "").strip() or "unknown"
         current_value = old_value_for_issue(issue, en_data, ar_data)
         message = str(issue.get("message", ""))
         source = str(issue.get("source", ""))
@@ -1424,7 +1427,11 @@ def load_from_master(master_path: Path) -> tuple[dict, list, list, list]:
         master = _json.load(fh)
 
     issues: list[dict] = master.get("issue_inventory", [])
+    for issue in issues:
+        issue["issue_type"] = str(issue.get("issue_type") or "").strip() or "unknown"
     review_rows: list[dict] = master.get("review_projection", {}).get("json_rows", [])
+    for row in review_rows:
+        row["issue_type"] = str(row.get("issue_type") or "").strip() or "unknown"
     snapshot = master.get("legacy_artifacts", {}).get("final_report_snapshot", {})
     missing: list = snapshot.get("missing_reports", [])
     included = snapshot.get("included_sources", [])

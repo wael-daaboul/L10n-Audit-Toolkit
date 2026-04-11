@@ -150,7 +150,7 @@ def normalize_localization(payload: dict[str, Any]) -> list[dict[str, Any]]:
     findings = payload.get("findings", [])
     issues: list[dict[str, Any]] = []
     for row in findings:
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "localization",
@@ -170,7 +170,7 @@ def normalize_localization(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "locale_qc",
@@ -190,7 +190,7 @@ def normalize_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_ar_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "ar_locale_qc",
@@ -210,7 +210,7 @@ def normalize_ar_locale_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_ar_semantic_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "ar_semantic_qc",
@@ -230,7 +230,7 @@ def normalize_ar_semantic_qc(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_grammar(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "grammar",
@@ -250,7 +250,7 @@ def normalize_grammar(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_terminology(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("violations", []):
-        issue_type = str(row.get("violation_type", "unknown"))
+        issue_type = str(row.get("violation_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "terminology",
@@ -270,7 +270,7 @@ def normalize_terminology(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_placeholders(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "placeholders",
@@ -290,7 +290,7 @@ def normalize_placeholders(payload: dict[str, Any]) -> list[dict[str, Any]]:
 def normalize_icu_message_audit(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
-        issue_type = str(row.get("issue_type", "unknown"))
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
         issues.append(
             {
                 "source": "icu_message_audit",
@@ -424,8 +424,8 @@ def load_hydrated_report(report_path: Path) -> tuple[dict[str, Any], list[dict[s
         return {}, [], [str(report_path)]
     
     issues = payload.get("issues", [])
-    # Re-normalize if they were raw tool outputs in the 'issues' list
-    # but usually if it comes from final_audit_report.json, they are already normalized.
+    for issue in issues:
+        issue["issue_type"] = str(issue.get("issue_type") or "").strip() or "unknown"
     return payload, issues, []
 
 

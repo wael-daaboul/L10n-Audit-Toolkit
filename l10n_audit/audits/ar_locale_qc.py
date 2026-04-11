@@ -1091,6 +1091,6 @@ def run_stage(runtime, options) -> list:
             "stage": "ar_locale_qc",
         }
 
-    normalised = [{**r, "source": "ar_locale_qc", "issue_type": r.get("issue_type", "ar_qc")} for r in rows]
+    normalised = [{**r, "source": "ar_locale_qc", "issue_type": str(r.get("issue_type") or "").strip() or "ar_qc"} for r in rows]
     logger.info("AR locale QC: %d issues (enforcement active=%s)", len(normalised), enforcer.enabled)
     return [issue_from_dict(r) for r in normalised]

@@ -457,3 +457,84 @@ def test_run_stage_emits_review_queue_xlsx_not_review_projection_xlsx(monkeypatc
     assert "Review Projection (Excel)" not in artifact_names
     assert (runtime.results_dir / "review" / "review_queue.xlsx").exists()
     assert not (runtime.results_dir / "review" / "review_projection.xlsx").exists()
+
+def test_build_review_queue_handles_empty_issue_types(tmp_path: Path) -> None:
+    issues = [
+        {"key": "k1", "issue_type": None, "message": "msg1", "source": "test", "details": {"new": "fix1"}},
+        {"key": "k2", "issue_type": "", "message": "msg2", "source": "test", "details": {"new": "fix2"}},
+        {"key": "k3", "issue_type": "   ", "message": "msg3", "source": "test", "details": {"new": "fix3"}},
+    ]
+    runtime = type("Runtime", (), {
+        "en_file": tmp_path / "en.json",
+        "ar_file": tmp_path / "ar.json",
+        "locale_format": "json",
+        "source_locale": "en",
+        "target_locales": ("ar",),
+    })()
+    write_json(runtime.en_file, {"k1": "v1", "k2": "v2", "k3": "v3"})
+    write_json(runtime.ar_file, {})
+
+    rows = build_review_queue(issues, runtime)
+    assert len(rows) == 3
+    for row in rows:
+        assert row["issue_type"] == "unknown", f"Failed for {row['key']}: issue_type={row['issue_type']}"
+
+def test_hydrate_review_queue_rejects_empty_issue_types() -> None:
+    from l10n_audit.reports.report_aggregator import _normalize_review_row
+    dirty_row = {"key": "x", "issue_type": "   ", "locale": "ar"}
+    clean_row = _normalize_review_row(dirty_row)
+    assert clean_row["issue_type"] == "unknown"
+
+    dirty_row2 = {"key": "x", "issue_type": None, "locale": "ar"}
+    clean_row2 = _normalize_review_row(dirty_row2)
+    assert clean_row2["issue_type"] == "unknown"
+
+    dirty_row3 = {"key": "x", "issue_type": "", "locale": "ar"}
+    clean_row3 = _normalize_review_row(dirty_row3)
+    assert clean_row3["issue_type"] == "unknown"
+
+def test_load_hydrated_report_normalizes_empty_issue_types(tmp_path: Path) -> None:
+    from l10n_audit.core.audit_report_utils import load_hydrated_report
+    report_path = tmp_path / "final_audit_report.json"
+    write_json(
+        report_path,
+        {
+            "issues": [
+                {"key": "a", "issue_type": ""},
+                {"key": "b", "issue_type": "   "},
+                {"key": "c", "issue_type": None},
+                {"key": "d", "issue_type": "valid_type"},
+            ]
+        }
+    )
+    
+    payload, issues, missing = load_hydrated_report(report_path)
+    assert len(issues) == 4
+    for issue in issues:
+        if issue["key"] == "d":
+            assert issue["issue_type"] == "valid_type"
+        else:
+            assert issue["issue_type"] == "unknown", f"Failed for key {issue['key']} with {issue['issue_type']}"
+
+def test_load_from_master_normalizes_empty_issue_types(tmp_path: Path) -> None:
+    from l10n_audit.reports.report_aggregator import load_from_master
+    master_path = tmp_path / "audit_master.json"
+    write_json(
+        master_path,
+        {
+            "issue_inventory": [
+                {"key": "i1", "issue_type": ""},
+            ],
+            "review_projection": {
+                "json_rows": [
+                    {"key": "r1", "issue_type": "   "},
+                ]
+            }
+        }
+    )
+    
+    stub, issues, review_rows, missing = load_from_master(master_path)
+    assert len(issues) == 1
+    assert issues[0]["issue_type"] == "unknown"
+    assert len(review_rows) == 1
+    assert review_rows[0]["issue_type"] == "unknown"

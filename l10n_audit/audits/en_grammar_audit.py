@@ -291,6 +291,6 @@ def run_stage(runtime, options) -> list:
         except Exception as exc:
             logger.warning("Failed to write grammar audit reports: %s", exc)
 
-    normalised = [{**r, "source": "grammar", "issue_type": r.get("issue_type", "grammar")} for r in rows]
+    normalised = [{**r, "source": "grammar", "issue_type": str(r.get("issue_type") or "").strip() or "grammar"} for r in rows]
     logger.info("Grammar audit: %d issues", len(normalised))
     return [issue_from_dict(r) for r in normalised]
