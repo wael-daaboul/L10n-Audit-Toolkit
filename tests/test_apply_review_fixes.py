@@ -85,6 +85,19 @@ def test_apply_rejects_source_hash_mismatch(tmp_path: Path) -> None:
     assert runtime.metadata["apply_rejections"][0]["reason"] == "source_hash_mismatch"
 
 
+def test_apply_rejects_unresolved_lookup_source_hash_sentinel(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(review_queue, [_review_row(source_hash="__UNRESOLVED_LOOKUP__")])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 0
+    assert report["skipped"][0]["reason"] == "source_hash_mismatch"
+    assert runtime.metadata["apply_rejections"][0]["reason"] == "source_hash_mismatch"
+    assert runtime.metadata["apply_rejections"][0]["expected"] == "__UNRESOLVED_LOOKUP__"
+
+
 def test_apply_rejects_tampered_approved_new(tmp_path: Path) -> None:
     runtime = _make_runtime(tmp_path)
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"

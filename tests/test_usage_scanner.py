@@ -83,6 +83,23 @@ def test_laravel_custom_helper_static_and_dynamic_detection(tmp_path: Path) -> N
     assert usage["dynamic_breakdown"]["laravel_custom_translate_dynamic"] == 3
 
 
+def test_laravel_custom_helper_does_not_force_lang_prefix_when_raw_key_exists(tmp_path: Path) -> None:
+    code_dir = tmp_path / "app"
+    code_dir.mkdir()
+    (code_dir / "helpers.php").write_text("translate('Add');", encoding="utf-8")
+
+    usage = scan_code_usage(
+        [code_dir],
+        ["laravel_custom_translate_static"],
+        [".php"],
+        profile="laravel_php",
+        locale_format="laravel_php",
+        locale_keys={"Add", "lang.Add"},
+    )
+
+    assert set(usage["static_occurrences"]) == {"Add"}
+
+
 def test_laravel_native_static_and_dynamic_detection(tmp_path: Path) -> None:
     code_dir = tmp_path / "views"
     code_dir.mkdir()

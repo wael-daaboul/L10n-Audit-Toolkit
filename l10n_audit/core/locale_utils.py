@@ -73,36 +73,80 @@ def resolve_issue_locale(issue: Dict[str, Any]) -> tuple[Optional[str], Optional
 
     return None, None
 
-def get_value_smart(target_key: str, locale_data: Dict[str, Any]) -> Optional[str]:
+def resolve_canonical_locale_key(target_key: str, locale_data: Dict[str, Any]) -> tuple[Optional[str], str]:
     """
-    Perform a smart lookup for a key in a potentially flattened locale mapping.
-    Handles exact match, dot-notated match, and suffix matching for nested keys.
+    Resolve a lookup key against canonical flattened locale data.
+
+    Resolution is intentionally narrow:
+    - exact canonical key match
+    - unambiguous suffix match on dot-separated boundaries
+
+    Ambiguous suffix matches are treated as unresolved.
     """
     if not target_key or not locale_data:
-        return None
-        
-    # 1. Direct hit
-    if target_key in locale_data:
-        val = locale_data[target_key]
-        return str(val) if val is not None else None
-        
-    # 2. Suffix match (e.g. 'contact_with_us' matches 'messages.contact_with_us')
-    # Use dot as separator to ensure we match a full segment
-    search_suffix = f".{target_key}"
-    for k, v in locale_data.items():
-        if k.endswith(search_suffix):
-            return str(v) if v is not None else None
-            
-    return None
+        return None, "unresolved"
 
-def resolve_issue_current_value(issue: Dict[str, Any], locale_data: Optional[Dict[str, Any]] = None) -> tuple[Optional[str], Optional[str]]:
+    if target_key in locale_data:
+        return target_key, "exact"
+
+    search_suffix = f".{target_key}"
+    matches = [key for key in locale_data if key.endswith(search_suffix)]
+    if len(matches) == 1:
+        return matches[0], "suffix"
+    if len(matches) > 1:
+        return None, "ambiguous_suffix"
+    return None, "unresolved"
+
+
+def resolve_locale_value(target_key: str, locale_data: Dict[str, Any]) -> dict[str, Optional[str]]:
     """
-    Extract the original/source value for an issue.
-    Returns (value, source_of_determination).
+    Resolve a translation value while preserving lookup state.
     """
-    details = issue.get("details", {})
-    
-    # Priority list of fields
+    resolved_key, resolution = resolve_canonical_locale_key(target_key, locale_data)
+    if resolved_key is None:
+        return {
+            "value": None,
+            "resolved_key": None,
+            "status": resolution,
+            "source": None,
+        }
+
+    raw_value = locale_data.get(resolved_key)
+    if raw_value is None:
+        return {
+            "value": None,
+            "resolved_key": resolved_key,
+            "status": "resolved_null",
+            "source": resolution,
+        }
+
+    value = str(raw_value)
+    return {
+        "value": value,
+        "resolved_key": resolved_key,
+        "status": "resolved_empty" if value == "" else "resolved",
+        "source": resolution,
+    }
+
+
+def get_value_smart(target_key: str, locale_data: Dict[str, Any]) -> Optional[str]:
+    """
+    Perform a narrow lookup for a key in a potentially flattened locale mapping.
+    Handles exact canonical match and unambiguous suffix matching for nested keys.
+    """
+    result = resolve_locale_value(target_key, locale_data)
+    return result["value"]
+
+
+def resolve_issue_current_value_state(
+    issue: Dict[str, Any],
+    locale_data: Optional[Dict[str, Any]] = None,
+) -> dict[str, Optional[str]]:
+    """
+    Extract the original/source value for an issue while preserving resolution state.
+    """
+    details = issue.get("details", {}) or {}
+
     candidates = [
         ("source_old_value", issue.get("source_old_value")),
         ("current_value", issue.get("current_value")),
@@ -111,21 +155,49 @@ def resolve_issue_current_value(issue: Dict[str, Any], locale_data: Optional[Dic
         ("issue.old", issue.get("old")),
         ("current_translation", issue.get("current_translation")),
     ]
-    
+
     for source_name, raw_val in candidates:
+        if raw_val is None:
+            continue
+        if isinstance(raw_val, str):
+            stripped = raw_val.strip()
+            if stripped:
+                return {"value": stripped, "source": source_name, "status": "resolved"}
+            return {"value": "", "source": source_name, "status": "resolved_empty"}
+
         val = normalized_non_empty_string(raw_val)
         if val is not None:
-            return val, source_name
-            
-    # Fallback: Smart Lookup using key if data is available
+            return {"value": val, "source": source_name, "status": "resolved"}
+
     if locale_data:
         key = normalized_non_empty_string(issue.get("key"))
         if key:
-            val = get_value_smart(key, locale_data)
-            if val is not None:
-                return val, "smart_lookup"
-            
-    return None, None
+            lookup = resolve_locale_value(key, locale_data)
+            if lookup["status"] in {"resolved", "resolved_empty"}:
+                return {
+                    "value": lookup["value"],
+                    "source": "smart_lookup",
+                    "status": lookup["status"],
+                    "resolved_key": lookup["resolved_key"],
+                    "lookup_source": lookup["source"],
+                }
+            return {
+                "value": None,
+                "source": "smart_lookup",
+                "status": lookup["status"],
+                "resolved_key": lookup["resolved_key"],
+                "lookup_source": lookup["source"],
+            }
+
+    return {"value": None, "source": None, "status": "unresolved"}
+
+def resolve_issue_current_value(issue: Dict[str, Any], locale_data: Optional[Dict[str, Any]] = None) -> tuple[Optional[str], Optional[str]]:
+    """
+    Extract the original/source value for an issue.
+    Returns (value, source_of_determination).
+    """
+    result = resolve_issue_current_value_state(issue, locale_data=locale_data)
+    return result.get("value"), result.get("source")
 
 def resolve_issue_candidate_value(issue: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
     """

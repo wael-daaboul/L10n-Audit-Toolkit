@@ -111,11 +111,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     if status['config_exists']:
         print(f"\n[Configuration Scan]")
         try:
-            from l10n_audit.core.schema_validation import validate_file, preset_mappings
+            from l10n_audit.core.schema_validation import get_schema_path, validate_file
             config_json = status['config_path']
-            # Find schema in same dir as cli.py
             tools_dir = Path(__file__).resolve().parent.parent
-            schema_path = tools_dir / "schemas" / "config.schema.json"
+            schema_path = get_schema_path("config.schema.json", tools_dir)
             
             if schema_path.exists():
                 errors = validate_file(config_json, schema_path)

@@ -48,6 +48,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "l10n_audit.core.resources" = ["*.json"]
+"l10n_audit" = ["schemas/*.json"]
 
 [tool.setuptools.packages.find]
 include = ["l10n_audit*", "bin*"]

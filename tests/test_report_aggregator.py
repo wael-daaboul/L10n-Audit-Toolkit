@@ -4,12 +4,13 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 
-from l10n_audit.core.audit_runtime import AuditRuntimeError
+from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash
 from l10n_audit.core.audit_report_utils import load_all_report_issues
 from l10n_audit.core.audit_runtime import read_simple_xlsx
 from l10n_audit.reports.report_aggregator import (
     REVIEW_PROJECTION_COLUMNS,
     REVIEW_QUEUE_WORKBOOK_COLUMNS,
+    UNRESOLVED_LOOKUP_SOURCE_HASH,
     build_human_review_queue,
     build_review_queue,
     _resolve_issue_locale,
@@ -478,6 +479,162 @@ def test_build_review_queue_handles_empty_issue_types(tmp_path: Path) -> None:
     assert len(rows) == 3
     for row in rows:
         assert row["issue_type"] == "unknown", f"Failed for {row['key']}: issue_type={row['issue_type']}"
+
+
+def test_build_review_queue_laravel_resolves_canonical_key_via_locale_context(tmp_path: Path) -> None:
+    en_dir = tmp_path / "lang" / "en"
+    ar_dir = tmp_path / "lang" / "ar"
+    en_dir.mkdir(parents=True)
+    ar_dir.mkdir(parents=True)
+    (en_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'These credentials do not match our records.']];",
+        encoding="utf-8",
+    )
+    (ar_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'بيانات الاعتماد لا تطابق سجلاتنا.']];",
+        encoding="utf-8",
+    )
+    runtime = type("Runtime", (), {
+        "en_file": en_dir,
+        "ar_file": ar_dir,
+        "locale_format": "laravel_php",
+        "source_locale": "en",
+        "target_locales": ("ar",),
+    })()
+    issues = [
+        {
+            "key": "messages.auth.failed",
+            "issue_type": "empty_en",
+            "severity": "medium",
+            "message": "Populate English text",
+            "source": "localization",
+            "suggestion": "Use a better source string",
+        }
+    ]
+
+    rows = build_review_queue(issues, runtime)
+
+    assert len(rows) == 1
+    assert rows[0]["locale"] == "en"
+    assert rows[0]["old_value"] == "These credentials do not match our records."
+    assert rows[0]["source_hash"] == compute_text_hash("These credentials do not match our records.")
+
+
+def test_build_review_queue_laravel_resolves_unambiguous_suffix_key(tmp_path: Path) -> None:
+    en_dir = tmp_path / "lang" / "en"
+    ar_dir = tmp_path / "lang" / "ar"
+    en_dir.mkdir(parents=True)
+    ar_dir.mkdir(parents=True)
+    (en_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'These credentials do not match our records.']];",
+        encoding="utf-8",
+    )
+    (ar_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'بيانات الاعتماد لا تطابق سجلاتنا.']];",
+        encoding="utf-8",
+    )
+    runtime = type("Runtime", (), {
+        "en_file": en_dir,
+        "ar_file": ar_dir,
+        "locale_format": "laravel_php",
+        "source_locale": "en",
+        "target_locales": ("ar",),
+    })()
+    issues = [
+        {
+            "key": "auth.failed",
+            "locale": "en",
+            "issue_type": "style",
+            "severity": "medium",
+            "message": "Populate source text",
+            "source": "en_locale_qc",
+            "suggestion": "Use a better source string",
+        }
+    ]
+
+    rows = build_review_queue(issues, runtime)
+
+    assert len(rows) == 1
+    assert rows[0]["old_value"] == "These credentials do not match our records."
+
+
+def test_build_review_queue_failed_lookup_uses_unresolved_hash_sentinel(tmp_path: Path) -> None:
+    en_dir = tmp_path / "lang" / "en"
+    ar_dir = tmp_path / "lang" / "ar"
+    en_dir.mkdir(parents=True)
+    ar_dir.mkdir(parents=True)
+    (en_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'These credentials do not match our records.']];",
+        encoding="utf-8",
+    )
+    (ar_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'بيانات الاعتماد لا تطابق سجلاتنا.']];",
+        encoding="utf-8",
+    )
+    runtime = type("Runtime", (), {
+        "en_file": en_dir,
+        "ar_file": ar_dir,
+        "locale_format": "laravel_php",
+        "source_locale": "en",
+        "target_locales": ("ar",),
+    })()
+    issues = [
+        {
+            "key": "lang.auth.failed",
+            "locale": "en",
+            "issue_type": "style",
+            "severity": "medium",
+            "message": "Lookup should fail deterministically",
+            "source": "en_locale_qc",
+            "suggestion": "Use a better source string",
+        }
+    ]
+
+    rows = build_review_queue(issues, runtime)
+
+    assert len(rows) == 1
+    assert rows[0]["old_value"] == ""
+    assert rows[0]["source_hash"] == UNRESOLVED_LOOKUP_SOURCE_HASH
+    assert rows[0]["source_hash"] != compute_text_hash("")
+
+
+def test_build_review_queue_true_empty_translation_keeps_empty_hash(tmp_path: Path) -> None:
+    en_dir = tmp_path / "lang" / "en"
+    ar_dir = tmp_path / "lang" / "ar"
+    en_dir.mkdir(parents=True)
+    ar_dir.mkdir(parents=True)
+    (en_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => '']];",
+        encoding="utf-8",
+    )
+    (ar_dir / "messages.php").write_text(
+        "<?php return ['auth' => ['failed' => 'بيانات الاعتماد لا تطابق سجلاتنا.']];",
+        encoding="utf-8",
+    )
+    runtime = type("Runtime", (), {
+        "en_file": en_dir,
+        "ar_file": ar_dir,
+        "locale_format": "laravel_php",
+        "source_locale": "en",
+        "target_locales": ("ar",),
+    })()
+    issues = [
+        {
+            "key": "messages.auth.failed",
+            "locale": "en",
+            "issue_type": "style",
+            "severity": "medium",
+            "message": "True empty source string",
+            "source": "en_locale_qc",
+            "suggestion": "Use a better source string",
+        }
+    ]
+
+    rows = build_review_queue(issues, runtime)
+
+    assert len(rows) == 1
+    assert rows[0]["old_value"] == ""
+    assert rows[0]["source_hash"] == compute_text_hash("")
 
 def test_hydrate_review_queue_rejects_empty_issue_types() -> None:
     from l10n_audit.reports.report_aggregator import _normalize_review_row

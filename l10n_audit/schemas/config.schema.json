@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "L10n Audit Toolkit Configuration Schema (v2)",
+  "type": "object",
+  "properties": {
+    "config_version": { "type": "integer", "enum": [1, 2] },
+    "project_profile": { "type": "string" },
+    "project_detection": {
+      "type": "object",
+      "properties": {
+        "auto_detect": { "type": "boolean" },
+        "force_profile": { "type": "string" },
+        "project_root": { "type": "string" }
+      }
+    },
+    "audit_rules": {
+      "type": "object",
+      "properties": {
+        "role_identifiers": { "type": "array", "items": { "type": "string" } },
+        "latin_whitelist": { "type": "array", "items": { "type": "string" } },
+        "entity_whitelist": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "apply_safe_fixes": { "type": "boolean" }
+      }
+    },
+    "ai_review": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "api_key_env": { "type": "string" },
+        "batch_size": { "type": "integer" },
+        "short_label_threshold": { "type": "integer" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "results_dir": { "type": "string" },
+        "retention_mode": { "type": "string", "enum": ["archive", "overwrite"] },
+        "archive_name_prefix": { "type": "string" },
+        "out_xlsx": { "type": "string" }
+      }
+    },
+    "source_locale": { "type": "string" },
+    "target_locales": { "type": "array", "items": { "type": "string" } },
+    "project_root": { "type": "string" },
+    "glossary_file": { "type": "string" },
+    "results_dir": { "type": "string" },
+    "languagetool_dir": { "type": "string" },
+    "locales_dir": { "type": "string" },
+    "en_file": { "type": "string" },
+    "ar_file": { "type": "string" }
+  },
+  "additionalProperties": true
+}

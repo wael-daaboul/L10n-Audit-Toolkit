@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -99,8 +100,24 @@ def validate_file(input_path: Path, schema_path: Path) -> list[str]:
     return validate_instance(load_json(input_path), load_json(schema_path))
 
 
+def package_schema_dir() -> Path:
+    return Path(str(resources.files("l10n_audit").joinpath("schemas")))
+
+
+def resolve_schema_dir(tools_dir: Path | None = None) -> Path:
+    if tools_dir is not None:
+        candidate = tools_dir / "schemas"
+        if candidate.exists():
+            return candidate
+    return package_schema_dir()
+
+
+def get_schema_path(schema_name: str, tools_dir: Path | None = None) -> Path:
+    return resolve_schema_dir(tools_dir) / schema_name
+
+
 def preset_mappings(tools_dir: Path) -> dict[str, tuple[Path, Path]]:
-    schemas = tools_dir / "schemas"
+    schemas = resolve_schema_dir(tools_dir)
     results = tools_dir / "Results"
     terminology_dir = tools_dir / "docs" / "terminology"
     preferred_glossary = terminology_dir / "glossary.json"

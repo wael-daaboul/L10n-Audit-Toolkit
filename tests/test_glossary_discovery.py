@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from l10n_audit.core.audit_runtime import _discover_glossary_path
-from l10n_audit.core.schema_validation import preset_mappings
+from l10n_audit.core.schema_validation import get_schema_path, package_schema_dir, preset_mappings
 
 
 def test_runtime_prefers_neutral_glossary_filename(tmp_path: Path) -> None:
@@ -28,3 +28,10 @@ def test_schema_validation_preset_uses_first_available_glossary_json(tmp_path: P
     mappings = preset_mappings(tools_dir)
 
     assert mappings["glossary"][0] == terminology_dir / "custom_terms.json"
+
+
+def test_schema_validation_falls_back_to_packaged_schemas_when_workspace_has_none(tmp_path: Path) -> None:
+    schema_path = get_schema_path("config.schema.json", tmp_path)
+
+    assert schema_path == package_schema_dir() / "config.schema.json"
+    assert schema_path.exists()

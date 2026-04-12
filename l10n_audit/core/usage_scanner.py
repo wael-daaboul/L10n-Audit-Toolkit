@@ -283,8 +283,6 @@ def normalize_usage_key(raw_key: str, family: str, profile: str | None, locale_f
             prefixed = f"lang.{key}"
             if prefixed in locale_keys and key not in locale_keys:
                 return prefixed
-        if locale_format == "laravel_php" and locale_keys and f"lang.{key}" in locale_keys:
-            return f"lang.{key}"
     return key
 
 

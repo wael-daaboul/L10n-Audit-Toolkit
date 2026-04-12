@@ -115,6 +115,21 @@ def test_prepare_apply_rejects_source_hash_mismatch(tmp_path: Path) -> None:
     assert payload["rejections"][0]["reason_code"] == "source_hash_mismatch"
 
 
+def test_prepare_apply_rejects_unresolved_lookup_source_hash_sentinel(tmp_path: Path) -> None:
+    queue = tmp_path / "review_queue.xlsx"
+    final = tmp_path / "review_final.xlsx"
+    report = tmp_path / "rejection_report.json"
+    _write_queue(queue, [_queue_row(source_hash="__UNRESOLVED_LOOKUP__")])
+
+    prepare_apply_workbook(queue, final, report)
+    payload = _read_json(report)
+    rows = read_simple_xlsx(final, required_columns=REVIEW_FINAL_COLUMNS)
+
+    assert rows == []
+    assert payload["rejections"][0]["reason_code"] == "source_hash_mismatch"
+    assert payload["rejections"][0]["details"]["actual_source_hash"] == "__UNRESOLVED_LOOKUP__"
+
+
 def test_prepare_apply_is_idempotent(tmp_path: Path) -> None:
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"

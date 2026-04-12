@@ -12,4 +12,6 @@ exclude project-context.txt
 exclude bootstrap.sh
 include README.md
 include LICENSE
-recursive-include core/resources *.json
+recursive-include schemas *.json
+recursive-include l10n_audit/core/resources *.json
+recursive-include l10n_audit/schemas *.json

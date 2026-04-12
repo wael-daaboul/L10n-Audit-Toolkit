@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["summary", "missing_reports", "included_sources", "priority_order", "recommendations", "issues"],
+  "properties": {
+    "summary": {
+      "type": "object",
+      "required": ["total_issues", "by_severity", "by_source", "by_issue_type"],
+      "properties": {
+        "total_issues": { "type": "integer" },
+        "by_severity": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "by_source": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "by_issue_type": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "missing_reports": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "included_sources": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "priority_order": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "group", "key", "issue_type", "severity", "message", "locale", "details", "recommendation"],
+        "properties": {
+          "source": { "type": "string", "minLength": 1 },
+          "group": { "type": "string", "minLength": 1 },
+          "key": { "type": "string" },
+          "issue_type": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] },
+          "message": { "type": "string", "minLength": 1 },
+          "locale": { "type": "string" },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "recommendation": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
