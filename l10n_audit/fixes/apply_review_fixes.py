@@ -43,6 +43,31 @@ REQUIRED_REVIEW_COLUMNS = (
 # review_queue.xlsx does not carry this column; apply rejects it loudly.
 FROZEN_ARTIFACT_TYPE_COLUMN: str = "frozen_artifact_type"
 
+# ---------------------------------------------------------------------------
+# H6 Apply Input Contract
+# ---------------------------------------------------------------------------
+# Minimum required fields that apply expects to be non-empty in EVERY row of
+# the frozen apply artifact.  Checked as an artifact-level pre-check before
+# any per-row hash validation or write logic runs.
+#
+# Field rationale:
+#   key               — identifies what to write in the locale file
+#   locale            — identifies which locale file to write
+#   approved_new      — the value to write
+#   source_hash       — staleness guard (compared against live disk value)
+#   suggested_hash    — tamper guard (compared against approved_new)
+#   plan_id           — ties the row to a specific pipeline run
+#   frozen_artifact_type — artifact-type marker (H1); must survive into apply
+APPLY_REQUIRED_FIELDS: tuple[str, ...] = (
+    "key",
+    "locale",
+    "approved_new",
+    "source_hash",
+    "suggested_hash",
+    "plan_id",
+    "frozen_artifact_type",
+)
+
 
 class WrongArtifactTypeError(ValueError):
     """
@@ -50,6 +75,18 @@ class WrongArtifactTypeError(ValueError):
 
     This prevents review_queue.xlsx from being accidentally passed to apply.
     No row-level processing runs if this error is raised.
+    """
+
+
+class ApplyContractError(ValueError):
+    """
+    Raised when the frozen apply artifact violates the minimum execution contract.
+
+    This is an artifact-level pre-check failure produced by H6.  It is raised
+    before any per-row hash validation or write logic runs, and before any
+    partial apply can occur.
+
+    No row is applied if this error is raised.
     """
 
 
@@ -102,6 +139,51 @@ def _assert_frozen_artifact_type(rows: list[dict], xlsx_path: Path) -> None:
             f"frozen_artifact_type value.\n"
             f"Expected '{FROZEN_ARTIFACT_TYPE_VALUE}' in every row. {examples}.\n"
             f"Do not manually edit the frozen_artifact_type column."
+        )
+
+
+def _assert_apply_contract(rows: list[dict], xlsx_path: Path) -> None:
+    """
+    H6 — Apply input contract pre-check.
+
+    Validates that every row in the frozen artifact carries non-empty values
+    for all fields in APPLY_REQUIRED_FIELDS.  Raises ApplyContractError
+    before any per-row hash validation, locale read, or write logic runs.
+
+    This check runs AFTER _assert_frozen_artifact_type() (H1) and BEFORE
+    all per-row processing.  It is an artifact-level contract gate, not a
+    row-level skipper: any violation aborts the entire invocation.
+
+    Empty workbooks (zero rows) are accepted — consistent with H1 semantics.
+    """
+    if not rows:
+        return
+
+    violations: list[dict] = []
+    for row_num, row in enumerate(rows, start=2):
+        row_violations: list[str] = []
+        for field in APPLY_REQUIRED_FIELDS:
+            value = row.get(field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                row_violations.append(field)
+        if row_violations:
+            violations.append({
+                "row": row_num,
+                "key": str(row.get("key", "")),
+                "locale": str(row.get("locale", "")),
+                "missing_or_empty": row_violations,
+            })
+
+    if violations:
+        summary = "; ".join(
+            f"row {v['row']} ({v['key']!r}/{v['locale']!r}) missing {v['missing_or_empty']}"
+            for v in violations[:5]  # cap error output at 5 examples
+        )
+        raise ApplyContractError(
+            f"The frozen apply artifact at '{xlsx_path}' violates the minimum apply contract.\n"
+            f"{len(violations)} row(s) have missing or empty required field(s): {summary}.\n"
+            f"Re-run 'prepare-apply' to produce a valid frozen artifact.\n"
+            f"Required fields: {list(APPLY_REQUIRED_FIELDS)}"
         )
 
 
@@ -567,9 +649,11 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
 
     # 2. Load approved fixes from the frozen workbook
     rows = read_simple_xlsx(review_queue_path, required_columns=REQUIRED_REVIEW_COLUMNS)
-    # H1 — Artifact type boundary: must fail before any per-row logic if the
-    # workbook is not a properly marked frozen apply artifact.
+    # H1 — Artifact type boundary check (must run before any per-row logic).
     _assert_frozen_artifact_type(rows, review_queue_path)
+    # H6 — Apply input contract pre-check: verify all required fields are
+    # non-empty on every row before any hash comparison or write logic runs.
+    _assert_apply_contract(rows, review_queue_path)
     review_fixes_en = {}
     review_fixes_ar = {}
     applied_meta = []

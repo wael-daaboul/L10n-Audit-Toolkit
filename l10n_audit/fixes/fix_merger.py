@@ -24,10 +24,37 @@ FROZEN_ARTIFACT_TYPE_VALUE: str = "frozen_apply_artifact"
 # ---------------------------------------------------------------------------
 # H3 Plan-id cross-check
 # ---------------------------------------------------------------------------
-# Reason code written into the rejection report when a row’s plan_id is not
-# in the caller-supplied allowed set.  Kept as a module-level constant so
-# tests and future tooling can match on it reliably.
 STALE_PLAN_ID_REASON_CODE: str = "stale_plan_id"
+
+# ---------------------------------------------------------------------------
+# H2 Promotion report outcomes
+# ---------------------------------------------------------------------------
+PROMOTION_OUTCOME_PROMOTED: str = "promoted"
+PROMOTION_OUTCOME_REJECTED: str = "rejected"
+
+# ---------------------------------------------------------------------------
+# H4 Integrity drift detection
+# ---------------------------------------------------------------------------
+# Reason codes used in rejection records when a workbook row’s immutable field
+# differs from the machine-generated source.
+INTEGRITY_DRIFT_REASON_CODE: str = "integrity_drift"
+MACHINE_SOURCE_NOT_FOUND_REASON_CODE: str = "machine_source_row_not_found"
+MACHINE_ARTIFACT_UNREADABLE_REASON_CODE: str = "machine_artifact_unreadable"
+
+# Fields that are written by the pipeline and must NOT be edited by a reviewer.
+# Drift in any of these fields is treated as tampering and causes promotion
+# rejection.  Human-editable fields (approved_new, status, review_note) are
+# deliberately excluded from this set.
+H4_IMMUTABLE_FIELDS: tuple[str, ...] = (
+    "key",
+    "locale",
+    "plan_id",
+    "source_hash",
+    "suggested_hash",
+    "generated_at",
+    "issue_type",
+    "source_old_value",
+)
 
 REVIEW_FINAL_COLUMNS = [
     "key",
@@ -290,6 +317,81 @@ def export_review_queue(
     return output_path
 
 
+def _load_machine_queue_index(
+    machine_queue_path: Path,
+) -> Dict[tuple, Dict[str, Any]] | None:
+    """
+    H4 — Load the machine queue JSON and return an index keyed by
+    (key, locale, plan_id) for O(1) lookup during promotion.
+
+    Returns
+    -------
+    dict[(key, locale, plan_id) -> row_dict]
+        When the file is loaded and the expected structure is present.
+    None
+        When the file is missing (so callers can distinguish
+        “not provided” from “unreadable”; missing is handled before calling).
+
+    Raises
+    ------
+    ValueError
+        When the file exists but cannot be parsed or has an unexpected structure.
+        Callers convert this into a machine_artifact_unreadable rejection.
+    """
+    import json as _json
+    try:
+        raw = _json.loads(machine_queue_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Cannot read machine queue at '{machine_queue_path}': {exc}") from exc
+
+    rows = raw.get("review_queue")
+    if not isinstance(rows, list):
+        raise ValueError(
+            f"Machine queue at '{machine_queue_path}' has unexpected structure: "
+            f"'review_queue' key missing or not a list."
+        )
+
+    index: Dict[tuple, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("key", "") or "")
+        locale = str(row.get("locale", "") or "")
+        plan_id = str(row.get("plan_id", "") or "")
+        identity = (key, locale, plan_id)
+        index[identity] = row
+    return index
+
+
+def _check_integrity_drift(
+    workbook_row: Dict[str, Any],
+    machine_row: Dict[str, Any],
+) -> List[Dict[str, str]]:
+    """
+    H4 — Compare a workbook row against its machine-queue counterpart.
+
+    Returns a list of drift records, one per drifted field::
+
+        [{"field": "source_hash",
+          "machine_value": "abc",
+          "workbook_value": "xyz"}, ...]
+
+    An empty list means no drift was detected.
+    Only fields in H4_IMMUTABLE_FIELDS are compared.
+    """
+    drifted: List[Dict[str, str]] = []
+    for field in H4_IMMUTABLE_FIELDS:
+        machine_val = str(machine_row.get(field, "") or "")
+        workbook_val = str(workbook_row.get(field, "") or "")
+        if machine_val != workbook_val:
+            drifted.append({
+                "field": field,
+                "machine_value": machine_val,
+                "workbook_value": workbook_val,
+            })
+    return drifted
+
+
 def _prepare_apply_rejection(
     row_index: int,
     row: Dict[str, Any],
@@ -306,11 +408,42 @@ def _prepare_apply_rejection(
     }
 
 
+def _promotion_record(
+    row_index: int,
+    row: Dict[str, Any],
+    outcome: str,
+    reason_code: str,
+) -> Dict[str, Any]:
+    """H2 — Build a single per-row entry for the promotion report 'rows' list.
+
+    Every input row (promoted OR rejected) gets one entry so the report is a
+    complete, ordered account of all promotion decisions.
+
+    Fields
+    ------
+    row_index   : 1-based row number in the source workbook (2 = first data row)
+    key         : finding identity
+    locale      : locale identity
+    plan_id     : pipeline run identity (empty string when absent)
+    outcome     : PROMOTION_OUTCOME_PROMOTED or PROMOTION_OUTCOME_REJECTED
+    reason_code : why promoted ('all_checks_passed') or why rejected
+    """
+    return {
+        "row_index": row_index,
+        "key": str(row.get("key", "") or ""),
+        "locale": str(row.get("locale", "") or ""),
+        "plan_id": str(row.get("plan_id", "") or ""),
+        "outcome": outcome,
+        "reason_code": reason_code,
+    }
+
+
 def _validate_prepare_apply_row(
     row: Dict[str, Any],
     row_index: int,
     *,
     allowed_plan_ids: frozenset[str] | None = None,
+    machine_index: Dict[tuple, Dict[str, Any]] | None = None,
 ) -> tuple[Dict[str, str] | None, Dict[str, Any] | None]:
     """
     Validate a single row for promotion into review_final.xlsx.
@@ -326,6 +459,13 @@ def _validate_prepare_apply_row(
         row is rejected with reason_code STALE_PLAN_ID_REASON_CODE.
         When None, no plan cross-check is performed (backward-compatible
         default for callers that do not know the valid plan set).
+    machine_index
+        H4 — When provided, the row’s immutable fields are compared against
+        the machine-queue source row identified by (key, locale, plan_id).
+        Rows with any drift are rejected with INTEGRITY_DRIFT_REASON_CODE.
+        Rows with no matching machine source are rejected with
+        MACHINE_SOURCE_NOT_FOUND_REASON_CODE.
+        When None, no drift check is performed (backward-compatible default).
     """
     normalized = {field: "" if row.get(field) is None else str(row.get(field)) for field in _REQUIRED_PREPARE_QUEUE_FIELDS}
 
@@ -361,6 +501,45 @@ def _validate_prepare_apply_row(
                 {
                     "row_plan_id": row_plan_id,
                     "allowed_plan_ids": sorted(allowed_plan_ids),
+                },
+            )
+
+    # H4 — Integrity drift check: compare immutable fields against the machine
+    # source.  Runs after H3 so stale-plan rows are caught before touching the
+    # machine index (plan_id must be valid for the index lookup to be meaningful).
+    if machine_index is not None:
+        identity = (
+            normalized["key"].strip(),
+            normalized["locale"].strip(),
+            normalized["plan_id"].strip(),
+        )
+        machine_row = machine_index.get(identity)
+        if machine_row is None:
+            return None, _prepare_apply_rejection(
+                row_index,
+                row,
+                MACHINE_SOURCE_NOT_FOUND_REASON_CODE,
+                {
+                    "identity": list(identity),
+                    "note": (
+                        "No matching machine-queue row found for this "
+                        "(key, locale, plan_id) combination."
+                    ),
+                },
+            )
+        drifted = _check_integrity_drift(row, machine_row)
+        if drifted:
+            return None, _prepare_apply_rejection(
+                row_index,
+                row,
+                INTEGRITY_DRIFT_REASON_CODE,
+                {
+                    "drifted_fields": drifted,
+                    "note": (
+                        "One or more immutable fields were modified after "
+                        "machine emission. Only approved_new, status, and "
+                        "review_note are human-editable."
+                    ),
                 },
             )
 
@@ -447,6 +626,7 @@ def prepare_apply_workbook(
     rejection_report_path: Path,
     *,
     allowed_plan_ids: frozenset[str] | None = None,
+    machine_queue_path: Path | None = None,
 ) -> Dict[str, Any]:
     """
     Promote eligible rows from review_queue_path into review_final.xlsx.
@@ -463,12 +643,56 @@ def prepare_apply_workbook(
         H3 — When provided, only rows whose plan_id is in this set will be
         promoted.  Rows with a plan_id outside this set receive a
         STALE_PLAN_ID_REASON_CODE rejection.
-        When None (default), no plan cross-check is performed; all non-empty
-        plan_id values are accepted.  Existing callers that do not provide
-        this argument continue to behave identically.
+        When None (default), no plan cross-check is performed.
+    machine_queue_path
+        H4 — When provided, each workbook row’s immutable fields are compared
+        against the pipeline-generated machine queue JSON at this path.
+        If the file is missing, all rows are rejected with
+        MACHINE_ARTIFACT_UNREADABLE_REASON_CODE (fail-loudly semantic).
+        If the file is malformed, all rows are rejected the same way.
+        If a workbook row has no matching machine-source row, it is rejected
+        with MACHINE_SOURCE_NOT_FOUND_REASON_CODE.
+        When None (default), no drift check is performed; all existing
+        callers that omit this argument continue to behave identically.
     """
     out_final_path.parent.mkdir(parents=True, exist_ok=True)
     rejection_report_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # H4 — Pre-load machine index when drift detection is requested.
+    # A missing or malformed machine artifact causes all rows to be rejected;
+    # there is no silent fallback.
+    machine_index: Dict[tuple, Dict[str, Any]] | None = None
+    if machine_queue_path is not None:
+        if not machine_queue_path.exists():
+            write_simple_xlsx([], REVIEW_FINAL_COLUMNS, out_final_path, sheet_name="Review Final")
+            all_rows_rejected = _prepare_apply_rejection(
+                0, {},
+                MACHINE_ARTIFACT_UNREADABLE_REASON_CODE,
+                {"error": f"Machine queue file not found: '{machine_queue_path}'"},
+            )
+            report = {
+                "summary": {"total_rows": 0, "accepted_rows": 0, "rejected_rows": 1},
+                "rows": [],
+                "rejections": [all_rows_rejected],
+            }
+            write_json(report, rejection_report_path)
+            return report
+        try:
+            machine_index = _load_machine_queue_index(machine_queue_path)
+        except ValueError as exc:
+            write_simple_xlsx([], REVIEW_FINAL_COLUMNS, out_final_path, sheet_name="Review Final")
+            all_rows_rejected = _prepare_apply_rejection(
+                0, {},
+                MACHINE_ARTIFACT_UNREADABLE_REASON_CODE,
+                {"error": str(exc)},
+            )
+            report = {
+                "summary": {"total_rows": 0, "accepted_rows": 0, "rejected_rows": 1},
+                "rows": [],
+                "rejections": [all_rows_rejected],
+            }
+            write_json(report, rejection_report_path)
+            return report
 
     try:
         rows = read_simple_xlsx(review_queue_path, required_columns=list(_REQUIRED_PREPARE_QUEUE_FIELDS))
@@ -480,6 +704,7 @@ def prepare_apply_workbook(
                 "accepted_rows": 0,
                 "rejected_rows": 1,
             },
+            "rows": [],                # H2 — no per-row data when input was unreadable
             "rejections": [
                 _prepare_apply_rejection(
                     0,
@@ -494,26 +719,39 @@ def prepare_apply_workbook(
 
     accepted_rows: List[Dict[str, str]] = []
     rejections: List[Dict[str, Any]] = []
+    promotion_rows: List[Dict[str, Any]] = []  # H2 — per-row outcome list
 
     for idx, row in enumerate(rows, start=2):
         if not isinstance(row, dict):
-            rejections.append(
-                _prepare_apply_rejection(
-                    idx,
-                    {},
-                    "invalid_row_shape",
-                    {"python_type": type(row).__name__},
-                )
+            rejection = _prepare_apply_rejection(
+                idx,
+                {},
+                "invalid_row_shape",
+                {"python_type": type(row).__name__},
+            )
+            rejections.append(rejection)
+            promotion_rows.append(
+                _promotion_record(idx, {}, PROMOTION_OUTCOME_REJECTED, "invalid_row_shape")
             )
             continue
 
         accepted_row, rejection = _validate_prepare_apply_row(
-            row, idx, allowed_plan_ids=allowed_plan_ids
+            row, idx,
+            allowed_plan_ids=allowed_plan_ids,
+            machine_index=machine_index,
         )
         if rejection is not None:
             rejections.append(rejection)
+            promotion_rows.append(
+                _promotion_record(
+                    idx, row, PROMOTION_OUTCOME_REJECTED, rejection["reason_code"]
+                )
+            )
             continue
         accepted_rows.append(accepted_row)
+        promotion_rows.append(
+            _promotion_record(idx, row, PROMOTION_OUTCOME_PROMOTED, "all_checks_passed")
+        )
 
     write_simple_xlsx(accepted_rows, REVIEW_FINAL_COLUMNS, out_final_path, sheet_name="Review Final")
 
@@ -523,7 +761,8 @@ def prepare_apply_workbook(
             "accepted_rows": len(accepted_rows),
             "rejected_rows": len(rejections),
         },
-        "rejections": rejections,
+        "rows": promotion_rows,        # H2 — per-row outcome list (promoted + rejected)
+        "rejections": rejections,      # backward-compatible rejection-only list
     }
     write_json(report, rejection_report_path)
     return report
