@@ -6,6 +6,7 @@ __pycache__/
 
 # --- Virtual environments ---
 .venv/
+.build-venv/
 venv/
 env/
 ENV/
@@ -31,12 +32,11 @@ pip-wheel-metadata/
 .vscode/
 *.swp
 *.swo
-.l10n-audit/*
 
 # --- Generated reports and audit outputs ---
-Results/*
-!Results/.gitkeep
+Results/
 reports_output/
+logs/
 *.log
 
 # --- استبعاد ملفات أدوات التحليل الآلي (Repomix/Context) ---
@@ -47,13 +47,12 @@ clean_project.txt
 clean_project*
 
 # --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
-# ملاحظة: تم استبعاد "مفاتيح" لأنه يحتوي على أدوات عمل خاصة بالمطور
-مفاتيح/*
+مفاتيح/
 internal_notes/
 .dev_scripts/
 RELEASE_NOTE.md
+docs/architecture/
 
 # --- إعدادات الحالة والبيئة المحلية ---
 vendor/
-.l10n-audit/status.json
-.l10n-audit/version.json
+.l10n-audit/

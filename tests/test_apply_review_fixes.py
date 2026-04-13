@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, write_simple_xlsx
-from l10n_audit.fixes.apply_review_fixes import run_apply
+from l10n_audit.fixes.apply_review_fixes import WrongArtifactTypeError, run_apply
+from l10n_audit.fixes.fix_merger import FROZEN_ARTIFACT_TYPE_VALUE
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:
@@ -46,12 +47,14 @@ def _review_row(**overrides: object) -> dict[str, object]:
         "generated_at": "2026-03-08T00:00:00+00:00",
         "current_value": "اهلا",
         "candidate_value": "مرحبا",
+        "frozen_artifact_type": FROZEN_ARTIFACT_TYPE_VALUE,  # H1 marker
     }
     base.update(overrides)
     return base
 
 
 def _write_review_queue(path: Path, rows: list[dict[str, object]]) -> None:
+    """Write a properly-marked frozen apply artifact for use with run_apply()."""
     write_simple_xlsx(
         rows,
         [
@@ -67,6 +70,7 @@ def _write_review_queue(path: Path, rows: list[dict[str, object]]) -> None:
             "generated_at",
             "current_value",
             "candidate_value",
+            "frozen_artifact_type",   # H1 marker must be present
         ],
         path,
         sheet_name="Review Queue",

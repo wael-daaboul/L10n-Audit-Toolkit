@@ -18,6 +18,7 @@ from l10n_audit.core.artifact_resolver import (
     resolve_master_path,
     resolve_review_final_path,
 )
+from l10n_audit.fixes.fix_merger import FROZEN_ARTIFACT_TYPE_VALUE
 
 logger = logging.getLogger("l10n_audit.fixes")
 
@@ -33,6 +34,75 @@ REQUIRED_REVIEW_COLUMNS = (
     "plan_id",
     "generated_at",
 )
+
+# ---------------------------------------------------------------------------
+# H1 Artifact Type Boundary
+# ---------------------------------------------------------------------------
+# Column that must be present and equal to FROZEN_ARTIFACT_TYPE_VALUE in every
+# row of a valid frozen apply artifact (review_final.xlsx).
+# review_queue.xlsx does not carry this column; apply rejects it loudly.
+FROZEN_ARTIFACT_TYPE_COLUMN: str = "frozen_artifact_type"
+
+
+class WrongArtifactTypeError(ValueError):
+    """
+    Raised when apply is given a workbook that is not a frozen apply artifact.
+
+    This prevents review_queue.xlsx from being accidentally passed to apply.
+    No row-level processing runs if this error is raised.
+    """
+
+
+def _assert_frozen_artifact_type(rows: list[dict], xlsx_path: Path) -> None:
+    """
+    Validate that each row in the loaded workbook carries the frozen artifact
+    type marker.  Raises WrongArtifactTypeError before any per-row apply logic
+    runs if the artifact is not a valid frozen artifact.
+
+    A workbook is accepted if ALL rows carry
+    frozen_artifact_type == FROZEN_ARTIFACT_TYPE_VALUE.
+
+    A workbook is rejected (WrongArtifactTypeError) if:
+      - the frozen_artifact_type column is absent from every row, OR
+      - ANY row carries a value other than FROZEN_ARTIFACT_TYPE_VALUE
+
+    Empty workbooks (zero rows) are accepted — an empty frozen artifact is
+    a valid degenerate case (all rows rejected at promotion).
+
+    Compatibility note: frozen artifacts produced before H1 (without the column)
+    will be rejected with a clear message directing the user to re-run
+    prepare-apply.  There is NO silent fallback for legacy artifacts.
+    """
+    if not rows:
+        return  # empty artifact is valid
+
+    column_present = any(FROZEN_ARTIFACT_TYPE_COLUMN in row for row in rows)
+    if not column_present:
+        raise WrongArtifactTypeError(
+            f"The workbook at '{xlsx_path}' is not a frozen apply artifact.\n"
+            f"The '{FROZEN_ARTIFACT_TYPE_COLUMN}' column is missing from all rows.\n"
+            f"If this is a review_queue.xlsx, you must run 'prepare-apply' first to produce "
+            f"a frozen review_final.xlsx before running apply.\n"
+            f"If this is an older review_final.xlsx (produced before H1 hardening), "
+            f"re-run 'prepare-apply' to regenerate it with the artifact type marker."
+        )
+
+    # Check every row for the correct marker value
+    bad_rows = [
+        (i, row.get(FROZEN_ARTIFACT_TYPE_COLUMN))
+        for i, row in enumerate(rows, start=2)
+        if row.get(FROZEN_ARTIFACT_TYPE_COLUMN) != FROZEN_ARTIFACT_TYPE_VALUE
+    ]
+    if bad_rows:
+        examples = ", ".join(
+            f"row {r} has {v!r}" for r, v in bad_rows[:3]
+        )
+        raise WrongArtifactTypeError(
+            f"The workbook at '{xlsx_path}' contains rows with an unexpected "
+            f"frozen_artifact_type value.\n"
+            f"Expected '{FROZEN_ARTIFACT_TYPE_VALUE}' in every row. {examples}.\n"
+            f"Do not manually edit the frozen_artifact_type column."
+        )
 
 
 def _normalized_non_empty_string(value: object) -> str | None:
@@ -497,6 +567,9 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
 
     # 2. Load approved fixes from the frozen workbook
     rows = read_simple_xlsx(review_queue_path, required_columns=REQUIRED_REVIEW_COLUMNS)
+    # H1 — Artifact type boundary: must fail before any per-row logic if the
+    # workbook is not a properly marked frozen apply artifact.
+    _assert_frozen_artifact_type(rows, review_queue_path)
     review_fixes_en = {}
     review_fixes_ar = {}
     applied_meta = []

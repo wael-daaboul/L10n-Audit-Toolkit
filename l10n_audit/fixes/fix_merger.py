@@ -16,6 +16,19 @@ from l10n_audit.core.audit_runtime import read_simple_xlsx, write_json, write_si
 
 logger = logging.getLogger("l10n_audit.fixes")
 
+# ---------------------------------------------------------------------------
+# H1 Artifact type marker
+# ---------------------------------------------------------------------------
+FROZEN_ARTIFACT_TYPE_VALUE: str = "frozen_apply_artifact"
+
+# ---------------------------------------------------------------------------
+# H3 Plan-id cross-check
+# ---------------------------------------------------------------------------
+# Reason code written into the rejection report when a row’s plan_id is not
+# in the caller-supplied allowed set.  Kept as a module-level constant so
+# tests and future tooling can match on it reliably.
+STALE_PLAN_ID_REASON_CODE: str = "stale_plan_id"
+
 REVIEW_FINAL_COLUMNS = [
     "key",
     "locale",
@@ -30,6 +43,7 @@ REVIEW_FINAL_COLUMNS = [
     "suggested_hash",
     "plan_id",
     "generated_at",
+    "frozen_artifact_type",
 ]
 
 _REQUIRED_PREPARE_QUEUE_FIELDS = (
@@ -292,7 +306,27 @@ def _prepare_apply_rejection(
     }
 
 
-def _validate_prepare_apply_row(row: Dict[str, Any], row_index: int) -> tuple[Dict[str, str] | None, Dict[str, Any] | None]:
+def _validate_prepare_apply_row(
+    row: Dict[str, Any],
+    row_index: int,
+    *,
+    allowed_plan_ids: frozenset[str] | None = None,
+) -> tuple[Dict[str, str] | None, Dict[str, Any] | None]:
+    """
+    Validate a single row for promotion into review_final.xlsx.
+
+    Parameters
+    ----------
+    row
+        The raw dict row from read_simple_xlsx.
+    row_index
+        1-based row index in the source workbook (used in rejection records).
+    allowed_plan_ids
+        H3 — When provided, the row’s plan_id must be in this set or the
+        row is rejected with reason_code STALE_PLAN_ID_REASON_CODE.
+        When None, no plan cross-check is performed (backward-compatible
+        default for callers that do not know the valid plan set).
+    """
     normalized = {field: "" if row.get(field) is None else str(row.get(field)) for field in _REQUIRED_PREPARE_QUEUE_FIELDS}
 
     for field in (
@@ -312,6 +346,22 @@ def _validate_prepare_apply_row(row: Dict[str, Any], row_index: int) -> tuple[Di
                 row,
                 "missing_required_field",
                 {"field": field},
+            )
+
+    # H3 — plan_id cross-check: reject rows whose plan_id is not in the
+    # caller-supplied allowed set.  Runs after the empty-string check above
+    # so that missing_required_field is reported first for empty plan_ids.
+    if allowed_plan_ids is not None:
+        row_plan_id = normalized["plan_id"].strip()
+        if row_plan_id not in allowed_plan_ids:
+            return None, _prepare_apply_rejection(
+                row_index,
+                row,
+                STALE_PLAN_ID_REASON_CODE,
+                {
+                    "row_plan_id": row_plan_id,
+                    "allowed_plan_ids": sorted(allowed_plan_ids),
+                },
             )
 
     if normalized["locale"].strip() not in {"ar", "en"}:
@@ -387,6 +437,7 @@ def _validate_prepare_apply_row(row: Dict[str, Any], row_index: int) -> tuple[Di
         "suggested_hash": expected_suggested_hash,
         "plan_id": normalized["plan_id"],
         "generated_at": normalized["generated_at"],
+        "frozen_artifact_type": FROZEN_ARTIFACT_TYPE_VALUE,
     }, None
 
 
@@ -394,7 +445,28 @@ def prepare_apply_workbook(
     review_queue_path: Path,
     out_final_path: Path,
     rejection_report_path: Path,
+    *,
+    allowed_plan_ids: frozenset[str] | None = None,
 ) -> Dict[str, Any]:
+    """
+    Promote eligible rows from review_queue_path into review_final.xlsx.
+
+    Parameters
+    ----------
+    review_queue_path
+        Path to the human-edited review workbook.
+    out_final_path
+        Path where the frozen apply artifact will be written.
+    rejection_report_path
+        Path where the rejection report JSON will be written.
+    allowed_plan_ids
+        H3 — When provided, only rows whose plan_id is in this set will be
+        promoted.  Rows with a plan_id outside this set receive a
+        STALE_PLAN_ID_REASON_CODE rejection.
+        When None (default), no plan cross-check is performed; all non-empty
+        plan_id values are accepted.  Existing callers that do not provide
+        this argument continue to behave identically.
+    """
     out_final_path.parent.mkdir(parents=True, exist_ok=True)
     rejection_report_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -435,7 +507,9 @@ def prepare_apply_workbook(
             )
             continue
 
-        accepted_row, rejection = _validate_prepare_apply_row(row, idx)
+        accepted_row, rejection = _validate_prepare_apply_row(
+            row, idx, allowed_plan_ids=allowed_plan_ids
+        )
         if rejection is not None:
             rejections.append(rejection)
             continue

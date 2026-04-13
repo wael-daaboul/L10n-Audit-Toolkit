@@ -179,4 +179,5 @@ def test_review_final_column_freeze():
         "suggested_hash",
         "plan_id",
         "generated_at",
+        "frozen_artifact_type",   # H1 — artifact type boundary marker
     ]

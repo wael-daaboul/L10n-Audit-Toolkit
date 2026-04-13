@@ -27,7 +27,12 @@ from l10n_audit.core.locale_utils import (
     resolve_issue_current_value,
     resolve_issue_candidate_value,
     get_value_smart,
-    resolve_issue_current_value_state,
+)
+from l10n_audit.core.hydration_orchestrator import hydrate_issue
+from l10n_audit.core.hydration_result import (
+    LOOKUP_STATUS_NOT_HYDRATED,
+    TERMINAL_LOOKUP_STATUSES,
+    UNRESOLVED_LOOKUP_SOURCE_HASH,
 )
 
 REVIEW_PROJECTION_COLUMNS = [
@@ -68,7 +73,9 @@ REVIEW_QUEUE_WORKBOOK_COLUMNS = [
     "generated_at",
 ]
 HIDDEN_WHEN_EMPTY = {"placeholders", "icu_message_audit"}
-UNRESOLVED_LOOKUP_SOURCE_HASH = "__UNRESOLVED_LOOKUP__"
+# UNRESOLVED_LOOKUP_SOURCE_HASH is defined in l10n_audit.core.hydration_result
+# and re-exported here for backward compatibility with existing consumers.
+# New code must import directly from hydration_result.
 
 
 def format_issue(issue: dict[str, Any]) -> str:
@@ -532,41 +539,6 @@ def _is_merge_compatible_review_issue(
 
     return True
 
-
-
-
-def _hydrate_old_value_for_issue(
-    issue: dict[str, Any],
-    en_data: dict[str, object],
-    ar_data: dict[str, object],
-    *,
-    locale_context: str | None = None,
-) -> dict[str, str | bool | None]:
-    locale, locale_source = resolve_issue_locale(issue)
-    effective_locale = locale or locale_context
-
-    if effective_locale == "en":
-        resolved = resolve_issue_current_value_state(issue, locale_data=en_data)
-    elif effective_locale == "ar":
-        resolved = resolve_issue_current_value_state(issue, locale_data=ar_data)
-    else:
-        resolved = {"value": None, "source": None, "status": "unresolved"}
-
-    status = str(resolved.get("status") or "unresolved")
-    value = resolved.get("value")
-    is_resolved = status in {"resolved", "resolved_empty"}
-    final_value = "" if value is None else str(value)
-
-    return {
-        "value": final_value,
-        "status": status,
-        "is_resolved": is_resolved,
-        "locale": effective_locale,
-        "locale_source": locale_source or ("context" if locale_context else None),
-        "value_source": resolved.get("source"),
-    }
-
-
 def old_value_for_issue(
     issue: dict[str, Any],
     en_data: dict[str, object],
@@ -574,13 +546,23 @@ def old_value_for_issue(
     *,
     locale_context: str | None = None,
 ) -> str:
-    hydrated = _hydrate_old_value_for_issue(
-        issue,
-        en_data,
-        ar_data,
-        locale_context=locale_context,
-    )
-    return str(hydrated["value"])
+    """
+    Return the current locale-file value for an issue as a plain string.
+
+    Public compatibility API retained for existing callers.
+    Step 5: now backed by Stage 3 orchestrator (hydrate_issue) instead of
+    the retired _hydrate_old_value_for_issue() helper.
+    """
+    from l10n_audit.core.locale_utils import resolve_issue_locale as _ril
+    locale, _ = _ril(issue)
+    effective_locale = locale or locale_context or "unknown"
+    locale_data_stores: dict = {}
+    if effective_locale == "en":
+        locale_data_stores = {"en": en_data}
+    elif effective_locale == "ar":
+        locale_data_stores = {"ar": ar_data}
+    rec = hydrate_issue(str(issue.get("key", "")), effective_locale, locale_data_stores)
+    return rec.result.current_value if rec.result.current_value is not None else ""
 
 
 def suggested_fix_for_issue(issue: dict[str, Any], en_data: dict[str, object], ar_data: dict[str, object]) -> str:
@@ -749,6 +731,9 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
     en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
     target_locale = runtime.target_locales[0] if runtime.target_locales else "ar"
     ar_data = load_locale_mapping(runtime.ar_file, runtime, target_locale)
+    # Stage 3: pre-load locale data stores for the orchestrator.
+    # The orchestrator receives these explicitly; it never loads files itself.
+    _locale_data_stores = {runtime.source_locale: en_data, target_locale: ar_data}
     auto_safe = {
         (
             str(item["key"]),
@@ -762,11 +747,11 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
 
     rows_by_key: dict[tuple[str, str], dict[str, str]] = {}
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    
+
     for issue in issues:
         if str(issue.get("severity", "")).lower() == "info":
             continue
-            
+
         locale, _l_source = resolve_issue_locale(issue)
         locale_context = locale
         if locale_context is None:
@@ -778,18 +763,20 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         locale = locale_context or "unknown"
         key = str(issue.get("key", ""))
         issue_type = str(issue.get("issue_type") or "").strip() or "unknown"
-        current_value_state = _hydrate_old_value_for_issue(
-            issue,
-            en_data,
-            ar_data,
-            locale_context=locale_context,
-        )
-        current_value = str(current_value_state["value"])
-        source_hash = (
-            compute_text_hash(current_value)
-            if bool(current_value_state["is_resolved"])
-            else UNRESOLVED_LOOKUP_SOURCE_HASH
-        )
+        # ── Stage 3 canonical hydration (Step 4: live ownership transferred) ──
+        # Always performs a live locale lookup via the resolver.
+        # Pre-existing value fields (details.old, source_old_value, target, old,
+        # current_translation) are NOT used as hydration input.
+        _hydration = hydrate_issue(key, locale_context or "unknown", _locale_data_stores)
+        if _hydration.result.lookup_status not in TERMINAL_LOOKUP_STATUSES:
+            raise RuntimeError(
+                f"build_review_queue received non-hydrated finding: "
+                f"key={key!r} locale={locale!r} "
+                f"lookup_status={_hydration.result.lookup_status!r}. "
+                "Ensure Stage 3 hydration runs before Stage 4 projection."
+            )
+        current_value = _hydration.result.current_value if _hydration.result.current_value is not None else ""
+        source_hash = _hydration.result.source_hash
         message = str(issue.get("message", ""))
         source = str(issue.get("source", ""))
         severity = str(issue.get("severity", ""))
@@ -809,7 +796,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         if row_key in rows_by_key:
             existing = rows_by_key[row_key]
             merge_compatible = _is_merge_compatible_review_issue(existing, resolution, projected_approved_new)
-            if existing.get("source_hash") == UNRESOLVED_LOOKUP_SOURCE_HASH and bool(current_value_state["is_resolved"]):
+            if existing.get("source_hash") == UNRESOLVED_LOOKUP_SOURCE_HASH and _hydration.result.is_resolved():
                 existing["old_value"] = current_value
                 existing["source_old_value"] = current_value
                 existing["source_hash"] = source_hash
