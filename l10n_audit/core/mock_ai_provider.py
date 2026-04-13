@@ -46,7 +46,7 @@ class MockAIProvider:
         self.last_batch: list[dict] = []
         self.last_config: dict = {}
 
-    def review_batch(self, batch: list[dict], config: dict) -> list[dict]:
+    def review_batch(self, batch: list[dict], config: dict, **kwargs) -> list[dict]:
         self.call_count += 1
         self.last_batch = batch
         self.last_config = config
@@ -54,4 +54,6 @@ class MockAIProvider:
             self._side_effect(batch, config)
         # Filter to only return fixes whose key is present in batch
         batch_keys = {item["key"] for item in batch}
-        return [f for f in self._fixes if f.get("key") in batch_keys]
+        fixes = [f for f in self._fixes if f.get("key") in batch_keys]
+        from l10n_audit.ai.verification import verify_batch_fixes
+        return verify_batch_fixes(batch, fixes, glossary=kwargs.get("glossary"))

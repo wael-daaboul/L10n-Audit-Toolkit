@@ -502,7 +502,16 @@ class TestCliCallerH3Wiring:
         machine_dir.mkdir(parents=True, exist_ok=True)
         machine_queue_path = machine_dir / "review_machine_queue.json"
         machine_queue_path.write_text(json.dumps({
-            "review_queue": [{"plan_id": current_plan, "key": "auth.failed"}],
+            "review_queue": [{
+                "plan_id": current_plan,
+                "key": "auth.failed",
+                "locale": "ar",
+                "issue_type": "locale_qc",
+                "source_old_value": "\u0641\u0634\u0644 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644",
+                "source_hash": compute_text_hash("\u0641\u0634\u0644 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644"),
+                "suggested_hash": compute_text_hash("\u0641\u0634\u0644."),
+                "generated_at": "2026-04-12T00:00:00+00:00",
+            }],
             "plan_id_source": "report_aggregator",
         }), encoding="utf-8")
 
@@ -553,8 +562,26 @@ class TestCliCallerH3Wiring:
         machine_queue_path = machine_dir / "review_machine_queue.json"
         machine_queue_path.write_text(json.dumps({
             "review_queue": [
-                {"plan_id": current_plan, "key": "auth.failed"},
-                {"plan_id": current_plan, "key": "nav.home"},
+                {
+                    "plan_id": current_plan,
+                    "key": "auth.failed",
+                    "locale": "ar",
+                    "issue_type": "locale_qc",
+                    "source_old_value": "\u0641\u0634\u0644 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644",
+                    "source_hash": compute_text_hash("\u0641\u0634\u0644 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644"),
+                    "suggested_hash": compute_text_hash("\u0641\u0634\u0644."),
+                    "generated_at": "2026-04-12T00:00:00+00:00",
+                },
+                {
+                    "plan_id": current_plan,
+                    "key": "nav.home",
+                    "locale": "ar",
+                    "issue_type": "locale_qc",
+                    "source_old_value": "\u0641\u0634\u0644 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644",
+                    "source_hash": compute_text_hash("\u0641\u0634\u0644 \u062a\u0633\u062c\u064a\u0644 \u0627\u0644\u062f\u062e\u0648\u0644"),
+                    "suggested_hash": compute_text_hash("\u0641\u0634\u0644."),
+                    "generated_at": "2026-04-12T00:00:00+00:00",
+                },
             ],
             "plan_id_source": "report_aggregator",
         }), encoding="utf-8")

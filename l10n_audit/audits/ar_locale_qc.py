@@ -1093,4 +1093,11 @@ def run_stage(runtime, options) -> list:
 
     normalised = [{**r, "source": "ar_locale_qc", "issue_type": str(r.get("issue_type") or "").strip() or "ar_qc"} for r in rows]
     logger.info("AR locale QC: %d issues (enforcement active=%s)", len(normalised), enforcer.enabled)
+    # --- Phase 7C Slice 3: normalize audit output shape before downstream model ---
+    from l10n_audit.core.audit_output_adapter import normalize_audit_finding
+    normalised = [
+        normalize_audit_finding(r, audit_source="ar_locale_qc", locale="ar")
+        for r in normalised
+    ]
     return [issue_from_dict(r) for r in normalised]
+

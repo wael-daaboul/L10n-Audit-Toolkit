@@ -429,7 +429,13 @@ def cmd_prepare_apply(args: argparse.Namespace) -> int:
             # than crashing the promote step.
             pass
 
-    report = prepare_apply_workbook(review_queue, out_final, rejection_report, allowed_plan_ids=allowed_plan_ids)
+    report = prepare_apply_workbook(
+        review_queue,
+        out_final,
+        rejection_report,
+        allowed_plan_ids=allowed_plan_ids,
+        machine_queue_path=machine_queue_path if machine_queue_path.exists() else None,
+    )
 
     print(f"🧊 Prepared final workbook: {out_final}")
     print(f"📝 Rejection report: {rejection_report}")

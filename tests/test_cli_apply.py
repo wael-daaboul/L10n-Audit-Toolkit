@@ -1,7 +1,7 @@
 import pytest
 import argparse
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 from pathlib import Path
 from l10n_audit.core.cli import build_parser, cmd_apply, cmd_prepare_apply
 
@@ -89,12 +89,20 @@ def test_prepare_apply_subcommand_wiring():
 
 
 def test_cmd_prepare_apply_success():
+    """prepare_apply_workbook is called with both allowed_plan_ids and machine_queue_path."""
     args = argparse.Namespace(path=".", review_queue=None, out_final=None, rejection_report=None)
+
+    machine_queue_data = {
+        "review_queue": [{"plan_id": "plan-1", "key": "k", "locale": "ar"}],
+        "plan_id_source": "report_aggregator",
+    }
+
     with patch("l10n_audit.core.cli.find_project_root", return_value=Path(".")), \
          patch("l10n_audit.core.audit_runtime.load_runtime") as mock_load, \
          patch("l10n_audit.fixes.fix_merger.prepare_apply_workbook") as mock_prepare, \
          patch("pathlib.Path.exists", return_value=True), \
-         patch("pathlib.Path.read_text", side_effect=OSError("no file")):
+         patch("pathlib.Path.read_text",
+               return_value=json.dumps(machine_queue_data)):
 
         mock_runtime = MagicMock()
         mock_runtime.results_dir = Path("results")
@@ -104,13 +112,164 @@ def test_cmd_prepare_apply_success():
         }
 
         assert cmd_prepare_apply(args) == 0
-        # H3: allowed_plan_ids=None because machine queue could not be read
-        mock_prepare.assert_called_once_with(
-            Path("results/review/review_queue.xlsx"),
-            Path("results/review/review_final.xlsx"),
-            Path("results/.cache/apply/rejection_report.json"),
-            allowed_plan_ids=None,
+        _, kwargs = mock_prepare.call_args
+        # H3: allowed_plan_ids derived from machine queue
+        assert kwargs["allowed_plan_ids"] == frozenset({"plan-1"})
+        # H4: machine_queue_path is forwarded (not None)
+        assert kwargs["machine_queue_path"] is not None
+
+
+# ---------------------------------------------------------------------------
+# H4 CLI Wiring Tests
+# ---------------------------------------------------------------------------
+
+def test_cli_passes_machine_queue_path_when_available():
+    """
+    When review_machine_queue.json exists, machine_queue_path must be forwarded
+    as a non-None Path to prepare_apply_workbook.
+    """
+    args = argparse.Namespace(path=".", review_queue=None, out_final=None, rejection_report=None)
+
+    machine_queue_data = {
+        "review_queue": [{"plan_id": "plan-h4", "key": "k", "locale": "ar"}],
+        "plan_id_source": "report_aggregator",
+    }
+
+    with patch("l10n_audit.core.cli.find_project_root", return_value=Path(".")), \
+         patch("l10n_audit.core.audit_runtime.load_runtime") as mock_load, \
+         patch("l10n_audit.fixes.fix_merger.prepare_apply_workbook") as mock_prepare, \
+         patch("pathlib.Path.exists", return_value=True), \
+         patch("pathlib.Path.read_text",
+               return_value=json.dumps(machine_queue_data)):
+
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = Path("results")
+        mock_load.return_value = mock_runtime
+        mock_prepare.return_value = {
+            "summary": {"total_rows": 1, "accepted_rows": 1, "rejected_rows": 0}
+        }
+
+        cmd_prepare_apply(args)
+
+        _, kwargs = mock_prepare.call_args
+        assert "machine_queue_path" in kwargs, (
+            "machine_queue_path must be forwarded to prepare_apply_workbook"
         )
+        assert kwargs["machine_queue_path"] is not None, (
+            "machine_queue_path must not be None when the machine queue file exists"
+        )
+
+
+def test_cli_falls_back_to_none_when_machine_queue_missing():
+    """
+    When review_machine_queue.json does NOT exist, machine_queue_path must be
+    passed as None so H4 is disabled (not a hard failure).
+    """
+    args = argparse.Namespace(path=".", review_queue=None, out_final=None, rejection_report=None)
+
+    def fake_exists(self) -> bool:
+        # review_queue.xlsx exists, machine_queue.json does not
+        return "review_queue.xlsx" in str(self)
+
+    with patch("l10n_audit.core.cli.find_project_root", return_value=Path(".")), \
+         patch("l10n_audit.core.audit_runtime.load_runtime") as mock_load, \
+         patch("l10n_audit.fixes.fix_merger.prepare_apply_workbook") as mock_prepare, \
+         patch.object(Path, "exists", fake_exists):
+
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = Path("results")
+        mock_load.return_value = mock_runtime
+        mock_prepare.return_value = {
+            "summary": {"total_rows": 0, "accepted_rows": 0, "rejected_rows": 0}
+        }
+
+        result = cmd_prepare_apply(args)
+        assert result == 0
+
+        _, kwargs = mock_prepare.call_args
+        assert kwargs["machine_queue_path"] is None, (
+            "machine_queue_path must be None when the machine queue file is absent"
+        )
+
+
+def test_cli_triggers_integrity_drift_rejection(tmp_path):
+    """
+    End-to-end: CLI path correctly forwards machine_queue_path so that drift
+    in an immutable field causes a rejection with reason_code=integrity_drift.
+    """
+    from l10n_audit.core.audit_runtime import compute_text_hash, write_simple_xlsx
+    from l10n_audit.fixes.fix_merger import (
+        INTEGRITY_DRIFT_REASON_CODE,
+        REVIEW_FINAL_COLUMNS,
+    )
+
+    # Build a valid-looking review queue workbook
+    queue_columns = [
+        "key", "locale", "issue_type", "current_value", "candidate_value",
+        "status", "review_note", "source_old_value", "source_hash",
+        "suggested_hash", "plan_id", "generated_at",
+    ]
+    original_value = "فشل تسجيل الدخول"
+    original_hash = compute_text_hash(original_value)
+    workbook_row = {
+        "key": "auth.failed",
+        "locale": "ar",
+        "issue_type": "locale_qc",
+        "current_value": original_value,
+        "candidate_value": "فشل.",
+        "status": "approved",
+        "review_note": "",
+        "source_old_value": original_value,
+        "source_hash": original_hash,          # correct in workbook
+        "suggested_hash": compute_text_hash("فشل."),
+        "plan_id": "plan-drift-test",
+        "generated_at": "2026-04-13T00:00:00+00:00",
+    }
+    review_queue = tmp_path / "review_queue.xlsx"
+    write_simple_xlsx([workbook_row], queue_columns, review_queue, sheet_name="Review Queue")
+
+    # Machine queue records a DIFFERENT source_hash (simulating tampering detection)
+    machine_queue = tmp_path / "review_machine_queue.json"
+    machine_queue.write_text(
+        json.dumps({
+            "review_queue": [{
+                **workbook_row,
+                "source_hash": "MACHINE_ORIGINAL_HASH",  # differs from workbook
+            }],
+            "plan_id_source": "report_aggregator",
+        }, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    out_final = tmp_path / "review_final.xlsx"
+    rejection_report = tmp_path / "rejection_report.json"
+
+    args = argparse.Namespace(
+        path=".",
+        review_queue=str(review_queue),
+        out_final=str(out_final),
+        rejection_report=str(rejection_report),
+    )
+
+    def fake_resolve_machine(runtime):
+        return machine_queue
+
+    with patch("l10n_audit.core.cli.find_project_root", return_value=tmp_path), \
+         patch("l10n_audit.core.audit_runtime.load_runtime") as mock_load, \
+         patch(
+             "l10n_audit.core.cli.resolve_review_machine_queue_json_path",
+             side_effect=fake_resolve_machine,
+         ):
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = tmp_path
+        mock_load.return_value = mock_runtime
+
+        result = cmd_prepare_apply(args)
+
+    assert result == 0  # CLI itself succeeds; drift is a row-level rejection
+    report = json.loads(rejection_report.read_text(encoding="utf-8"))
+    assert report["summary"]["accepted_rows"] == 0
+    assert report["rejections"][0]["reason_code"] == INTEGRITY_DRIFT_REASON_CODE
 
 
 def test_cmd_prepare_apply_passes_allowed_plan_ids_from_machine_queue():

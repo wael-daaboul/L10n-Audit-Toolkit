@@ -465,4 +465,30 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
             logging.warning("Failed to write AI review report: %s", exc)
 
     normalised = [{**f, "issue_type": "ai_suggestion", "source": "ai_review"} for f in all_fixes]
-    return [issue_from_dict(f) for f in normalised]
+    # --- Phase 7C Slice 5: normalize output shape before downstream model ---
+    from l10n_audit.core.audit_output_adapter import normalize_audit_finding
+
+    def _ai_review_to_adapter_shape(row: dict) -> dict:
+        """Additive shim: map ai_review bespoke fields into adapter-compatible names.
+
+        target     → old  → detected_value   (live AR value at detection time)
+        suggestion →      → candidate_value  (handled natively by adapter 3rd fallback)
+
+        All original fields (target, suggestion, verified, original_source) are
+        preserved via **row so they land in _raw_metadata via the adapter.
+        """
+        return {
+            **row,
+            "old": row.get("target", ""),   # live AR target → detected_value
+        }
+
+    normalized = [
+        normalize_audit_finding(
+            _ai_review_to_adapter_shape(r),
+            audit_source="ai_review",
+            locale="ar",
+        )
+        for r in normalised
+    ]
+    return [issue_from_dict(r) for r in normalized]
+

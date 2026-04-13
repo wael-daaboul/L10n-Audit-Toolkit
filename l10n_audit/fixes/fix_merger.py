@@ -56,6 +56,14 @@ H4_IMMUTABLE_FIELDS: tuple[str, ...] = (
     "source_old_value",
 )
 
+# ---------------------------------------------------------------------------
+# H5 Override Acknowledgement
+# ---------------------------------------------------------------------------
+# Reason code written into the rejection record when a reviewer has changed
+# approved_new to a value different from candidate_value but has not set
+# override_acknowledged = "true" to explicitly acknowledge the choice.
+OVERRIDE_NOT_ACK_REASON_CODE: str = "override_not_acknowledged"
+
 REVIEW_FINAL_COLUMNS = [
     "key",
     "locale",
@@ -602,13 +610,44 @@ def _validate_prepare_apply_row(
             },
         )
 
+    # H5 — Override Acknowledgement check.
+    # approved_new is the reviewer-editable field.  When its hash differs from
+    # suggested_hash (= hash of candidate_value), the reviewer has chosen a
+    # value other than what the pipeline suggested.  This is legitimate, but
+    # must be explicitly acknowledged by setting override_acknowledged = "true".
+    # override_acknowledged is an optional column; absent / empty means "false".
+    #
+    # Backward-compat: when approved_new is absent or empty, it is treated as
+    # equivalent to candidate_value (reviewer implicitly accepts the suggestion).
+    # This avoids breaking pre-H5 rows that have no approved_new column.
+    approved_new_raw = str(row.get("approved_new", "") or "").strip()
+    if not approved_new_raw:
+        approved_new_raw = normalized["candidate_value"]
+    approved_new_hash = compute_text_hash(approved_new_raw)
+    if approved_new_hash != normalized["suggested_hash"]:
+        ack_raw = str(row.get("override_acknowledged", "") or "").strip().lower()
+        if ack_raw != "true":
+            return None, _prepare_apply_rejection(
+                row_index,
+                row,
+                OVERRIDE_NOT_ACK_REASON_CODE,
+                {
+                    "approved_hash": approved_new_hash,
+                    "suggested_hash": normalized["suggested_hash"],
+                    "note": (
+                        "approved_new differs from candidate_value. "
+                        "Set override_acknowledged = 'true' to promote this row."
+                    ),
+                },
+            )
+
     return {
         "key": normalized["key"],
         "locale": normalized["locale"],
         "issue_type": normalized["issue_type"],
         "current_value": normalized["current_value"],
         "candidate_value": normalized["candidate_value"],
-        "approved_new": normalized["candidate_value"],
+        "approved_new": approved_new_raw,
         "status": "approved",
         "review_note": normalized["review_note"],
         "source_old_value": normalized["source_old_value"],

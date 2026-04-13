@@ -331,4 +331,29 @@ def run_stage(runtime, options) -> list:
     normalised = [{**v, "source": "terminology", "issue_type": "terminology_violation",
                    "message": v.get("message", ""), "severity": v.get("severity", "high")} for v in unique]
     logger.info("Terminology audit: %d violations", len(normalised))
-    return [issue_from_dict(r) for r in normalised]
+    # --- Phase 7C Slice 4: pre-normalization shim + adapter wiring ---
+    from l10n_audit.core.audit_output_adapter import normalize_audit_finding
+
+    def _terminology_to_adapter_shape(row: dict) -> dict:
+        """Map the terminology schema island into adapter-compatible field names.
+
+        Preserves all original fields so they land in _raw_metadata via the adapter.
+        This is an additive shim — no original fields are removed.
+        """
+        return {
+            **row,                                          # preserve ALL original fields
+            "issue_type": row.get("violation_type", "terminology_violation"),
+            "old":        row.get("arabic_value", ""),     # arabic_value → detected_value
+            "new":        row.get("expected_ar", ""),      # expected_ar  → candidate_value
+        }
+
+    adapted = [
+        normalize_audit_finding(
+            _terminology_to_adapter_shape(r),
+            audit_source="terminology_audit",
+            locale="ar",
+        )
+        for r in normalised
+    ]
+    return [issue_from_dict(r) for r in adapted]
+

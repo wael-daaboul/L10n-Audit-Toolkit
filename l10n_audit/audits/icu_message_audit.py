@@ -536,4 +536,10 @@ def run_stage(runtime, options) -> list:
 
     normalised = [{**f, "source": "icu_message_audit"} for f in findings]
     logger.info("ICU message audit: %d issues", len(normalised))
+    # --- Phase 7C Slice 1: normalise output shape before downstream model ---
+    from l10n_audit.core.audit_output_adapter import normalize_audit_finding
+    normalised = [
+        normalize_audit_finding(f, audit_source="icu_message_audit", locale="en/ar")
+        for f in normalised
+    ]
     return [issue_from_dict(f) for f in normalised]

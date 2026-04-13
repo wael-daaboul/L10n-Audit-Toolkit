@@ -283,4 +283,10 @@ def run_stage(runtime, options) -> list:
         for f in findings
     ]
     logger.info("Placeholder audit: %d issues", len(normalised))
+    # --- Phase 7C Slice 3 Part 2: normalize audit output shape before downstream model ---
+    from l10n_audit.core.audit_output_adapter import normalize_audit_finding
+    normalised = [
+        normalize_audit_finding(f, audit_source="placeholder_audit", locale="en/ar")
+        for f in normalised
+    ]
     return [issue_from_dict(f) for f in normalised]
