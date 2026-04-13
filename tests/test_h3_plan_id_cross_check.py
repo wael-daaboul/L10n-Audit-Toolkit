@@ -16,11 +16,15 @@ Verifies:
   8. Empty allowed_plan_ids frozenset rejects every row (edge case)
   9. Multiple allowed plan_ids: any matching plan is accepted
  10. Rejection record includes the row's plan_id and the allowed set in its details
+ 11. CLI caller (cmd_prepare_apply) derives and passes allowed_plan_ids from the
+     machine queue artifact written by the last run (H3 end-to-end wiring)
 """
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -388,3 +392,188 @@ class TestMissingPlanId:
 
         assert payload["summary"]["rejected_rows"] == 1
         assert payload["rejections"][0]["reason_code"] == "missing_required_field"
+
+
+# ---------------------------------------------------------------------------
+# 8. CLI caller (cmd_prepare_apply) end-to-end H3 wiring
+# ---------------------------------------------------------------------------
+
+
+class TestCliCallerH3Wiring:
+    """Verify that cmd_prepare_apply now derives and passes allowed_plan_ids
+    from the machine queue artifact (end-to-end H3 wiring)."""
+
+    def test_cli_passes_allowed_plan_ids_from_machine_queue(
+        self, tmp_path: Path
+    ) -> None:
+        """When review_machine_queue.json exists, cmd_prepare_apply passes the
+        plan_ids found there as allowed_plan_ids to prepare_apply_workbook."""
+        from l10n_audit.core.cli import cmd_prepare_apply
+
+        machine_queue_content = json.dumps({
+            "review_queue": [
+                {"plan_id": "plan-run1-a", "key": "k1"},
+                {"plan_id": "plan-run1-b", "key": "k2"},
+            ],
+            "plan_id_source": "report_aggregator",
+        })
+
+        def fake_exists(self):
+            return True
+
+        def fake_read_text(self, encoding="utf-8"):
+            if "review_machine_queue" in str(self):
+                return machine_queue_content
+            raise OSError("not the machine queue")
+
+        args = argparse.Namespace(
+            path=".", review_queue=None, out_final=None, rejection_report=None
+        )
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = Path("results")
+
+        with patch("l10n_audit.core.cli.find_project_root", return_value=Path(".")), \
+             patch("l10n_audit.core.audit_runtime.load_runtime", return_value=mock_runtime), \
+             patch("l10n_audit.fixes.fix_merger.prepare_apply_workbook") as mock_prepare, \
+             patch("pathlib.Path.exists", fake_exists), \
+             patch("pathlib.Path.read_text", fake_read_text):
+
+            mock_prepare.return_value = {
+                "summary": {"total_rows": 2, "accepted_rows": 2, "rejected_rows": 0}
+            }
+            result = cmd_prepare_apply(args)
+
+        assert result == 0
+        _, kwargs = mock_prepare.call_args
+        assert kwargs.get("allowed_plan_ids") == frozenset({"plan-run1-a", "plan-run1-b"})
+
+    def test_cli_falls_back_to_none_when_machine_queue_absent(
+        self, tmp_path: Path
+    ) -> None:
+        """When review_machine_queue.json is absent, cmd_prepare_apply passes
+        allowed_plan_ids=None (backward compatible, no plan constraint)."""
+        from l10n_audit.core.cli import cmd_prepare_apply
+
+        def fake_exists(self):
+            return "review_queue.xlsx" in str(self) and "review_machine_queue" not in str(self)
+
+        args = argparse.Namespace(
+            path=".", review_queue=None, out_final=None, rejection_report=None
+        )
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = Path("results")
+
+        with patch("l10n_audit.core.cli.find_project_root", return_value=Path(".")), \
+             patch("l10n_audit.core.audit_runtime.load_runtime", return_value=mock_runtime), \
+             patch("l10n_audit.fixes.fix_merger.prepare_apply_workbook") as mock_prepare, \
+             patch("pathlib.Path.exists", fake_exists):
+
+            mock_prepare.return_value = {
+                "summary": {"total_rows": 1, "accepted_rows": 1, "rejected_rows": 0}
+            }
+            result = cmd_prepare_apply(args)
+
+        assert result == 0
+        _, kwargs = mock_prepare.call_args
+        assert kwargs.get("allowed_plan_ids") is None
+
+    def test_cli_stale_rows_rejected_in_real_promote_path(
+        self, tmp_path: Path
+    ) -> None:
+        """Integration: cmd_prepare_apply rejects stale-plan rows through the
+        real prepare_apply_workbook — not just in unit tests of fix_merger."""
+        from l10n_audit.core.cli import cmd_prepare_apply
+        from l10n_audit.core.artifact_resolver import resolve_review_machine_queue_json_path
+
+        current_plan = "plan-current-run"
+        stale_plan = "plan-old-run"
+
+        # Write review_queue.xlsx with one current and one stale row
+        queue = tmp_path / "review_queue.xlsx"
+        final = tmp_path / "review_final.xlsx"
+        rejection = tmp_path / "rejection_report.json"
+        _write_queue(queue, [
+            _queue_row(plan_id=current_plan, key="auth.failed"),
+            _queue_row(plan_id=stale_plan,   key="profile.name"),
+        ])
+
+        # Write review_machine_queue.json with only the current plan
+        machine_dir = tmp_path / "review"
+        machine_dir.mkdir(parents=True, exist_ok=True)
+        machine_queue_path = machine_dir / "review_machine_queue.json"
+        machine_queue_path.write_text(json.dumps({
+            "review_queue": [{"plan_id": current_plan, "key": "auth.failed"}],
+            "plan_id_source": "report_aggregator",
+        }), encoding="utf-8")
+
+        args = argparse.Namespace(
+            path=".",
+            review_queue=str(queue),
+            out_final=str(final),
+            rejection_report=str(rejection),
+        )
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = tmp_path
+        mock_runtime.project_root = tmp_path
+
+        with patch("l10n_audit.core.cli.find_project_root", return_value=tmp_path), \
+             patch("l10n_audit.core.audit_runtime.load_runtime", return_value=mock_runtime):
+            result = cmd_prepare_apply(args)
+
+        assert result == 0
+        report_data = json.loads(rejection.read_text(encoding="utf-8"))
+        assert report_data["summary"]["accepted_rows"] == 1
+        assert report_data["summary"]["rejected_rows"] == 1
+        assert report_data["rejections"][0]["reason_code"] == STALE_PLAN_ID_REASON_CODE
+        assert report_data["rejections"][0]["plan_id"] == stale_plan
+
+        # Verify frozen artifact only contains the current-plan row
+        frozen_rows = read_simple_xlsx(final, required_columns=REVIEW_FINAL_COLUMNS)
+        assert len(frozen_rows) == 1
+        assert frozen_rows[0]["plan_id"] == current_plan
+
+    def test_cli_valid_rows_still_promote_with_plan_constraint(
+        self, tmp_path: Path
+    ) -> None:
+        """Rows from the current run are not accidentally rejected when
+        allowed_plan_ids is active."""
+        from l10n_audit.core.cli import cmd_prepare_apply
+
+        current_plan = "plan-valid"
+        queue = tmp_path / "review_queue.xlsx"
+        final = tmp_path / "review_final.xlsx"
+        rejection = tmp_path / "rejection_report.json"
+        _write_queue(queue, [
+            _queue_row(plan_id=current_plan, key="auth.failed"),
+            _queue_row(plan_id=current_plan, key="nav.home"),
+        ])
+
+        machine_dir = tmp_path / "review"
+        machine_dir.mkdir(parents=True, exist_ok=True)
+        machine_queue_path = machine_dir / "review_machine_queue.json"
+        machine_queue_path.write_text(json.dumps({
+            "review_queue": [
+                {"plan_id": current_plan, "key": "auth.failed"},
+                {"plan_id": current_plan, "key": "nav.home"},
+            ],
+            "plan_id_source": "report_aggregator",
+        }), encoding="utf-8")
+
+        args = argparse.Namespace(
+            path=".",
+            review_queue=str(queue),
+            out_final=str(final),
+            rejection_report=str(rejection),
+        )
+        mock_runtime = MagicMock()
+        mock_runtime.results_dir = tmp_path
+        mock_runtime.project_root = tmp_path
+
+        with patch("l10n_audit.core.cli.find_project_root", return_value=tmp_path), \
+             patch("l10n_audit.core.audit_runtime.load_runtime", return_value=mock_runtime):
+            result = cmd_prepare_apply(args)
+
+        assert result == 0
+        report_data = json.loads(rejection.read_text(encoding="utf-8"))
+        assert report_data["summary"]["accepted_rows"] == 2
+        assert report_data["summary"]["rejected_rows"] == 0
