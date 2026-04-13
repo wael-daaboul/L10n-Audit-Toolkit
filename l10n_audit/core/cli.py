@@ -15,7 +15,7 @@ from l10n_audit.core.workspace import (
     workspace_config_path,
     workspace_status,
 )
-from l10n_audit.core.artifact_resolver import resolve_review_final_path
+from l10n_audit.core.artifact_resolver import resolve_review_final_path, resolve_review_machine_queue_json_path
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +406,30 @@ def cmd_prepare_apply(args: argparse.Namespace) -> int:
         print("   Please run an audit first or specify the path with --review-queue")
         return 1
 
-    report = prepare_apply_workbook(review_queue, out_final, rejection_report)
+    # H3: Derive allowed_plan_ids from the machine queue artifact written by the
+    # most-recent run.  This is the narrowest safe set — only plan_ids that
+    # originated from the current audit run are admitted during promotion.
+    # If the machine queue JSON is absent (e.g. the user bypassed report_aggregator)
+    # we fall back to None, meaning no plan cross-check is performed, preserving
+    # backward-compatible behaviour for non-standard workflows.
+    allowed_plan_ids: frozenset[str] | None = None
+    machine_queue_path = resolve_review_machine_queue_json_path(runtime)
+    if machine_queue_path.exists():
+        try:
+            machine_data = json.loads(machine_queue_path.read_text(encoding="utf-8"))
+            plan_ids = {
+                str(row["plan_id"])
+                for row in machine_data.get("review_queue", [])
+                if isinstance(row, dict) and row.get("plan_id")
+            }
+            if plan_ids:
+                allowed_plan_ids = frozenset(plan_ids)
+        except Exception:
+            # Unreadable / malformed JSON — fall back to no constraint rather
+            # than crashing the promote step.
+            pass
+
+    report = prepare_apply_workbook(review_queue, out_final, rejection_report, allowed_plan_ids=allowed_plan_ids)
 
     print(f"🧊 Prepared final workbook: {out_final}")
     print(f"📝 Rejection report: {rejection_report}")
