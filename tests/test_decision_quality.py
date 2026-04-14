@@ -11,7 +11,8 @@ def get_row_fields(cur, fix, severity="info", needs_review=False):
         "details": {}
     }
     res = _resolve_candidate_value(issue, cur, fix)
-    approved = _project_approved_new(issue, res)
+    # Boundary: pass hydrated current_value explicitly, not from issue dict
+    approved = _project_approved_new(issue, res, cur)
     dq = _classify_decision_quality(issue, res, approved)
     return approved, dq
 

@@ -102,16 +102,18 @@ def test_apply_rejects_unresolved_lookup_source_hash_sentinel(tmp_path: Path) ->
     assert runtime.metadata["apply_rejections"][0]["expected"] == "__UNRESOLVED_LOOKUP__"
 
 
-def test_apply_rejects_tampered_approved_new(tmp_path: Path) -> None:
+def test_apply_accepts_human_edited_approved_new(tmp_path: Path) -> None:
     runtime = _make_runtime(tmp_path)
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
     _write_review_queue(review_queue, [_review_row(approved_new="تم تحريرها يدويًا")])
 
     report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
 
-    assert report["summary"]["approved_rows_applied"] == 0
-    assert report["skipped"][0]["reason"] == "tampered_row_detected"
-    assert runtime.metadata["apply_rejections"][0]["reason"] == "tampered_row_detected"
+    assert report["summary"]["approved_rows_applied"] == 1
+    
+    # Verify the edited value actually landed
+    ar_data = json.loads((runtime.results_dir / "final.json").read_text(encoding="utf-8"))
+    assert ar_data["welcome"] == "تم تحريرها يدويًا"
 
 
 def test_apply_rejects_missing_required_fields(tmp_path: Path) -> None:
@@ -197,7 +199,8 @@ def test_apply_rejects_duplicate_application(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-1"),
-            _review_row(key="keep", current_value="كما هو", source_old_value="كما هو", source_hash=compute_text_hash("كما هو"), plan_id="plan-2"),
+            # An exact duplicate application of the exact same mutation
+            _review_row(plan_id="plan-2"), 
         ],
     )
 
@@ -205,7 +208,72 @@ def test_apply_rejects_duplicate_application(tmp_path: Path) -> None:
 
     reasons = [item["reason"] for item in report["skipped"]]
     assert "duplicate_application" in reasons
-    assert runtime.metadata["applied_suggestions"] == [compute_text_hash("مرحبا")]
+    # Should only apply once
+    assert report["summary"]["approved_rows_applied"] == 1
+    assert len(runtime.metadata["applied_suggestions"]) == 1
+
+
+def test_apply_deduplication_respects_mutation_identity(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    # Give the second key a legitimate base value so it doesn't fail the source hash check.
+    runtime.ar_file.write_text(json.dumps({"welcome": "اهلا", "keep": "كما هو", "welcome2": "كما هو"}), encoding="utf-8")
+    
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(
+        review_queue,
+        [
+            # Original application
+            _review_row(key="welcome", locale="ar", approved_new="مرحبا", plan_id="plan-1", suggested_hash="hash-1"),
+            # Different key, same exact machine suggestion -> NOT duplicate
+            _review_row(key="welcome2", locale="ar", approved_new="مرحبا", source_old_value="كما هو", source_hash=compute_text_hash("كما هو"), current_value="كما هو", plan_id="plan-2", suggested_hash="hash-1"),
+        ],
+    )
+
+    # First run: welcome matches and welcome2 with same text also goes through perfectly.
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+    assert report["summary"]["approved_rows_applied"] == 2
+    
+    # Second run simulation: Same key, different human text -> NOT duplicate (refinement)
+    queue2 = runtime.results_dir / "review" / "review_queue2.xlsx"
+    _write_review_queue(
+        queue2,
+        [
+            # Refinement on the same key
+            _review_row(key="welcome", locale="ar", approved_new="مرحبا بك", plan_id="plan-3", suggested_hash="hash-1"),
+        ],
+    )
+    
+    report2 = run_apply(runtime, queue2, out_final_json=str(runtime.results_dir / "final.json"))
+    assert report2["summary"]["approved_rows_applied"] == 1
+    assert "duplicate_application" not in [item["reason"] for item in report2["skipped"]]
+
+
+def test_apply_deduplication_allows_historical_reapplication_after_regression(tmp_path: Path) -> None:
+    runtime = _make_runtime(tmp_path)
+    
+    # Run 1: Apply original mutation successfully
+    queue1 = runtime.results_dir / "review" / "review_queue1.xlsx"
+    _write_review_queue(queue1, [_review_row(key="welcome", locale="ar", approved_new="مرحبا بك", plan_id="plan-1")])
+    report1 = run_apply(runtime, queue1, out_final_json=str(runtime.results_dir / "final1.json"))
+    assert report1["summary"]["approved_rows_applied"] == 1
+    assert len(runtime.metadata["applied_suggestions"]) == 1
+
+    # Regression: The file reverts back to original buggy state
+    runtime.ar_file.write_text(json.dumps({"welcome": "اهلا", "keep": "كما هو"}), encoding="utf-8")
+
+    # Run 2: Re-apply exactly the same mutation on a new queue (with valid source hashes)
+    queue2 = runtime.results_dir / "review" / "review_queue2.xlsx"
+    _write_review_queue(queue2, [_review_row(key="welcome", locale="ar", approved_new="مرحبا بك", plan_id="plan-2")])
+    
+    report2 = run_apply(runtime, queue2, out_final_json=str(runtime.results_dir / "final2.json"))
+    
+    # The historical run should NOT block the re-application
+    assert report2["summary"]["approved_rows_applied"] == 1
+    assert "duplicate_application" not in [item["reason"] for item in report2["skipped"]]
+    
+    # Metadata should still accurately trace both applied identities over time (or just keep growing if using a set isn't deduplicating the store list itself)
+    trace_store = runtime.metadata["applied_suggestions"]
+    assert len(set(trace_store)) >= 1  # Verify historical store is still being populated
 
 
 def test_apply_skips_non_approved_final_rows_with_explicit_reason(tmp_path: Path) -> None:
@@ -231,7 +299,8 @@ def test_apply_accepts_valid_row(tmp_path: Path) -> None:
     payload = json.loads(out_final.read_text(encoding="utf-8"))
     assert report["summary"]["approved_rows_applied"] == 1
     assert payload["welcome"] == "مرحبا"
-    assert runtime.metadata["applied_suggestions"] == [compute_text_hash("مرحبا")]
+    assert len(runtime.metadata["applied_suggestions"]) == 1
+    assert runtime.metadata["applied_suggestions"][0].startswith("welcome|ar|")
 
 
 def test_apply_rejects_stale_row(tmp_path: Path) -> None:
@@ -253,7 +322,6 @@ def test_apply_records_all_rejections_in_metadata(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-missing", current_value=""),
-            _review_row(plan_id="plan-tampered", approved_new="تم تحريرها يدويًا"),
             _review_row(plan_id="plan-stale", source_hash=compute_text_hash("قيمة قديمة")),
         ],
     )
@@ -263,7 +331,6 @@ def test_apply_records_all_rejections_in_metadata(tmp_path: Path) -> None:
     reasons = [item["reason"] for item in runtime.metadata["apply_rejections"]]
     assert reasons == [
         "missing_required_fields",
-        "tampered_row_detected",
         "source_hash_mismatch",
     ]
 
@@ -275,7 +342,7 @@ def test_apply_trace_contains_applied_and_skipped_rows(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-applied"),
-            _review_row(plan_id="plan-skipped", approved_new="تم تحريرها يدويًا"),
+            _review_row(plan_id="plan-skipped", source_hash="invalid_hash_for_skip"),
         ],
     )
 
@@ -284,7 +351,7 @@ def test_apply_trace_contains_applied_and_skipped_rows(tmp_path: Path) -> None:
     assert report["trace"] == runtime.metadata["apply_trace"]
     assert [entry["status"] for entry in report["trace"]] == ["applied", "skipped"]
     assert report["trace"][0]["reason"] is None
-    assert report["trace"][1]["reason"] == "tampered_row_detected"
+    assert report["trace"][1]["reason"] == "source_hash_mismatch"
 
 
 def test_apply_trace_order_is_deterministic(tmp_path: Path) -> None:
@@ -294,7 +361,7 @@ def test_apply_trace_order_is_deterministic(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-1"),
-            _review_row(plan_id="plan-2", approved_new="تم تحريرها يدويًا"),
+            _review_row(plan_id="plan-2", source_hash="invalid_hash_2"),
             _review_row(plan_id="plan-3", source_hash=compute_text_hash("قيمة قديمة")),
         ],
     )
@@ -312,7 +379,7 @@ def test_apply_trace_consistency_with_report_views(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-applied"),
-            _review_row(plan_id="plan-skipped", approved_new="تم تحريرها يدويًا"),
+            _review_row(plan_id="plan-skipped", source_hash="invalid_hash_skip"),
         ],
     )
 
@@ -360,8 +427,8 @@ def test_all_trace_entries_have_context(tmp_path: Path) -> None:
     _write_review_queue(
         review_queue,
         [
-            _review_row(),
-            _review_row(approved_new="تم تحريرها يدويًا"),
+            _review_row(plan_id="plan-1"),
+            _review_row(plan_id="plan-2", key="keep", current_value="كما هو", source_old_value="كما هو", source_hash=compute_text_hash("كما هو")),
         ],
     )
 

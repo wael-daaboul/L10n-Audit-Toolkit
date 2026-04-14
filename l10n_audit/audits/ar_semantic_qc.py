@@ -266,7 +266,7 @@ if __name__ == "__main__":
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
 
-def run_stage(runtime, options) -> list:
+def run_stage(runtime, options, *, en_data: dict | None = None, ar_data: dict | None = None) -> list:
     """Run AR semantic QC and return a list of :class:`AuditIssue`."""
     import logging
     from l10n_audit.models import issue_from_dict
@@ -276,8 +276,15 @@ def run_stage(runtime, options) -> list:
     )
 
     logger = logging.getLogger("l10n_audit.ar_semantic_qc")
-    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
-    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+
+    if en_data is None or ar_data is None:
+        logger.warning(
+            "Deprecation: ar_semantic_qc invoked without paired canonical state. "
+            "Falling back to legacy internal lookup."
+        )
+        ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+        en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+
     usage_data = scan_code_usage(
         runtime.code_dirs, runtime.usage_patterns, runtime.allowed_extensions,
         profile=runtime.project_profile, locale_format=runtime.locale_format,

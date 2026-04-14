@@ -49,7 +49,7 @@ def test_queue_materialization_output_inspection():
     }
     
     res = _resolve_candidate_value(issue, issue["current_value"], issue["suggested_fix"])
-    approved = _project_approved_new(issue, res)
+    approved = _project_approved_new(issue, res, issue["current_value"])
     quality = _classify_decision_quality(issue, res, approved)
     
     # Final "Row" inspection

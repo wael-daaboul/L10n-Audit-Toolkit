@@ -125,6 +125,9 @@ def build_human_review_queue(review_rows: list[dict[str, Any]]) -> list[dict[str
                 "key": str(row.get("key", "") or ""),
                 "locale": str(row.get("locale", "") or ""),
                 "issue_type": str(row.get("issue_type", "") or ""),
+                # Boundary: 'current_value' in the human workbook is intentionally sourced
+                # from 'old_value' \u2014 which holds the Stage-3-hydrated live locale value.
+                # This rename is deliberate: humans see the "current" value, not the internal field name.
                 "current_value": str(row.get("old_value", "") or ""),
                 "candidate_value": str(row.get("suggested_fix", "") or ""),
                 "status": str(row.get("status", "") or ""),
@@ -449,7 +452,7 @@ _NEEDS_REVIEW_TRUTHY = {"true", "yes", "1"}
 _HIGH_SEVERITY = {"high", "critical"}
 
 
-def _project_approved_new(issue: dict, resolution: dict) -> str:
+def _project_approved_new(issue: dict, resolution: dict, current_value: str = "") -> str:
     """Pure projection helper: decide whether approved_new should be auto-filled.
 
     Returns the projected approved value string, or "" when human review is required.
@@ -497,10 +500,10 @@ def _project_approved_new(issue: dict, resolution: dict) -> str:
         if mode == "suggested_fix":
             candidate = str(resolution.get("candidate_value", "") or "").strip()
             if candidate:
-                # Robustly find the current value for comparison
-                current = str(issue.get("current_value") or issue.get("old_value") or 
-                             (issue.get("details", {}) or {}).get("old") or "")
-                if _is_low_risk_fix(current, candidate):
+                # Boundary: use the Stage-3-hydrated current_value passed explicitly.
+                # Do NOT read issue.get("current_value") — that field is Stage-3-owned
+                # and may be absent or stale on the raw issue dict.
+                if _is_low_risk_fix(current_value, candidate):
                     return candidate
 
     except Exception:
@@ -788,7 +791,7 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         resolution = _resolve_candidate_value(issue, current_value, suggested_fix)
         resolved_fix = resolution["candidate_value"]
         notes_token = resolution["notes_token"]
-        projected_approved_new = _project_approved_new(issue, resolution)
+        projected_approved_new = _project_approved_new(issue, resolution, current_value)
         decision = _classify_decision_quality(issue, resolution, projected_approved_new)
         decision_token = decision["decision_token"]
 
@@ -1366,19 +1369,21 @@ def merge_issues_in_memory(issues: list[dict[str, Any]]) -> list[dict[str, Any]]
             ).strip()
 
             if sugg:
+                # Boundary: reporting layer owns suggestion and suggested_fix only.
+                # Do NOT set approved_new here — that is Apply-layer territory.
+                # fix_merger.py handles the approved_new fallback from candidate_value (line 625).
                 base_issue["suggestion"] = sugg
                 base_issue["suggested_fix"] = sugg
-                base_issue["approved_new"] = sugg # Critical for direct application
-                
-                logger.info("Extracted translation from '%s' field for key '%s'", 
+
+                logger.info("Extracted translation from '%s' field for key '%s'",
                     "suggestion" if ai_item.get("suggestion") else "other", key)
-                
+
                 # Critical for apply-review: Use Hashes from AI item
                 if ai_item.get("source_hash"):
                     base_issue["source_hash"] = ai_item["source_hash"]
                 if ai_item.get("suggested_hash"):
                     base_issue["suggested_hash"] = ai_item["suggested_hash"]
-                
+
                 logger.info("Applied AI suggestion to '%s' for key '%s'.", base_issue.get("issue_type"), key)
                 if "ai_merged" not in str(base_issue.get("provenance", "")):
                     base_issue["provenance"] = (base_issue.get("provenance", "") + "|ai_merged").strip("|")

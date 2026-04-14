@@ -31,10 +31,28 @@ Intentionally NOT mapped
 * ``current_value``   — owned exclusively by Stage 3 hydration; never emitted here.
 * ``source_old_value`` — canonical field; not touched in this slice.
 
-Non-core fields
----------------
-Fields that are not part of the normalised contract surface are preserved verbatim
-in ``_raw_metadata`` so that no detection metadata is silently lost.
+Field ownership contract (system-wide)
+---------------------------------------
+The following table documents which layer OWNS each field. No layer may write
+a field it does not own, and no layer may read another layer's field as
+authoritative input.
+
++------------------+---------------------------+
+| Field            | Owner                     |
++==================+===========================+
+| detected_value   | Adapter (from audit `old`)|
+| candidate_value  | Adapter (from audit `new`)|
+| current_value    | Stage 3 hydration ONLY    |
+| suggested_fix    | Reporting layer           |
+| approved_new     | Apply layer ONLY          |
+| metadata         | Audit module              |
++------------------+---------------------------+
+
+Violations to avoid:
+- Adapter must not emit ``current_value``
+- Reporting layer must not set ``approved_new`` (use ``suggested_fix`` instead)
+- Model construction (``issue_from_dict``) must not infer ``approved_new`` from ``suggestion``
+- Apply layer must not bypass ``_project_approved_new`` by reading raw issue fields
 """
 
 from __future__ import annotations

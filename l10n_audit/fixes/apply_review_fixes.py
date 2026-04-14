@@ -230,6 +230,12 @@ def _get_applied_suggestions_store(runtime: object) -> list[str]:
     return []
 
 
+def _mutation_identity(key: str, locale: str, approved_new: str) -> str:
+    """Derive the deterministic identity of the final human-approved mutation."""
+    from l10n_audit.core.audit_runtime import compute_text_hash
+    return f"{key}|{locale}|{compute_text_hash(approved_new)}"
+
+
 def _build_apply_trace_entry(
     row: dict,
     *,
@@ -269,24 +275,13 @@ def _build_rejection_decision_context(
             "current_value": runtime_value,
             "source_old_value": str(row.get("source_old_value", "")),
         }
-    if reason == "tampered_row_detected":
+    if reason == "duplicate_application":
+        key = str(row.get("key", ""))
+        locale = str(row.get("locale", ""))
         approved_new = str(row.get("approved_new", ""))
         return {
-            "approved_new": approved_new,
-            "suggested_hash": str(row.get("suggested_hash", "")),
-            "actual_hash": compute_text_hash(approved_new),
-        }
-    if reason == "duplicate_application":
-        return {
-            "suggested_hash": str(row.get("suggested_hash", "")),
+            "mutation_identity": _mutation_identity(key, locale, approved_new) if key and locale and approved_new else "",
             "already_applied_hashes": list(applied_suggestions_store),
-        }
-    if reason == "suggested_hash_mismatch":
-        candidate_value = str(row.get("candidate_value", ""))
-        return {
-            "suggested_hash": str(row.get("suggested_hash", "")),
-            "actual_hash": compute_text_hash(candidate_value),
-            "candidate_value": candidate_value,
         }
     return {}
 
@@ -325,15 +320,6 @@ def _validate_apply_row(
     if approved_new is None:
         rejection = _record_apply_rejection(runtime, row, "missing_required_fields", missing_fields=["approved_new"])
         return None, rejection
-    if approved_new != candidate_value:
-        rejection = _record_apply_rejection(
-            runtime,
-            row,
-            "tampered_row_detected",
-            expected=candidate_value,
-            actual=approved_new,
-        )
-        return None, rejection
 
     runtime_value = _normalized_non_empty_string(current_value)
     if runtime_value is None:
@@ -351,18 +337,8 @@ def _validate_apply_row(
         )
         return None, rejection
 
-    actual_suggested_hash = compute_text_hash(candidate_value)
-    if actual_suggested_hash != suggested_hash:
-        rejection = _record_apply_rejection(
-            runtime,
-            row,
-            "suggested_hash_mismatch",
-            expected=suggested_hash,
-            actual=actual_suggested_hash,
-        )
-        return None, rejection
-
-    if suggested_hash in applied_suggestions:
+    mutation_id = _mutation_identity(key, locale, approved_new)
+    if mutation_id in applied_suggestions:
         rejection = _record_apply_rejection(runtime, row, "duplicate_application")
         return None, rejection
 
@@ -662,7 +638,9 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
     if hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
         runtime.metadata["apply_trace"] = apply_trace
     applied_suggestions_store = _get_applied_suggestions_store(runtime)
-    applied_suggestions = set(str(value) for value in applied_suggestions_store if isinstance(value, str))
+    # Deduplication is scoped to the current run only (intra-queue duplicates)
+    # and does not inherit historical metadata blocking.
+    applied_suggestions: set[str] = set()
     
     seen_keys = {} # (key, locale) -> approved_val
     current_en = load_locale_mapping(runtime.en_file, runtime, "en") if runtime.en_file.exists() else {}
@@ -777,9 +755,10 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
         else:
             review_fixes_ar[key] = approved_val
 
-        applied_suggestions.add(suggested_hash)
-        if suggested_hash not in applied_suggestions_store:
-            applied_suggestions_store.append(suggested_hash)
+        mutation_id = _mutation_identity(key, locale, approved_val)
+        applied_suggestions.add(mutation_id)
+        if mutation_id not in applied_suggestions_store:
+            applied_suggestions_store.append(mutation_id)
             
         applied_meta.append({
             "key": key,

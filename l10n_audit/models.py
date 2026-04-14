@@ -199,7 +199,7 @@ def issue_from_dict(raw: dict[str, Any]) -> AuditIssue:
         line=raw.get("line"),
         suggestion=str(raw.get("suggestion") or ""),
         suggested_fix=str(raw.get("suggested_fix") or raw.get("suggestion") or ""),
-        approved_new=str(raw.get("approved_new") or raw.get("suggestion") or ""),
+        approved_new=str(raw.get("approved_new") or ""),  # Boundary: Apply-layer field — must NOT fall back from 'suggestion' (bypasses safety gate)
         source=str(raw.get("source") or ""),
         target=str(raw.get("target") or raw.get("current_translation") or ""),
         needs_review=bool(raw.get("needs_review", False)),

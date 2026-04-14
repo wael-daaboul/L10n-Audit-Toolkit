@@ -211,7 +211,7 @@ def chunk_issues(issues, batch_size=50):
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
 
-def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> list:
+def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_data: dict | None = None, ar_data: dict | None = None) -> list:
     """Run AI review stage and return a list of :class:`AuditIssue`.
 
     Parameters
@@ -221,6 +221,10 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
         Defaults to the production LiteLLM provider.
     previous_issues:
         Optional list of issues from previous stages in the same run.
+    en_data:
+        Optional pre-hydrated canonical EN locale dict (Phase B injection).
+    ar_data:
+        Optional pre-hydrated canonical AR locale dict (Phase B injection).
     """
     import os
     import time
@@ -258,8 +262,13 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None) -> li
     if not all_issues:
         return []
 
-    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
-    ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
+    if en_data is None or ar_data is None:
+        logger.warning(
+            "Deprecation: ai_review invoked without paired canonical state. "
+            "Falling back to legacy internal lookup."
+        )
+        en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+        ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
 
     # Build batch with noise filtering
     flawed_keys: dict = {}

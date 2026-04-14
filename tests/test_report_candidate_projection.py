@@ -245,11 +245,13 @@ class TestProjectApprovedNew:
 
     def test_a7_whitespace_only_review_reason_does_not_block(self):
         issue = _clean_issue(current_value="حفظ", details={"semantic_risk": "", "review_reason": "   "})
-        assert _project_approved_new(issue, _safe_resolution("احفظ")) == "احفظ"
+        # Boundary: pass hydrated current_value explicitly
+        assert _project_approved_new(issue, _safe_resolution("احفظ"), issue["current_value"]) == "احفظ"
 
     def test_a8_safe_suggested_fix_projects_approval(self):
         issue = _clean_issue(current_value="حفظ")
-        result = _project_approved_new(issue, _safe_resolution("احفظ")) # Dist 1 (a-)
+        # Boundary: pass hydrated current_value explicitly
+        result = _project_approved_new(issue, _safe_resolution("احفظ"), issue["current_value"]) # Dist 1 (a-)
         assert result == "احفظ"
 
     @pytest.mark.parametrize("truthy_str", ["true", "yes", "1", "True", "YES"])

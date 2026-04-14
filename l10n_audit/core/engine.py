@@ -42,19 +42,19 @@ def _run_l10n_audit_pro(runtime, options: AuditOptions) -> list[AuditIssue]:
     return run_stage(runtime, options)
 
 
-def _run_en_locale_qc(runtime, options: AuditOptions) -> list[AuditIssue]:
+def _run_en_locale_qc(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
     from l10n_audit.audits.en_locale_qc import run_stage
-    return run_stage(runtime, options)
+    return run_stage(runtime, options, en_data=data_stores.get("en"))
 
 
-def _run_ar_locale_qc(runtime, options: AuditOptions) -> list[AuditIssue]:
+def _run_ar_locale_qc(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
     from l10n_audit.audits.ar_locale_qc import run_stage
-    return run_stage(runtime, options)
+    return run_stage(runtime, options, en_data=data_stores.get("en"), ar_data=data_stores.get("ar"))
 
 
-def _run_ar_semantic_qc(runtime, options: AuditOptions) -> list[AuditIssue]:
+def _run_ar_semantic_qc(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
     from l10n_audit.audits.ar_semantic_qc import run_stage
-    return run_stage(runtime, options)
+    return run_stage(runtime, options, en_data=data_stores.get("en"), ar_data=data_stores.get("ar"))
 
 
 def _run_placeholder_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
@@ -62,24 +62,30 @@ def _run_placeholder_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
     return run_stage(runtime, options)
 
 
-def _run_terminology_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
+def _run_terminology_audit(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
     from l10n_audit.audits.terminology_audit import run_stage
-    return run_stage(runtime, options)
+    return run_stage(runtime, options, en_data=data_stores.get("en"), ar_data=data_stores.get("ar"))
 
 
-def _run_icu_message_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
+def _run_icu_message_audit(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
     from l10n_audit.audits.icu_message_audit import run_stage
-    return run_stage(runtime, options)
+    return run_stage(runtime, options, en_data=data_stores.get("en"), ar_data=data_stores.get("ar"))
+
 
 
 def _run_en_grammar_audit(runtime, options: AuditOptions) -> list[AuditIssue]:
     from l10n_audit.audits.en_grammar_audit import run_stage
     return run_stage(runtime, options)
 
+def _run_basic_consistency_audit(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
+    from l10n_audit.audits.basic_consistency_audit import run_stage
+    return run_stage(runtime, options, en_data=data_stores.get("en"), ar_data=data_stores.get("ar"))
 
-def _run_ai_review(runtime, options: AuditOptions, ai_provider=None, previous_issues=None) -> list[AuditIssue]:
+def _run_ai_review(runtime, options: AuditOptions, data_stores: dict | None = None, ai_provider=None, previous_issues=None) -> list[AuditIssue]:
     from l10n_audit.audits.ai_review import run_stage
-    return run_stage(runtime, options, ai_provider=ai_provider, previous_issues=previous_issues)
+    return run_stage(runtime, options, ai_provider=ai_provider, previous_issues=previous_issues,
+                     en_data=data_stores.get("en") if data_stores else None,
+                     ar_data=data_stores.get("ar") if data_stores else None)
 
 
 def _run_report_aggregator(runtime, options: AuditOptions, **kwargs) -> list[ReportArtifact]:
@@ -96,8 +102,19 @@ def _run_autofix(runtime, options: AuditOptions) -> list[AuditIssue]:
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-_FAST_SOURCES = "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders"
-_FULL_SOURCES = "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders,icu_message_audit,grammar"
+_FAST_SOURCES = "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders,basic_consistency"
+_FULL_SOURCES = "localization,locale_qc,ar_locale_qc,ar_semantic_qc,terminology,placeholders,icu_message_audit,grammar,basic_consistency"
+
+
+def _load_canonical_data_stores(runtime) -> dict[str, dict]:
+    """Phase B Consolidation: Centralize loaded locale mappings at the orchestrator level."""
+    from l10n_audit.core.audit_runtime import load_locale_mapping
+    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    ar_data = load_locale_mapping(
+        runtime.ar_file, runtime, 
+        runtime.target_locales[0] if runtime.target_locales else "ar"
+    )
+    return {"en": en_data, "ar": ar_data}
 
 
 def _dispatch_stage(
@@ -113,6 +130,9 @@ def _dispatch_stage(
     issues : list[AuditIssue]
     reports : list[ReportArtifact]
     """
+    # Phase B: Pre-hydrate explicit canonical state for the entire orchestration cycle
+    data_stores = _load_canonical_data_stores(runtime)
+
     issues: list[AuditIssue] = []
     reports: list[ReportArtifact] = []
 
@@ -161,17 +181,18 @@ def _dispatch_stage(
 
         _collect([
             ("L10n Pro", lambda: _run_l10n_audit_pro(runtime, options)),
-            ("EN Locale QC", lambda: _run_en_locale_qc(runtime, options)),
-            ("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options)),
-            ("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options)),
+            ("EN Locale QC", lambda: _run_en_locale_qc(runtime, options, data_stores)),
+            ("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options, data_stores)),
+            ("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options, data_stores)),
             ("Placeholders", lambda: _run_placeholder_audit(runtime, options)),
-            ("Terminology", lambda: _run_terminology_audit(runtime, options)),
+            ("Terminology", lambda: _run_terminology_audit(runtime, options, data_stores)),
+            ("Basic Consistency", lambda: _run_basic_consistency_audit(runtime, options, data_stores)),
         ])
         
         # Continuous Pipeline: If AI is enabled, run it BEFORE reporting so its findings are included
         current_sources = _FAST_SOURCES
         if options.ai_review.enabled:
-            _collect([("AI Review", lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))])
+            _collect([("AI Review", lambda: _run_ai_review(runtime, options, data_stores=data_stores, ai_provider=ai_provider, previous_issues=issues))])
             current_sources += ",ai_review"
 
         if options.write_reports:
@@ -189,19 +210,20 @@ def _dispatch_stage(
 
         _collect([
             ("L10n Pro", lambda: _run_l10n_audit_pro(runtime, options)),
-            ("EN Locale QC", lambda: _run_en_locale_qc(runtime, options)),
-            ("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options)),
-            ("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options)),
+            ("EN Locale QC", lambda: _run_en_locale_qc(runtime, options, data_stores)),
+            ("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options, data_stores)),
+            ("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options, data_stores)),
             ("Placeholders", lambda: _run_placeholder_audit(runtime, options)),
-            ("Terminology", lambda: _run_terminology_audit(runtime, options)),
-            ("ICU Messages", lambda: _run_icu_message_audit(runtime, options)),
+            ("Terminology", lambda: _run_terminology_audit(runtime, options, data_stores)),
+            ("ICU Messages", lambda: _run_icu_message_audit(runtime, options, data_stores)),
             ("EN Grammar", lambda: _run_en_grammar_audit(runtime, options)),
+            ("Basic Consistency", lambda: _run_basic_consistency_audit(runtime, options, data_stores)),
         ])
             
         # Continuous Pipeline: If AI is enabled, run it BEFORE reporting so its findings are included
         current_sources = _FULL_SOURCES
         if options.ai_review.enabled:
-            _collect([("AI Review", lambda: _run_ai_review(runtime, options, ai_provider=ai_provider, previous_issues=issues))])
+            _collect([("AI Review", lambda: _run_ai_review(runtime, options, data_stores=data_stores, ai_provider=ai_provider, previous_issues=issues))])
             current_sources += ",ai_review"
 
         if options.write_reports:
@@ -213,19 +235,19 @@ def _dispatch_stage(
         _collect([("EN Grammar", lambda: _run_en_grammar_audit(runtime, options))])
 
     elif stage == "terminology":
-        _collect([("Terminology", lambda: _run_terminology_audit(runtime, options))])
+        _collect([("Terminology", lambda: _run_terminology_audit(runtime, options, data_stores))])
 
     elif stage == "placeholders":
         _collect([("Placeholders", lambda: _run_placeholder_audit(runtime, options))])
 
     elif stage == "ar-qc":
-        _collect([("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options))])
+        _collect([("AR Locale QC", lambda: _run_ar_locale_qc(runtime, options, data_stores))])
 
     elif stage == "ar-semantic":
-        _collect([("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options))])
+        _collect([("AR Semantic QC", lambda: _run_ar_semantic_qc(runtime, options, data_stores))])
 
     elif stage == "icu":
-        _collect([("ICU Messages", lambda: _run_icu_message_audit(runtime, options))])
+        _collect([("ICU Messages", lambda: _run_icu_message_audit(runtime, options, data_stores))])
 
     elif stage == "reports":
         if options.output.results_dir:
@@ -240,7 +262,7 @@ def _dispatch_stage(
         if not options.ai_review.enabled:
             logger.info("AI Review is disabled. Set ai_review.enabled: true in config.")
         else:
-             _collect([("AI Review", lambda: _run_ai_review(runtime, options, ai_provider=ai_provider))])
+             _collect([("AI Review", lambda: _run_ai_review(runtime, options, data_stores=data_stores, ai_provider=ai_provider))])
 
     else:
         # Fallback for unknown stages or stages handled differently

@@ -11,6 +11,7 @@ QUEUE_COLUMNS = [
     "issue_type",
     "current_value",
     "candidate_value",
+    "approved_new",
     "status",
     "review_note",
     "source_old_value",
@@ -64,6 +65,45 @@ def test_prepare_apply_happy_path(tmp_path: Path) -> None:
     assert rows[0]["suggested_hash"] == compute_text_hash("مرحبا")
 
 
+def test_prepare_apply_rejects_divergent_human_edits(tmp_path: Path) -> None:
+    queue = tmp_path / "review_queue.xlsx"
+    final = tmp_path / "review_final.xlsx"
+    report = tmp_path / "rejection_report.json"
+    # Provide candidate_value and approved_new that differ
+    _write_queue(queue, [_queue_row(candidate_value="أهلًا بك", approved_new="مرحبا", suggested_hash=compute_text_hash("مرحبا"))])
+
+    prepare_apply_workbook(queue, final, report)
+    payload = _read_json(report)
+
+    assert payload["summary"]["accepted_rows"] == 0
+    assert payload["rejections"][0]["reason_code"] == "divergent_human_edits"
+    assert payload["rejections"][0]["details"]["candidate_value"] == "أهلًا بك"
+    assert payload["rejections"][0]["details"]["approved_new"] == "مرحبا"
+
+
+def test_prepare_apply_accepts_fallback_combinations(tmp_path: Path) -> None:
+    queue = tmp_path / "review_queue.xlsx"
+    final = tmp_path / "review_final.xlsx"
+    report = tmp_path / "rejection_report.json"
+    
+    _write_queue(queue, [
+        # 1: Only candidate_value
+        _queue_row(key="k1", candidate_value="hello", approved_new=""),
+        # 2: Only approved_new
+        _queue_row(key="k2", candidate_value="", approved_new="hello"),
+        # 3: Both populated and matching
+        _queue_row(key="k3", candidate_value="hello", approved_new="hello"),
+    ])
+
+    prepare_apply_workbook(queue, final, report)
+    rows = read_simple_xlsx(final, required_columns=REVIEW_FINAL_COLUMNS)
+    
+    assert len(rows) == 3
+    assert rows[0]["approved_new"] == "hello"
+    assert rows[1]["approved_new"] == "hello"
+    assert rows[2]["approved_new"] == "hello"
+
+
 def test_prepare_apply_rejects_pending_rows(tmp_path: Path) -> None:
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"
@@ -79,16 +119,16 @@ def test_prepare_apply_rejects_pending_rows(tmp_path: Path) -> None:
     assert payload["rejections"][0]["reason_code"] == "invalid_status_for_freeze"
 
 
-def test_prepare_apply_rejects_empty_candidate_value(tmp_path: Path) -> None:
+def test_prepare_apply_rejects_missing_final_text(tmp_path: Path) -> None:
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"
     report = tmp_path / "rejection_report.json"
-    _write_queue(queue, [_queue_row(candidate_value="", suggested_hash=compute_text_hash(""))])
+    _write_queue(queue, [_queue_row(candidate_value="", approved_new="", suggested_hash=compute_text_hash(""))])
 
     prepare_apply_workbook(queue, final, report)
     payload = _read_json(report)
 
-    assert payload["rejections"][0]["reason_code"] == "candidate_value_empty"
+    assert payload["rejections"][0]["reason_code"] == "missing_final_text"
 
 
 def test_prepare_apply_rejects_source_old_value_current_value_mismatch(tmp_path: Path) -> None:
@@ -171,3 +211,29 @@ def test_prepare_apply_mixed_rows_accepts_only_valid_rows(tmp_path: Path) -> Non
         "invalid_status_for_freeze",
         "source_hash_mismatch",
     }
+
+
+def test_prepare_apply_accepts_human_edited_candidate_value(tmp_path: Path) -> None:
+    queue = tmp_path / "review_queue.xlsx"
+    final = tmp_path / "review_final.xlsx"
+    report = tmp_path / "rejection_report.json"
+    
+    # Original machine suggestion was "مرحبا", human edited it to "مرحبا بك"
+    # suggested_hash still points to "مرحبا", simulating a realistic edit where hashes drift.
+    _write_queue(queue, [_queue_row(candidate_value="مرحبا بك", suggested_hash=compute_text_hash("مرحبا"))])
+
+    payload = prepare_apply_workbook(queue, final, report)
+    rows = read_simple_xlsx(final, required_columns=REVIEW_FINAL_COLUMNS)
+
+    assert payload["summary"]["accepted_rows"] == 1
+    assert payload["summary"]["rejected_rows"] == 0
+    assert len(rows) == 1
+    
+    # ensure candidate_value mutation was gracefully accepted and passed through
+    assert rows[0]["candidate_value"] == "مرحبا بك"
+    assert rows[0]["approved_new"] == "مرحبا بك"
+    assert rows[0]["suggested_hash"] == compute_text_hash("مرحبا")
+
+
+
+

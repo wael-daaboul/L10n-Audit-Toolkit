@@ -254,7 +254,7 @@ if __name__ == "__main__":
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
 
-def run_stage(runtime, options) -> list:
+def run_stage(runtime, options, *, en_data: dict | None = None) -> list:
     """Run the EN locale QC audit and return a list of :class:`AuditIssue`."""
     import logging
     import re
@@ -262,7 +262,13 @@ def run_stage(runtime, options) -> list:
 
     logger = logging.getLogger("l10n_audit.en_locale_qc")
 
-    en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    if en_data is None:
+        logger.warning(
+            "Deprecation: en_locale_qc invoked without canonical en_data. "
+            "Falling back to legacy internal lookup."
+        )
+        en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+
     ar_data = load_locale_mapping(
         runtime.ar_file, runtime,
         runtime.target_locales[0] if runtime.target_locales else "ar",
