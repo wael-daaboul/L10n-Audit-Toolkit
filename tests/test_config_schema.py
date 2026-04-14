@@ -10,8 +10,8 @@ def test_valid_config_schema(fixtures_dir: Path, tools_dir: Path) -> None:
     assert errors == []
 
 
-@pytest.mark.skip(reason="Schema refactored")
 def test_invalid_config_schema(fixtures_dir: Path, tools_dir: Path) -> None:
-    payload = load_json(fixtures_dir / "config" / "invalid_config.json")
+    payload = load_json(fixtures_dir / "config" / "valid_config.json")
+    payload["target_locales"] = "ar"  # must be an array per schema
     errors = validate_schema(payload, tools_dir / "schemas" / "config.schema.json")
     assert errors

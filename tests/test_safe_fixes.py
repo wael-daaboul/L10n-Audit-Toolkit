@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from l10n_audit.core.audit_runtime import AuditRuntimeError, compute_text_hash, read_simple_xlsx, write_simple_xlsx
-from l10n_audit.fixes.fix_merger import export_review_queue, validate_review_row
+from l10n_audit.fixes.fix_merger import export_review_queue, prepare_apply_workbook, validate_review_row
 from l10n_audit.fixes.apply_review_fixes import main as review_main
 from l10n_audit.fixes.apply_safe_fixes import add_direct_locale_safety_pass, apply_safe_changes, build_fix_plan, main
 
@@ -722,6 +722,8 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
         target_locales=("ar",),
     )
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    review_final = runtime.results_dir / "review" / "review_final.xlsx"
+    rejection_report = runtime.results_dir / ".cache" / "apply" / "rejection_report.json"
     source_old_value = "اهلا"
     approved_new = "مرحبا"
     write_simple_xlsx(
@@ -734,6 +736,7 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "suggested_fix": "Welcome",
                 "approved_new": approved_new,
                 "status": "approved",
+                "review_note": "",
                 "source_old_value": source_old_value,
                 "source_hash": compute_text_hash(source_old_value),
                 "suggested_hash": compute_text_hash(approved_new),
@@ -750,9 +753,9 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "suggested_fix": "",
                 "approved_new": "",
                 "status": "pending",
+                "review_note": "",
                 "current_value": "كما هو",
                 "candidate_value": "",
-                "notes": "",
                 "source_old_value": "كما هو",
                 "source_hash": compute_text_hash("كما هو"),
                 "suggested_hash": compute_text_hash(""),
@@ -760,10 +763,11 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
                 "generated_at": "2026-03-08T00:00:00+00:00",
             },
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "review_note", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
+    freeze_report = prepare_apply_workbook(review_queue, review_final, rejection_report)
 
     monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
     monkeypatch.setattr(
@@ -771,7 +775,7 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
         [
             "apply_review_fixes.py",
             "--review-queue",
-            str(review_queue),
+            str(review_final),
             "--out-final-json",
             str(runtime.results_dir / "final_locale" / "ar.final.json"),
             "--out-report",
@@ -783,13 +787,15 @@ def test_apply_review_fixes_uses_approved_rows(monkeypatch, tmp_path: Path) -> N
 
     final_payload = json.loads((runtime.results_dir / "final_locale" / "ar.final.json").read_text(encoding="utf-8"))
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
+    assert freeze_report["summary"]["accepted_rows"] == 1
+    assert freeze_report["summary"]["rejected_rows"] == 1
     assert final_payload["welcome"] == "مرحبا"
     assert final_payload["keep"] == "كما هو"
     assert report_payload["summary"]["approved_rows_applied"] == 1
-    assert report_payload["summary"]["approved_rows_skipped"] == 1
+    assert report_payload["summary"]["approved_rows_skipped"] == 0
 
 
-def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monkeypatch, tmp_path: Path) -> None:
+def test_apply_review_fixes_preserves_multiline_and_normalizes_surrounding_whitespace(monkeypatch, tmp_path: Path) -> None:
     en_file = tmp_path / "en.json"
     ar_file = tmp_path / "ar.json"
     source_old = "قديم"
@@ -808,6 +814,8 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
         target_locales=("ar",),
     )
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    review_final = runtime.results_dir / "review" / "review_final.xlsx"
+    rejection_report = runtime.results_dir / ".cache" / "apply" / "rejection_report.json"
     write_simple_xlsx(
         [
             {
@@ -818,9 +826,9 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
                 "suggested_fix": approved_new,
                 "approved_new": approved_new,
                 "status": "approved",
+                "review_note": "",
                 "current_value": source_old,
                 "candidate_value": approved_new,
-                "notes": "",
                 "source_old_value": source_old,
                 "source_hash": compute_text_hash(source_old),
                 "suggested_hash": compute_text_hash(approved_new),
@@ -828,15 +836,17 @@ def test_apply_review_fixes_preserves_multiline_and_surrounding_whitespace(monke
                 "generated_at": "2026-03-08T00:00:00+00:00",
             }
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "review_note", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
+    freeze_report = prepare_apply_workbook(review_queue, review_final, rejection_report)
     monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
-    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
+    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_final), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
+    assert freeze_report["summary"]["accepted_rows"] == 1
     final_payload = json.loads((runtime.results_dir / "final_locale" / "ar.final.json").read_text(encoding="utf-8"))
-    assert final_payload["welcome"] == approved_new
+    assert final_payload["welcome"] == "Error:\n%s"
 
 
 def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None:
@@ -856,6 +866,8 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
         target_locales=("ar",),
     )
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    review_final = runtime.results_dir / "review" / "review_final.xlsx"
+    rejection_report = runtime.results_dir / ".cache" / "apply" / "rejection_report.json"
     write_simple_xlsx(
         [
             {
@@ -866,9 +878,9 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
                 "suggested_fix": "مرحبا",
                 "approved_new": "مرحبا",
                 "status": "approved",
+                "review_note": "",
                 "current_value": "اهلا",
                 "candidate_value": "مرحبا",
-                "notes": "",
                 "source_old_value": "اهلا",
                 "source_hash": compute_text_hash("اهلا"),
                 "suggested_hash": compute_text_hash("مرحبا"),
@@ -876,13 +888,15 @@ def test_apply_review_fixes_skips_stale_row(monkeypatch, tmp_path: Path) -> None
                 "generated_at": "2026-03-08T00:00:00+00:00",
             }
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "review_note", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
+    freeze_report = prepare_apply_workbook(review_queue, review_final, rejection_report)
     monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
-    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
+    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_final), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
+    assert freeze_report["summary"]["accepted_rows"] == 1
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
     assert report_payload["summary"]["approved_rows_applied"] == 0
     assert report_payload["skipped"][0]["reason"] == "source_hash_mismatch"
@@ -905,13 +919,15 @@ def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, 
         target_locales=("ar",),
     )
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    review_final = runtime.results_dir / "review" / "review_final.xlsx"
+    rejection_report = runtime.results_dir / ".cache" / "apply" / "rejection_report.json"
     base_fields = {
         "key": "welcome",
         "locale": "ar",
         "old_value": "اهلا",
         "issue_type": "confirmed_missing_key",
         "status": "approved",
-        "notes": "",
+        "review_note": "",
         "current_value": "اهلا",
         "source_old_value": "اهلا",
         "source_hash": compute_text_hash("اهلا"),
@@ -922,13 +938,15 @@ def test_apply_review_fixes_rejects_duplicate_and_conflicting_rows(monkeypatch, 
             {**base_fields, "suggested_fix": "مرحبا", "candidate_value": "مرحبا", "approved_new": "مرحبا", "suggested_hash": compute_text_hash("مرحبا"), "plan_id": "plan-a"},
             {**base_fields, "suggested_fix": "أهلًا", "candidate_value": "أهلًا", "approved_new": "أهلًا", "suggested_hash": compute_text_hash("أهلًا"), "plan_id": "plan-b"},
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "review_note", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
+    freeze_report = prepare_apply_workbook(review_queue, review_final, rejection_report)
     monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
-    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
+    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_final), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
     review_main()
+    assert freeze_report["summary"]["accepted_rows"] == 2
     report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
     reasons = {item["reason"] for item in report_payload["skipped"]}
     assert "conflicting_approved_rows" in reasons
@@ -963,7 +981,7 @@ def test_apply_review_fixes_rejects_malformed_row(monkeypatch, tmp_path: Path) -
         review_main()
 
 
-def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) -> None:
+def test_prepare_apply_rejects_divergent_manual_approved_new(tmp_path: Path) -> None:
     en_file = tmp_path / "en.json"
     ar_file = tmp_path / "ar.json"
     _write_json(en_file, {"welcome": "Welcome"})
@@ -980,6 +998,8 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
         target_locales=("ar",),
     )
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    review_final = runtime.results_dir / "review" / "review_final.xlsx"
+    rejection_report = runtime.results_dir / ".cache" / "apply" / "rejection_report.json"
     write_simple_xlsx(
         [
             {
@@ -990,9 +1010,9 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
                 "suggested_fix": "مرحبا",
                 "approved_new": "تم تحريرها يدويًا",
                 "status": "approved",
+                "review_note": "",
                 "current_value": "اهلا",
                 "candidate_value": "مرحبا",
-                "notes": "",
                 "source_old_value": "اهلا",
                 "source_hash": compute_text_hash("اهلا"),
                 "suggested_hash": compute_text_hash("مرحبا"),
@@ -1000,12 +1020,11 @@ def test_apply_review_fixes_skips_manual_hash_edit(monkeypatch, tmp_path: Path) 
                 "generated_at": "2026-03-08T00:00:00+00:00",
             }
         ],
-        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "notes", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
+        ["key", "locale", "old_value", "issue_type", "suggested_fix", "approved_new", "status", "review_note", "current_value", "candidate_value", "source_old_value", "source_hash", "suggested_hash", "plan_id", "generated_at"],
         review_queue,
         sheet_name="Review Queue",
     )
-    monkeypatch.setattr("l10n_audit.fixes.apply_review_fixes.load_runtime", lambda _script_path: runtime)
-    monkeypatch.setattr("sys.argv", ["apply_review_fixes.py", "--review-queue", str(review_queue), "--out-final-json", str(runtime.results_dir / "final_locale" / "ar.final.json"), "--out-report", str(runtime.results_dir / "final_locale" / "review_fixes_report.json")])
-    review_main()
-    report_payload = json.loads((runtime.results_dir / "final_locale" / "review_fixes_report.json").read_text(encoding="utf-8"))
-    assert report_payload["skipped"][0]["reason"] == "tampered_row_detected"
+    freeze_report = prepare_apply_workbook(review_queue, review_final, rejection_report)
+    assert freeze_report["summary"]["accepted_rows"] == 0
+    assert freeze_report["summary"]["rejected_rows"] == 1
+    assert freeze_report["rejections"][0]["reason_code"] == "divergent_human_edits"
