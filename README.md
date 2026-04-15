@@ -2,17 +2,18 @@
 
 Automated localization auditing, validation, and repair — built for real-world production pipelines.
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
+[![Version](https://img.shields.io/badge/version-1.7.0-blue.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 [![Architecture](https://img.shields.io/badge/Architecture-Universal-green.svg)](https://github.com/wael-daaboul/L10n-Audit-Toolkit)
 
 ---
 
-## 🚀 What’s New in v1.4
+## 🚀 What’s New in v1.7.0
 
-- Cleaner outputs (less noise)
-- Single source of truth (audit_master.json)
-- Safer apply workflow (no data drift)
-- Improved performance and clarity
+- Canonical-state migration and lookup-elimination work completed across the workflow.
+- Review/freeze/apply contract hardened with explicit frozen-artifact enforcement.
+- Human editing path clarified: `review_queue.xlsx` is editable, `review_final.xlsx` is execution-only.
+- Deduplication and divergence handling tightened for deterministic same-run behavior.
+- Format-boundary cleanup, extensibility proof, and full test-suite closure completed.
 
 ---
 
@@ -133,7 +134,7 @@ For explicit adaptive configuration changes, the toolkit uses a separate manual 
 
 ---
 
-## 🧠 Decision Quality Layer (v1.6.0)
+## 🧠 Decision Quality Layer
 
 The toolkit now includes a production-ready Decision Quality layer that is:
 

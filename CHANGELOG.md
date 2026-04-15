@@ -1,5 +1,18 @@
 # Changelog
 
+## [v1.7.0] — Workflow Hardening & Closure
+
+### Completed
+- Canonical-state and lookup-elimination migration finalized across core audit/apply flows.
+- Review/apply workflow hardened end-to-end (`review_queue.xlsx` -> `prepare-apply` -> `review_final.xlsx` -> `apply`).
+- Human-edit contract aligned so editable review fields remain flexible while immutable identity fields stay protected.
+- Deduplication corrected to final-mutation identity with per-run duplicate protection (no historical lockout behavior).
+- Format-boundary cleanup and extensibility proof completed for current JSON / Laravel PHP scope.
+- Final test-suite closure completed, including unresolved failure/skip cleanup.
+
+### Notes
+- Release target remains `1.x` by design; `2.0.0` is reserved for broader future format/project-type expansion.
+
 ## [v1.6.0] — Final Decision Intelligence Closure
 
 ### Added
