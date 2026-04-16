@@ -13,6 +13,9 @@ from typing import Dict, Optional, Any, List
 from l10n_audit.core.locale_exporters.exporter_factory import export_locale_mapping
 from l10n_audit.core.locale_loaders.loader_factory import load_locale_mapping
 from l10n_audit.core.audit_runtime import read_simple_xlsx, write_json, write_simple_xlsx, compute_text_hash
+from l10n_audit.core.hydration_result import UNRESOLVED_LOOKUP_SOURCE_HASH
+from l10n_audit.core.source_identity import canonical_source_guard_enabled, compute_canonical_source_hash
+from l10n_audit.core.source_hash_diagnostics import emit_source_hash_compare
 
 logger = logging.getLogger("l10n_audit.fixes")
 
@@ -452,6 +455,7 @@ def _validate_prepare_apply_row(
     *,
     allowed_plan_ids: frozenset[str] | None = None,
     machine_index: Dict[tuple, Dict[str, Any]] | None = None,
+    diagnostics_results_dir: Path | None = None,
 ) -> tuple[Dict[str, str] | None, Dict[str, Any] | None]:
     """
     Validate a single row for promotion into review_final.xlsx.
@@ -600,8 +604,33 @@ def _validate_prepare_apply_row(
             },
         )
 
+    canonical_guard_on = canonical_source_guard_enabled()
+    source_guard_mode = "canonical" if canonical_guard_on else "raw"
     expected_source_hash = compute_text_hash(normalized["current_value"])
-    if expected_source_hash != normalized["source_hash"]:
+    canonical_expected_source_hash = compute_canonical_source_hash(normalized["source_old_value"])
+    canonical_actual_source_hash = compute_canonical_source_hash(normalized["current_value"])
+    raw_hash_match = expected_source_hash == normalized["source_hash"]
+    canonical_hash_match = canonical_actual_source_hash == canonical_expected_source_hash
+    authoritative_hash_match = canonical_hash_match if canonical_guard_on else raw_hash_match
+    emit_source_hash_compare(
+        phase="prepare_apply",
+        carrier="workbook.current_value",
+        key=normalized["key"],
+        locale=normalized["locale"],
+        plan_id=normalized["plan_id"],
+        row_index=row_index,
+        value=normalized["current_value"],
+        stored_source_hash=normalized["source_hash"],
+        actual_source_hash=expected_source_hash,
+        canonical_stored_source_hash=canonical_expected_source_hash,
+        canonical_actual_source_hash=canonical_actual_source_hash,
+        canonical_hash_match=canonical_hash_match,
+        source_guard_mode=source_guard_mode,
+        authoritative_hash_kind=source_guard_mode,
+        authoritative_hash_match=authoritative_hash_match,
+        results_dir=diagnostics_results_dir,
+    )
+    if normalized["source_hash"] == UNRESOLVED_LOOKUP_SOURCE_HASH:
         return None, _prepare_apply_rejection(
             row_index,
             row,
@@ -609,10 +638,28 @@ def _validate_prepare_apply_row(
             {
                 "expected_source_hash": expected_source_hash,
                 "actual_source_hash": normalized["source_hash"],
+                "source_guard_mode": source_guard_mode,
+                "canonical_expected_source_hash": canonical_expected_source_hash,
+                "canonical_actual_source_hash": canonical_actual_source_hash,
+            },
+        )
+
+    if not authoritative_hash_match:
+        return None, _prepare_apply_rejection(
+            row_index,
+            row,
+            "source_hash_mismatch",
+            {
+                "expected_source_hash": expected_source_hash,
+                "actual_source_hash": normalized["source_hash"],
+                "source_guard_mode": source_guard_mode,
+                "canonical_expected_source_hash": canonical_expected_source_hash,
+                "canonical_actual_source_hash": canonical_actual_source_hash,
             },
         )
 
     final_approved_text = approved_new_raw if approved_new_raw else candidate_val
+    frozen_source_hash = normalized["source_hash"] if canonical_guard_on else expected_source_hash
 
     return {
         "key": normalized["key"],
@@ -624,7 +671,7 @@ def _validate_prepare_apply_row(
         "status": "approved",
         "review_note": normalized["review_note"],
         "source_old_value": normalized["source_old_value"],
-        "source_hash": expected_source_hash,
+        "source_hash": frozen_source_hash,
         "suggested_hash": normalized["suggested_hash"],
         "plan_id": normalized["plan_id"],
         "generated_at": normalized["generated_at"],
@@ -751,6 +798,7 @@ def prepare_apply_workbook(
             row, idx,
             allowed_plan_ids=allowed_plan_ids,
             machine_index=machine_index,
+            diagnostics_results_dir=out_final_path.parent.parent,
         )
         if rejection is not None:
             rejections.append(rejection)

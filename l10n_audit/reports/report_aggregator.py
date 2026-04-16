@@ -34,6 +34,7 @@ from l10n_audit.core.hydration_result import (
     TERMINAL_LOOKUP_STATUSES,
     UNRESOLVED_LOOKUP_SOURCE_HASH,
 )
+from l10n_audit.core.source_hash_diagnostics import emit_source_hash_compare
 
 REVIEW_PROJECTION_COLUMNS = [
     "key",
@@ -780,6 +781,16 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             )
         current_value = _hydration.result.current_value if _hydration.result.current_value is not None else ""
         source_hash = _hydration.result.source_hash
+        emit_source_hash_compare(
+            phase="run_review_queue_build",
+            carrier="hydration.current_value",
+            key=key,
+            locale=locale,
+            value=current_value,
+            stored_source_hash=source_hash,
+            actual_source_hash=compute_text_hash(current_value),
+            results_dir=getattr(runtime, "results_dir", None),
+        )
         message = str(issue.get("message", ""))
         source = str(issue.get("source", ""))
         severity = str(issue.get("severity", ""))

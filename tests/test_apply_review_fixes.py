@@ -315,6 +315,123 @@ def test_apply_rejects_stale_row(tmp_path: Path) -> None:
     assert report["skipped"][0]["reason"] == "source_hash_mismatch"
 
 
+def test_apply_flag_off_rejects_runtime_lf_crlf_drift(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    runtime = _make_runtime(tmp_path)
+    _write_json(runtime.ar_file, {"welcome": "line1\r\nline2", "keep": "كما هو"})
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(
+        review_queue,
+        [
+            _review_row(
+                source_old_value="line1\nline2",
+                current_value="line1\nline2",
+                source_hash=compute_text_hash("line1\nline2"),
+            )
+        ],
+    )
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 0
+    assert report["skipped"][0]["reason"] == "source_hash_mismatch"
+
+
+def test_apply_flag_off_rejects_runtime_nfc_nfd_drift(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    runtime = _make_runtime(tmp_path)
+    nfc = "Café"
+    nfd = "Cafe\u0301"
+    _write_json(runtime.ar_file, {"welcome": nfd, "keep": "كما هو"})
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(
+        review_queue,
+        [
+            _review_row(
+                source_old_value=nfc,
+                current_value=nfc,
+                source_hash=compute_text_hash(nfc),
+            )
+        ],
+    )
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 0
+    assert report["skipped"][0]["reason"] == "source_hash_mismatch"
+
+
+def test_apply_flag_on_accepts_runtime_lf_crlf_drift(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", "1")
+    runtime = _make_runtime(tmp_path)
+    _write_json(runtime.ar_file, {"welcome": "line1\r\nline2", "keep": "كما هو"})
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(
+        review_queue,
+        [
+            _review_row(
+                source_old_value="line1\nline2",
+                current_value="line1\nline2",
+                source_hash=compute_text_hash("line1\nline2"),
+            )
+        ],
+    )
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 1
+    assert report["summary"]["approved_rows_skipped"] == 0
+
+
+def test_apply_flag_on_accepts_runtime_nfc_nfd_drift(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", "1")
+    runtime = _make_runtime(tmp_path)
+    nfc = "Café"
+    nfd = "Cafe\u0301"
+    _write_json(runtime.ar_file, {"welcome": nfd, "keep": "كما هو"})
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(
+        review_queue,
+        [
+            _review_row(
+                source_old_value=nfc,
+                current_value=nfc,
+                source_hash=compute_text_hash(nfc),
+            )
+        ],
+    )
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 1
+    assert report["summary"]["approved_rows_skipped"] == 0
+
+
+def test_apply_flag_on_rejects_true_semantic_mutation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", "1")
+    runtime = _make_runtime(tmp_path)
+    _write_json(runtime.ar_file, {"welcome": "different semantic text", "keep": "كما هو"})
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(review_queue, [_review_row(source_old_value="اهلا", current_value="اهلا", source_hash=compute_text_hash("اهلا"))])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 0
+    assert report["skipped"][0]["reason"] == "source_hash_mismatch"
+
+
+def test_apply_flag_on_unchanged_control_passes(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", "1")
+    runtime = _make_runtime(tmp_path)
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(review_queue, [_review_row()])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 1
+    assert report["summary"]["approved_rows_skipped"] == 0
+
+
 def test_apply_records_all_rejections_in_metadata(tmp_path: Path) -> None:
     runtime = _make_runtime(tmp_path)
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"

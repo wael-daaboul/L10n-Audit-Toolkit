@@ -155,6 +155,54 @@ def test_prepare_apply_rejects_source_hash_mismatch(tmp_path: Path) -> None:
     assert payload["rejections"][0]["reason_code"] == "source_hash_mismatch"
 
 
+def test_prepare_apply_flag_off_rejects_edge_whitespace_drift(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    queue = tmp_path / "review_queue.xlsx"
+    final = tmp_path / "review_final.xlsx"
+    report = tmp_path / "rejection_report.json"
+    _write_queue(
+        queue,
+        [
+            _queue_row(
+                current_value="1 من",
+                source_old_value="1 من",
+                source_hash=compute_text_hash(" 1 من "),
+            )
+        ],
+    )
+
+    prepare_apply_workbook(queue, final, report)
+    payload = _read_json(report)
+
+    assert payload["summary"]["accepted_rows"] == 0
+    assert payload["rejections"][0]["reason_code"] == "source_hash_mismatch"
+
+
+def test_prepare_apply_flag_on_accepts_edge_whitespace_drift(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", "1")
+    queue = tmp_path / "review_queue.xlsx"
+    final = tmp_path / "review_final.xlsx"
+    report = tmp_path / "rejection_report.json"
+    _write_queue(
+        queue,
+        [
+            _queue_row(
+                current_value="1 من",
+                source_old_value="1 من",
+                source_hash=compute_text_hash(" 1 من "),
+            )
+        ],
+    )
+
+    payload = prepare_apply_workbook(queue, final, report)
+    rows = read_simple_xlsx(final, required_columns=REVIEW_FINAL_COLUMNS)
+
+    assert payload["summary"]["accepted_rows"] == 1
+    assert payload["summary"]["rejected_rows"] == 0
+    assert len(rows) == 1
+    assert rows[0]["source_hash"] == compute_text_hash(" 1 من ")
+
+
 def test_prepare_apply_rejects_unresolved_lookup_source_hash_sentinel(tmp_path: Path) -> None:
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"
@@ -233,7 +281,6 @@ def test_prepare_apply_accepts_human_edited_candidate_value(tmp_path: Path) -> N
     assert rows[0]["candidate_value"] == "مرحبا بك"
     assert rows[0]["approved_new"] == "مرحبا بك"
     assert rows[0]["suggested_hash"] == compute_text_hash("مرحبا")
-
 
 
 

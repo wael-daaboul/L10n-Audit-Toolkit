@@ -18,6 +18,9 @@ from l10n_audit.core.artifact_resolver import (
     resolve_master_path,
     resolve_review_final_path,
 )
+from l10n_audit.core.hydration_result import UNRESOLVED_LOOKUP_SOURCE_HASH
+from l10n_audit.core.source_identity import canonical_source_guard_enabled, compute_canonical_source_hash
+from l10n_audit.core.source_hash_diagnostics import emit_source_hash_compare
 from l10n_audit.fixes.fix_merger import FROZEN_ARTIFACT_TYPE_VALUE
 
 logger = logging.getLogger("l10n_audit.fixes")
@@ -201,6 +204,9 @@ def _record_apply_rejection(
     missing_fields: list[str] | None = None,
     expected: str | None = None,
     actual: str | None = None,
+    source_guard_mode: str | None = None,
+    canonical_expected: str | None = None,
+    canonical_actual: str | None = None,
 ) -> dict:
     rejection = {
         "key": str(row.get("key", "")),
@@ -213,6 +219,12 @@ def _record_apply_rejection(
         rejection["expected"] = expected
     if actual is not None:
         rejection["actual"] = actual
+    if source_guard_mode is not None:
+        rejection["source_guard_mode"] = source_guard_mode
+    if canonical_expected is not None:
+        rejection["canonical_expected"] = canonical_expected
+    if canonical_actual is not None:
+        rejection["canonical_actual"] = canonical_actual
     if runtime is not None and hasattr(runtime, "metadata") and isinstance(runtime.metadata, dict):
         runtime.metadata.setdefault("apply_rejections", []).append(rejection)
     else:
@@ -269,12 +281,19 @@ def _build_rejection_decision_context(
         }
     if reason == "source_hash_mismatch":
         runtime_value = str(current_value) if isinstance(current_value, str) else ""
-        return {
+        context = {
             "expected_source_hash": str(rejection.get("expected", row.get("source_hash", ""))),
             "actual_current_hash": str(rejection.get("actual", compute_text_hash(runtime_value) if runtime_value else "")),
             "current_value": runtime_value,
             "source_old_value": str(row.get("source_old_value", "")),
         }
+        if "source_guard_mode" in rejection:
+            context["source_guard_mode"] = str(rejection.get("source_guard_mode", ""))
+        if "canonical_expected" in rejection:
+            context["canonical_expected"] = str(rejection.get("canonical_expected", ""))
+        if "canonical_actual" in rejection:
+            context["canonical_actual"] = str(rejection.get("canonical_actual", ""))
+        return context
     if reason == "duplicate_application":
         key = str(row.get("key", ""))
         locale = str(row.get("locale", ""))
@@ -321,19 +340,89 @@ def _validate_apply_row(
         rejection = _record_apply_rejection(runtime, row, "missing_required_fields", missing_fields=["approved_new"])
         return None, rejection
 
+    canonical_guard_on = canonical_source_guard_enabled()
+    source_guard_mode = "canonical" if canonical_guard_on else "raw"
+    source_old_value = str(row.get("source_old_value", ""))
+    canonical_expected_source_hash = compute_canonical_source_hash(source_old_value)
+
     runtime_value = _normalized_non_empty_string(current_value)
     if runtime_value is None:
-        rejection = _record_apply_rejection(runtime, row, "source_hash_mismatch", expected=source_hash, actual="")
+        canonical_actual_source_hash = compute_canonical_source_hash("")
+        canonical_hash_match = canonical_actual_source_hash == canonical_expected_source_hash
+        emit_source_hash_compare(
+            phase="apply",
+            carrier="runtime.live_value",
+            key=key,
+            locale=locale,
+            plan_id=str(row.get("plan_id", "")),
+            value="",
+            stored_source_hash=source_hash,
+            actual_source_hash="",
+            canonical_stored_source_hash=canonical_expected_source_hash,
+            canonical_actual_source_hash=canonical_actual_source_hash,
+            canonical_hash_match=canonical_hash_match,
+            source_guard_mode=source_guard_mode,
+            authoritative_hash_kind=source_guard_mode,
+            authoritative_hash_match=canonical_hash_match if canonical_guard_on else False,
+            results_dir=getattr(runtime, "results_dir", None),
+        )
+        rejection = _record_apply_rejection(
+            runtime,
+            row,
+            "source_hash_mismatch",
+            expected=source_hash,
+            actual="",
+            source_guard_mode=source_guard_mode,
+            canonical_expected=canonical_expected_source_hash,
+            canonical_actual=canonical_actual_source_hash,
+        )
         return None, rejection
 
     actual_source_hash = compute_text_hash(runtime_value)
-    if actual_source_hash != source_hash:
+    canonical_actual_source_hash = compute_canonical_source_hash(runtime_value)
+    canonical_hash_match = canonical_actual_source_hash == canonical_expected_source_hash
+    raw_hash_match = actual_source_hash == source_hash
+    authoritative_hash_match = canonical_hash_match if canonical_guard_on else raw_hash_match
+    emit_source_hash_compare(
+        phase="apply",
+        carrier="runtime.live_value",
+        key=key,
+        locale=locale,
+        plan_id=str(row.get("plan_id", "")),
+        value=runtime_value,
+        stored_source_hash=source_hash,
+        actual_source_hash=actual_source_hash,
+        canonical_stored_source_hash=canonical_expected_source_hash,
+        canonical_actual_source_hash=canonical_actual_source_hash,
+        canonical_hash_match=canonical_hash_match,
+        source_guard_mode=source_guard_mode,
+        authoritative_hash_kind=source_guard_mode,
+        authoritative_hash_match=authoritative_hash_match,
+        results_dir=getattr(runtime, "results_dir", None),
+    )
+    if source_hash == UNRESOLVED_LOOKUP_SOURCE_HASH:
         rejection = _record_apply_rejection(
             runtime,
             row,
             "source_hash_mismatch",
             expected=source_hash,
             actual=actual_source_hash,
+            source_guard_mode=source_guard_mode,
+            canonical_expected=canonical_expected_source_hash,
+            canonical_actual=canonical_actual_source_hash,
+        )
+        return None, rejection
+
+    if not authoritative_hash_match:
+        rejection = _record_apply_rejection(
+            runtime,
+            row,
+            "source_hash_mismatch",
+            expected=source_hash,
+            actual=actual_source_hash,
+            source_guard_mode=source_guard_mode,
+            canonical_expected=canonical_expected_source_hash,
+            canonical_actual=canonical_actual_source_hash,
         )
         return None, rejection
 
