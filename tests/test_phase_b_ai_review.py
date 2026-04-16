@@ -129,6 +129,7 @@ def test_ai_review_fallback_logs_warn(tmp_path: Path, caplog):
             "key": "fallback_key",
             "issue_type": "ar_qc",
             "message": "Quality issue via fallback path.",
+            "context": "Settings description label",
             "severity": "warning",
             "decision": {"route": "ai_review", "confidence": 0.8, "risk": "low"},
         }

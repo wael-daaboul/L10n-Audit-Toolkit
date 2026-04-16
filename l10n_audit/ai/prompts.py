@@ -2,7 +2,7 @@ import json
 
 REVIEW_PROMPT = """
 You are a Localization (L10n) Expert for Mobile UIs and an Auto-Fixer.
-Your task is to fix translations based on identified issues and project rules.
+Your task is to review translation payloads and produce corrections based on project rules.
 
 STRICT RULES:
 1. Return JSON ONLY. Your response must be a parseable JSON object.
@@ -10,26 +10,33 @@ STRICT RULES:
 3. Strict Brevity: Mobile screens are small. If a short Arabic noun (e.g., 'العنوان') conveys the meaning of an English verb phrase (e.g., 'Add Address'), accept it as CORRECT. Do not demand imperative verbs for UI Labels.
 4. Smart Suggestions: Non-Arabic speaking developers rely on you. If a translation is semantically wrong, provide a highly accurate, context-aware Arabic `suggestion`. Do not use literal robotic translations.
 5. Respect the provided GLOSSARY. If a term is in the glossary, use it.
+6. Return EXACTLY one field named `translated_text` for the single payload item.
 
 Return format:
 {{
-  "fixes": [
-    {{
-      "key": "example_key",
-      "suggestion": "The improved translation",
-      "reason": "Short reason for the change"
-    }}
-  ]
+  "translated_text": "The improved translation"
 }}
+
+TARGET LOCALE:
+{locale}
 
 GLOSSARY:
 {glossary}
 
-ISSUES BATCH:
+INPUT CONTRACT (per item):
+- key
+- source_text
+- current_text
+- locale
+- placeholders
+- context
+- glossary
+
+INPUT PAYLOAD:
 {issues_json}
 """
 
-def get_review_prompt(batch_issues, glossary_terms=None):
+def get_review_prompt(batch_issues, glossary_terms=None, locale: str = "ar"):
     # Backward compatibility: if batch_issues is a string, treat as single source
     if isinstance(batch_issues, str):
         target_text = glossary_terms if isinstance(glossary_terms, str) else ""
@@ -46,8 +53,12 @@ def get_review_prompt(batch_issues, glossary_terms=None):
     if isinstance(glossary_terms, dict):
         glossary_items = []
         for term, details in glossary_terms.items():
-            translation = details.get("translation", "")
-            notes = details.get("notes", "")
+            if isinstance(details, dict):
+                translation = details.get("translation", "")
+                notes = details.get("notes", "")
+            else:
+                translation = str(details or "")
+                notes = ""
             glossary_items.append(f"- {term} -> {translation} ({notes})")
         if glossary_items:
             glossary_str = "\\n".join(glossary_items)
@@ -55,6 +66,7 @@ def get_review_prompt(batch_issues, glossary_terms=None):
     issues_json = json.dumps(batch_issues, ensure_ascii=False, indent=2)
     
     return REVIEW_PROMPT.format(
+        locale=locale,
         glossary=glossary_str,
         issues_json=issues_json
     )

@@ -105,6 +105,7 @@ def _make_previous_issues(key: str = "greeting") -> list[dict]:
             "issue_type": "ar_qc",
             "severity": "medium",
             "message": "Arabic text may need review.",
+            "context": "Home screen greeting label",
             "decision": {
                 "route": "ai_review",
                 "confidence": 0.7,

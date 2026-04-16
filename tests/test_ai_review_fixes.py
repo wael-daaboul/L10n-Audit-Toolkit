@@ -34,9 +34,17 @@ def test_run_stage_batching_sleep(mock_get_provider, mock_load_locale, mock_load
     
     options = AuditOptions(ai_review=AIReview(enabled=True, api_key_env="OPENAI_API_KEY", batch_size=20))
     
-    # Mock issues (more than 50 to trigger batching)
-    mock_load_issues.return_value = [{"key": f"k{i}", "message": "msg"} for i in range(55)]
-    mock_load_locale.return_value = {f"k{i}": "val" for i in range(55)}
+    # Mock issues (more than 50 to trigger batching) that satisfy invocation guard
+    mock_load_issues.return_value = [
+        {
+            "key": f"k{i}",
+            "issue_type": "semantic_mismatch",
+            "message": "Semantic quality issue detected in UI label",
+            "context": "Settings screen subtitle",
+        }
+        for i in range(55)
+    ]
+    mock_load_locale.return_value = {f"k{i}": "This is a semantic review sentence" for i in range(55)}
     
     mock_provider = MagicMock()
     mock_provider.review_batch.return_value = []
