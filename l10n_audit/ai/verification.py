@@ -314,6 +314,36 @@ def evaluate_semantic_acceptance(
     return {"status": status, "reason_codes": unique_codes, "details": details}
 
 
+def decide_ai_outcome(
+    semantic_status: str,
+    *,
+    has_existing_translation: bool,
+) -> dict[str, bool | str]:
+    """Deterministically map semantic gate output to execution behavior."""
+    normalized_status = str(semantic_status or "").strip().lower()
+    _ = bool(has_existing_translation)  # Context signal is explicit input for deterministic mapping.
+
+    if normalized_status == "accept":
+        return {
+            "decision": "safe",
+            "allow_apply": True,
+            "needs_review": False,
+        }
+
+    if normalized_status == "suspicious":
+        return {
+            "decision": "review",
+            "allow_apply": False,
+            "needs_review": True,
+        }
+
+    return {
+        "decision": "reject",
+        "allow_apply": False,
+        "needs_review": True,
+    }
+
+
 def check_placeholders(source, suggestion):
     """
     Checks if all placeholders in the source are present in the suggestion.
@@ -534,17 +564,21 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                 glossary=glossary,
                 placeholders=item_placeholders,
             )
-            if semantic_result["status"] == "reject":
+            outcome = decide_ai_outcome(
+                semantic_result["status"],
+                has_existing_translation=bool(target_text.strip() and target_text.strip() != "[MISSING]"),
+            )
+            if outcome["decision"] == "reject":
                 logging.debug(
                     "AI Suggestion for %s rejected by semantic gate: %s",
                     key, semantic_result["reason_codes"],
                 )
                 continue  # Discard this candidate safely
 
-            # suspicious → keep but surface reason codes for review routing
             verified_fixes.append({
                 "key": key,
-                "verified": True,
+                "verified": bool(outcome["allow_apply"]),
+                "needs_review": bool(outcome["needs_review"]),
                 "issue_type": "ai_suggestion",
                 "severity": "info",
                 "message": f"AI Suggestion: {fix.get('reason', '')}",
@@ -553,7 +587,9 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                 "target": target_text,
                 "suggestion": suggestion,
                 "extra": {
-                    "verified": True,
+                    "verified": bool(outcome["allow_apply"]),
+                    "needs_review": bool(outcome["needs_review"]),
+                    "ai_outcome_decision": str(outcome["decision"]),
                     "semantic_gate_status": semantic_result["status"],
                     "semantic_reason_codes": semantic_result["reason_codes"],
                 },
@@ -562,4 +598,3 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
             logging.debug(f"AI Suggestion for {key} rejected by verification: {failed}")
             
     return verified_fixes
-
