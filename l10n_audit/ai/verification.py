@@ -326,28 +326,18 @@ def decide_ai_outcome(
     share the same deterministic mapping.
     """
     normalized_status = str(semantic_status or "").strip().lower()
-    invocation_context = "repair" if has_existing_translation else "missing_translation"
-    _ = invocation_context  # reserved for deterministic context-aware policy evolution
-
-    if normalized_status == "accept":
-        return {
-            "decision": "safe",
-            "allow_apply": True,
-            "needs_review": False,
-        }
-
-    if normalized_status == "suspicious":
-        return {
-            "decision": "review",
-            "allow_apply": False,
-            "needs_review": True,
-        }
-
-    return {
-        "decision": "reject",
-        "allow_apply": False,
-        "needs_review": True,
+    mapping: dict[tuple[str, bool], dict[str, bool | str]] = {
+        ("accept", True): {"decision": "safe", "allow_apply": True, "needs_review": False},
+        ("accept", False): {"decision": "safe", "allow_apply": True, "needs_review": False},
+        ("suspicious", True): {"decision": "review", "allow_apply": False, "needs_review": True},
+        ("suspicious", False): {"decision": "review", "allow_apply": False, "needs_review": True},
+        ("reject", True): {"decision": "reject", "allow_apply": False, "needs_review": True},
+        ("reject", False): {"decision": "reject", "allow_apply": False, "needs_review": True},
     }
+    return mapping.get(
+        (normalized_status, bool(has_existing_translation)),
+        {"decision": "reject", "allow_apply": False, "needs_review": True},
+    )
 
 
 def check_placeholders(source, suggestion):
@@ -570,9 +560,13 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                 glossary=glossary,
                 placeholders=item_placeholders,
             )
+            target_text_stripped = target_text.strip()
+            has_valid_existing_translation = bool(
+                target_text_stripped and target_text_stripped != "[MISSING]"
+            )
             outcome = decide_ai_outcome(
                 semantic_result["status"],
-                has_existing_translation=bool(target_text.strip() and target_text.strip() != "[MISSING]"),
+                has_existing_translation=has_valid_existing_translation,
             )
             if outcome["decision"] == "reject":
                 logging.debug(
@@ -583,8 +577,8 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
 
             verified_fixes.append({
                 "key": key,
-                "verified": bool(outcome["allow_apply"]),
-                "needs_review": bool(outcome["needs_review"]),
+                "verified": outcome["allow_apply"],
+                "needs_review": outcome["needs_review"],
                 "issue_type": "ai_suggestion",
                 "severity": "info",
                 "message": f"AI Suggestion: {fix.get('reason', '')}",
@@ -593,8 +587,6 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                 "target": target_text,
                 "suggestion": suggestion,
                 "extra": {
-                    "verified": bool(outcome["allow_apply"]),
-                    "needs_review": bool(outcome["needs_review"]),
                     "ai_outcome_decision": str(outcome["decision"]),
                     "semantic_gate_status": semantic_result["status"],
                     "semantic_reason_codes": semantic_result["reason_codes"],
