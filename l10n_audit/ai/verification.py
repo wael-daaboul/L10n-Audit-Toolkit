@@ -319,9 +319,15 @@ def decide_ai_outcome(
     *,
     has_existing_translation: bool,
 ) -> dict[str, bool | str]:
-    """Deterministically map semantic gate output to execution behavior."""
+    """Deterministically map semantic gate output to execution behavior.
+
+    has_existing_translation explicitly captures invocation context
+    (repair vs. missing-translation flow) even when both paths currently
+    share the same deterministic mapping.
+    """
     normalized_status = str(semantic_status or "").strip().lower()
-    _ = bool(has_existing_translation)  # Context signal is explicit input for deterministic mapping.
+    invocation_context = "repair" if has_existing_translation else "missing_translation"
+    _ = invocation_context  # reserved for deterministic context-aware policy evolution
 
     if normalized_status == "accept":
         return {
