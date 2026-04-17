@@ -587,7 +587,7 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                 "target": target_text,
                 "suggestion": suggestion,
                 "extra": {
-                    "ai_outcome_decision": str(outcome["decision"]),
+                    "ai_outcome_decision": outcome["decision"],
                     "semantic_gate_status": semantic_result["status"],
                     "semantic_reason_codes": semantic_result["reason_codes"],
                 },
