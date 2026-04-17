@@ -387,6 +387,9 @@ def test_human_review_queue_is_not_projection_alias() -> None:
             "plan_id": "plan-1",
             "generated_at": "2026-03-08T00:00:00+00:00",
             "provenance": "grammar|grammar|medium",
+            # Phase 8: AI outcome visibility fields (additive)
+            "ai_outcome_decision": "",
+            "semantic_gate_status": "",
         }
     ]
 

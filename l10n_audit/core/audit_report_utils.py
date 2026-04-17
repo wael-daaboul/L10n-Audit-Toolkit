@@ -307,6 +307,32 @@ def normalize_icu_message_audit(payload: dict[str, Any]) -> list[dict[str, Any]]
     return issues
 
 
+_AI_REASON_CODE_TEXT: dict[str, str] = {
+    "semantic_concept_injection": "concept injection",
+    "semantic_polarity_mismatch": "polarity mismatch",
+    "semantic_number_mismatch": "number mismatch",
+    "semantic_named_entity_mismatch": "named entity mismatch",
+    "semantic_short_text_expansion": "short-string expansion",
+    "semantic_key_concept_loss": "key concept loss",
+    "semantic_intent_shift": "intent shift",
+}
+
+
+def _ai_semantic_review_reason(ai_outcome_decision: str, reason_codes: list) -> str:
+    """Build concise deterministic review_reason from AI outcome decision and semantic reason codes.
+
+    Returns a non-empty string only for suspicious/reject decisions, so that
+    safe candidates do not have a spurious review_reason that would block
+    auto-projection in ``_project_approved_new``.
+    """
+    if ai_outcome_decision not in ("review", "reject"):
+        return ""
+    readable = [_AI_REASON_CODE_TEXT.get(code, code) for code in (reason_codes or [])]
+    if readable:
+        return f"AI semantic review: {', '.join(readable)}"
+    return f"AI semantic review: {ai_outcome_decision}"
+
+
 def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     for row in payload.get("findings", []):
@@ -317,9 +343,45 @@ def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
             str(row.get("approved_new") or "") or
             str(row.get("suggested_fix") or "")
         ).strip()
-        
+
         old_val = str(row.get("source") or row.get("original_source") or row.get("source_old_value") or "")
-        
+
+        # --- Phase 8: Surface AI outcome decision fields ---
+        extra = row.get("extra") if isinstance(row.get("extra"), dict) else {}
+
+        # Propagate needs_review (bool) — used by _project_approved_new and
+        # _classify_decision_quality to block auto-apply for suspicious candidates.
+        needs_review_raw = row.get("needs_review")
+        if needs_review_raw is None:
+            needs_review_raw = extra.get("needs_review")
+        needs_review = bool(needs_review_raw) if needs_review_raw is not None else False
+
+        # Propagate verified (bool) — used by build_fix_plan to gate apply-eligibility.
+        verified_raw = row.get("verified")
+        if verified_raw is None:
+            verified_raw = extra.get("verified")
+        verified = bool(verified_raw) if verified_raw is not None else False
+
+        ai_outcome_decision = str(extra.get("ai_outcome_decision", "") or "")
+        semantic_gate_status = str(extra.get("semantic_gate_status", "") or "")
+        semantic_reason_codes = extra.get("semantic_reason_codes") if isinstance(
+            extra.get("semantic_reason_codes"), list
+        ) else []
+
+        # Build a human-readable review_reason for suspicious/reject decisions.
+        review_reason = _ai_semantic_review_reason(ai_outcome_decision, semantic_reason_codes)
+
+        # Enriched details: copy of the raw row plus the derived AI-outcome fields
+        # so that build_review_queue can pick them up via issue.get("details").
+        enriched_details: dict[str, Any] = {
+            **row,
+            "ai_outcome_decision": ai_outcome_decision,
+            "semantic_gate_status": semantic_gate_status,
+            "semantic_reason_codes": semantic_reason_codes,
+        }
+        if review_reason:
+            enriched_details["review_reason"] = review_reason
+
         issues.append(
             {
                 "source": "ai_review",
@@ -334,7 +396,12 @@ def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "source_old_value": old_val,
                 "source_hash": str(row.get("source_hash") or compute_text_hash(old_val)),
                 "suggested_hash": str(row.get("suggested_hash") or compute_text_hash(suggestion)),
-                "details": row,
+                # Phase 8: AI outcome decision fields surfaced at top-level
+                "verified": verified,
+                "needs_review": needs_review,
+                "ai_outcome_decision": ai_outcome_decision,
+                "semantic_gate_status": semantic_gate_status,
+                "details": enriched_details,
                 "provenance": str(row.get("provenance") or "ai_review|ai_suggestion"),
                 "recommendation": "Review AI suggestions for accuracy and fit before applying to your final translation set.",
             }
