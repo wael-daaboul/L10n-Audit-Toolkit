@@ -8,6 +8,7 @@ import re
 import json
 import concurrent.futures
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger("l10n_audit.ai_review")
 
@@ -207,6 +208,156 @@ def chunk_issues(issues, batch_size=50):
     for i in range(0, len(issues), batch_size):
         yield issues[i:i + batch_size]
 
+
+def _extract_context_text(issue: dict[str, Any]) -> str | None:
+    extra = issue.get("extra") if isinstance(issue.get("extra"), dict) else {}
+    decision = issue.get("decision") if isinstance(issue.get("decision"), dict) else {}
+    candidates = (
+        issue.get("context"),
+        issue.get("ui_context"),
+        issue.get("screen"),
+        issue.get("note"),
+        extra.get("context"),
+        decision.get("context"),
+    )
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\w+", text, flags=re.UNICODE))
+
+
+def _extract_placeholders_for_payload(source_text: str) -> list[str]:
+    from l10n_audit.core.audit_runtime import extract_placeholders
+
+    return sorted(extract_placeholders(source_text))
+
+
+def _build_glossary_translation_map(raw_glossary: dict[str, Any]) -> dict[str, str]:
+    """Flatten glossary terms to {english_term: approved_translation}."""
+    terms: dict[str, str] = {}
+    for item in raw_glossary.get("terms", []) if isinstance(raw_glossary, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        term_en = str(item.get("term_en", "")).strip()
+        approved_ar = str(item.get("approved_ar", "")).strip()
+        if term_en and approved_ar:
+            terms[term_en] = approved_ar
+    return terms
+
+
+def _relevant_glossary_for_source(source_text: str, glossary_map: dict[str, str]) -> dict[str, str]:
+    """Return only glossary entries that are relevant to this source string."""
+    if not source_text or not glossary_map:
+        return {}
+    lowered_source = source_text.lower()
+    matched: dict[str, str] = {}
+    for term_en, approved_ar in glossary_map.items():
+        if term_en.lower() in lowered_source:
+            matched[term_en] = approved_ar
+    return matched
+
+
+def _requires_semantic_repair(finding: dict[str, Any]) -> bool:
+    """Detect deterministic semantic-repair signals without consulting AI."""
+    if str(finding.get("route", "")).strip().lower() == "ai_review":
+        return True
+
+    issue_types = [str(it).lower() for it in finding.get("issue_types", []) if it]
+    issue_text = " ".join(
+        [
+            str(finding.get("identified_issue", "") or "").lower(),
+            str(finding.get("issue_type", "") or "").lower(),
+        ]
+    )
+    semantic_markers = (
+        "semantic",
+        "meaning",
+        "context",
+        "quality",
+        "needs_manual_review",
+        "manual_review",
+        "ar_qc",
+    )
+    if any(marker in issue_text for marker in semantic_markers):
+        return True
+    return any(any(marker in issue_type for marker in semantic_markers) for issue_type in issue_types)
+
+
+def should_invoke_ai(finding, context) -> bool:
+    """Deterministic gate for live AI invocation control."""
+    from l10n_audit.core.audit_runtime import is_likely_technical_text
+
+    source_text = str(finding.get("source_text", "") or "").strip()
+    current_text = finding.get("current_text")
+    issue_types = {str(it).strip().lower() for it in finding.get("issue_types", []) if str(it).strip()}
+    issue_type = str(finding.get("issue_type", "") or "").strip().lower()
+    if issue_type:
+        issue_types.add(issue_type)
+
+    # Hard block: empty or non-linguistic source does not benefit from AI.
+    if not source_text or is_likely_technical_text(source_text):
+        return False
+
+    no_ai_issue_types = {"formatting", "whitespace", "spacing", "punctuation", "placeholder-only"}
+    if issue_types.intersection(no_ai_issue_types) or any("placeholder" in it for it in issue_types):
+        return False
+
+    deterministic_issue_types = {"known_safe_replacement", "safe_normalization", "normalization"}
+    if issue_types.intersection(deterministic_issue_types):
+        return False
+
+    if str(finding.get("classification", "")).strip().lower() == "auto_safe":
+        return False
+
+    current_text_str = str(current_text or "").strip()
+    missing_translation = (
+        not current_text_str
+        or current_text_str == "[MISSING]"
+        or any(it.startswith("missing") for it in issue_types)
+        or "empty_ar" in issue_types
+    )
+    if missing_translation:
+        return True
+
+    glossary = finding.get("glossary") if isinstance(finding.get("glossary"), dict) else {}
+    has_context = bool(str(finding.get("context", "") or "").strip())
+    short_ambiguous_threshold = int(context.get("short_ambiguous_threshold", 4)) if isinstance(context, dict) else 4
+    if _word_count(source_text) <= short_ambiguous_threshold and not glossary and not has_context:
+        return False
+
+    return _requires_semantic_repair(finding)
+
+
+def _build_ai_input_payload(
+    finding: dict[str, Any],
+    *,
+    locale: str,
+    glossary_map: dict[str, str],
+) -> dict[str, Any]:
+    source_text = str(finding.get("original_source") or finding.get("source_text") or finding.get("source") or "")
+    current_text_raw = finding.get("current_translation")
+    current_text = None if current_text_raw is None else str(current_text_raw)
+    payload = {
+        "key": str(finding.get("key", "")),
+        "source_text": source_text,
+        "current_text": current_text,
+        "locale": locale,
+        "placeholders": _extract_placeholders_for_payload(source_text),
+        "context": finding.get("context"),
+        "glossary": _relevant_glossary_for_source(source_text, glossary_map),
+    }
+    return {
+        **finding,
+        **payload,
+        # Keep legacy fields so downstream verification/report paths remain unchanged.
+        "source": finding.get("source", source_text),
+        "current_translation": current_text or "",
+    }
+
 # ---------------------------------------------------------------------------
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
@@ -270,7 +421,16 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
         en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
         ar_data = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar")
 
-    # Build batch with noise filtering
+    # Load glossary once and keep both raw and normalized forms.
+    raw_glossary: dict[str, Any] = {}
+    try:
+        if getattr(runtime, "config_dir", None) and (runtime.config_dir / "glossary.json").exists():
+            raw_glossary = json.loads((runtime.config_dir / "glossary.json").read_text(encoding="utf-8"))
+    except Exception:
+        raw_glossary = {}
+    glossary_translation_map = _build_glossary_translation_map(raw_glossary)
+
+    # Build candidate batch with deterministic noise filtering
     flawed_keys: dict = {}
     technical_prefixes = ("config", "setup", "uuid", "error_code", "zone")
     technical_substr = ("_id", "_url")
@@ -316,8 +476,14 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             continue
 
         desc = issue.get("message") or issue.get("description") or issue.get("issue_type") or "Unknown issue"
+        issue_type = str(issue.get("issue_type", "")).strip().lower()
+        issue_context = _extract_context_text(issue)
         if k in flawed_keys:
             flawed_keys[k]["identified_issue"] += f" | {desc}"
+            if issue_type:
+                flawed_keys[k]["issue_types"].add(issue_type)
+            if issue_context and not flawed_keys[k].get("context"):
+                flawed_keys[k]["context"] = issue_context
         else:
             cleaned_src = preprocess_source_text(src)
             flawed_keys[k] = {
@@ -325,7 +491,12 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 "source": cleaned_src,
                 "original_source": src,
                 "current_translation": target,
-                "identified_issue": desc
+                "identified_issue": desc,
+                "issue_type": issue_type,
+                "issue_types": {issue_type} if issue_type else set(),
+                "context": issue_context,
+                "classification": str(issue.get("classification", "")),
+                "route": route,
             }
 
     # Add missing keys if translate_missing is enabled
@@ -341,10 +512,24 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                         "source": cleaned_v,
                         "original_source": v_str,
                         "current_translation": "[MISSING]",
-                        "identified_issue": "Missing translation (Auto-translate requested)"
+                        "identified_issue": "Missing translation (Auto-translate requested)",
+                        "issue_type": "missing_translation",
+                        "issue_types": {"missing_translation"},
+                        "context": None,
+                        "classification": "",
+                        "route": "ai_review",
                     }
 
-    batch_items = list(flawed_keys.values())
+    target_locale = runtime.target_locales[0] if runtime.target_locales else "ar"
+    invocation_context = {"short_ambiguous_threshold": 4}
+    batch_items = []
+    for item in flawed_keys.values():
+        payload = _build_ai_input_payload(item, locale=target_locale, glossary_map=glossary_translation_map)
+        payload["issue_types"] = sorted({str(it) for it in payload.get("issue_types", []) if str(it).strip()})
+        if should_invoke_ai(payload, invocation_context):
+            batch_items.append(payload)
+        else:
+            logger.debug("AI INVOCATION CONTROL: Skipping key='%s' due to deterministic guard.", payload.get("key"))
     
     if enforcer.enabled:
         logger.info("Routing Metrics [ai_review run_stage]: %s", enforcer.metrics.to_dict())
@@ -352,18 +537,6 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             
     if not batch_items:
         return []
-
-    # Load glossary
-    glossary_terms: dict = {}
-    try:
-        if getattr(runtime, "config_dir", None) and (runtime.config_dir / "glossary.json").exists():
-            import json as _json
-            glossary_data = _json.loads((runtime.config_dir / "glossary.json").read_text(encoding="utf-8"))
-            for t in glossary_data.get("terms", []):
-                if t.get("term_en") and t.get("approved_ar"):
-                    glossary_terms[t["term_en"]] = {"translation": t["approved_ar"], "notes": t.get("definition", "")}
-    except Exception:
-        pass
 
     # --- Phase 10: Conflict Resolution (Governance Layer) ---
     from l10n_audit.core.conflict_resolution import get_conflict_resolver, MutationRecord
@@ -389,15 +562,6 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
     all_fixes: list[dict] = []
     batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
     
-    # Load raw glossary for strict validation pass
-    raw_glossary = {}
-    try:
-        if (runtime.config_dir / "glossary.json").exists():
-             import json as _json
-             raw_glossary = _json.loads((runtime.config_dir / "glossary.json").read_text(encoding="utf-8"))
-    except Exception:
-        pass
-
     # Display interactive waiting message
     print("\n🚀 Sending review request to AI (Waiting for cloud response)...", end="", flush=True)
 
@@ -500,4 +664,3 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
         for r in normalised
     ]
     return [issue_from_dict(r) for r in normalized]
-

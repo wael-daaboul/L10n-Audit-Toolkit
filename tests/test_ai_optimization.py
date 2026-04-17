@@ -66,7 +66,7 @@ def test_ai_optimization_respects_routing(monkeypatch):
 
 
 def test_ai_fallback_without_decision(monkeypatch):
-    """Test fallback functionality: if an issue lacks 'decision', it defaults to 'ai_review'."""
+    """Issues without semantic/missing signals should not invoke AI even in fallback mode."""
     issues = [
         {"key": "k1"},  # Legacy data without decision key
         {"key": "k2", "decision": {}}, # Empty decision dict
@@ -77,11 +77,11 @@ def test_ai_fallback_without_decision(monkeypatch):
 
     run_stage(runtime, options, ai_provider=ai_provider, previous_issues=issues)
 
-    assert sorted(calls) == ["k1", "k2", "k3"]
+    assert calls == []
 
 
 def test_ai_routing_disabled_no_filter(monkeypatch):
-    """Test functionality when 'respect_routing' is disabled: All issues are routed to AI."""
+    """Routing disabled still honors invocation control, so only eligible issues call AI."""
     issues = [
         {"key": "k1", "decision": {"route": "ai_review"}},
         {"key": "k2", "decision": {"route": "auto_fix"}},
@@ -92,7 +92,7 @@ def test_ai_routing_disabled_no_filter(monkeypatch):
 
     run_stage(runtime, options, ai_provider=ai_provider, previous_issues=issues)
 
-    assert sorted(calls) == ["k1", "k2", "k3"]
+    assert sorted(calls) == ["k1"]
 
 
 def test_metrics(monkeypatch):

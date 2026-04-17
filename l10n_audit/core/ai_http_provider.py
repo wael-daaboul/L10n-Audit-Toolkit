@@ -20,8 +20,39 @@ class HttpAIProvider:
         """
         from l10n_audit.ai.prompts import get_review_prompt
         from l10n_audit.ai.verification import verify_batch_fixes
-        from l10n_audit.ai.provider import request_ai_review
 
+        def _is_structured_payload(item: dict) -> bool:
+            return {"key", "source_text", "current_text", "locale", "placeholders", "glossary"}.issubset(item.keys())
+
+        def _extract_translated_text(response: dict | None) -> str | None:
+            if not isinstance(response, dict):
+                return None
+            translated_text = response.get("translated_text")
+            if isinstance(translated_text, str) and translated_text.strip():
+                return translated_text.strip()
+            return None
+
+        if batch and all(_is_structured_payload(item) for item in batch):
+            fixes: list[dict] = []
+            for item in batch:
+                item_glossary = item.get("glossary", {}) if isinstance(item.get("glossary"), dict) else {}
+                prompt = get_review_prompt([item], item_glossary, locale=str(item.get("locale", "ar")))
+                response = request_ai_review(prompt, config, original_batch=[item], glossary=glossary)
+                translated_text = _extract_translated_text(response)
+                if translated_text is None:
+                    continue
+                fixes.append(
+                    {
+                        "key": item.get("key"),
+                        "suggestion": translated_text,
+                        "reason": "Structured AI translation",
+                    }
+                )
+            if not fixes:
+                return []
+            return verify_batch_fixes(batch, fixes, glossary=glossary)
+
+        # Legacy batch compatibility path.
         prompt = get_review_prompt(batch, {})
         response = request_ai_review(prompt, config, original_batch=batch, glossary=glossary)
         if response and "fixes" in response:
@@ -34,4 +65,3 @@ class HttpAIProvider:
         # Merge system prompt with batch prompt or handle separately
         # For now, we'll prefix the system prompt to the user prompt logic
         return request_ai_review(system_prompt, config or {})
-
