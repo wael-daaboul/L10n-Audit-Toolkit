@@ -14,6 +14,7 @@ Routing semantics validated:
 
 from __future__ import annotations
 
+import json
 import pytest
 
 from l10n_audit.core.audit_report_utils import (
@@ -28,8 +29,6 @@ from l10n_audit.reports.report_aggregator import build_review_queue
 # ---------------------------------------------------------------------------
 
 def _runtime(tmp_path):
-    import json
-
     rt = type(
         "Runtime",
         (),
