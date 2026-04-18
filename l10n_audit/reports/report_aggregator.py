@@ -57,6 +57,9 @@ REVIEW_PROJECTION_COLUMNS = [
     "plan_id",
     "generated_at",
     "provenance",
+    # Phase 8: AI outcome visibility fields (additive)
+    "ai_outcome_decision",
+    "semantic_gate_status",
 ]
 REVIEW_QUEUE_COLUMNS = REVIEW_PROJECTION_COLUMNS
 REVIEW_QUEUE_WORKBOOK_COLUMNS = [
@@ -753,7 +756,16 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
     for issue in issues:
-        if str(issue.get("severity", "")).lower() == "info":
+        _issue_source = str(issue.get("source", ""))
+        _issue_type_raw = str(issue.get("issue_type", "") or "")
+        _is_ai_suggestion = (
+            _issue_source in ("ai_review", "ai_suggestion")
+            or _issue_type_raw == "ai_suggestion"
+        )
+        # Phase 8: AI suggestions must pass through regardless of severity so
+        # their outcome decision (safe/review) remains visible in the review queue.
+        # Other info-severity issues continue to be suppressed.
+        if not _is_ai_suggestion and str(issue.get("severity", "")).lower() == "info":
             continue
 
         locale, _l_source = resolve_issue_locale(issue)
@@ -853,6 +865,14 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             rows_by_key[row_key] = _normalize_review_row(existing)
         else:
             resolved_notes = " | ".join(filter(None, [message, notes_token, decision_token]))
+            details_dict = issue.get("details", {}) or {}
+            # Phase 8: extract AI outcome decision fields for review visibility
+            _ai_outcome_decision = str(
+                issue.get("ai_outcome_decision", "") or details_dict.get("ai_outcome_decision", "")
+            )
+            _semantic_gate_status = str(
+                issue.get("semantic_gate_status", "") or details_dict.get("semantic_gate_status", "")
+            )
             new_row = {
                 "key": key,
                 "locale": locale,
@@ -863,11 +883,11 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "needs_review": "Yes" if issue.get("needs_review") or issue.get("severity") in ("critical", "high") else "No",
                 "status": "pending",
                 "notes": resolved_notes,
-                "context_type": str((issue.get("details", {}) or {}).get("context_type", "")),
-                "context_flags": str((issue.get("details", {}) or {}).get("context_flags", "")),
-                "semantic_risk": str((issue.get("details", {}) or {}).get("semantic_risk", "")),
-                "lt_signals": str((issue.get("details", {}) or {}).get("lt_signals", "")),
-                "review_reason": str((issue.get("details", {}) or {}).get("review_reason", "")),
+                "context_type": str(details_dict.get("context_type", "")),
+                "context_flags": str(details_dict.get("context_flags", "")),
+                "semantic_risk": str(details_dict.get("semantic_risk", "")),
+                "lt_signals": str(details_dict.get("lt_signals", "")),
+                "review_reason": str(details_dict.get("review_reason", "")),
                 "source_old_value": current_value,
                 "source_hash": source_hash,
                 "suggested_hash": compute_text_hash(resolved_fix),
@@ -876,6 +896,9 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 "provenance": f"{source}|{issue_type}|{severity}",
                 "_severity": str(issue.get("severity", "info")).lower(),
                 "_source": str(issue.get("source", "unknown")),
+                # Phase 8 visibility: AI outcome fields (additive, not in workbook columns)
+                "ai_outcome_decision": _ai_outcome_decision,
+                "semantic_gate_status": _semantic_gate_status,
             }
             rows_by_key[row_key] = _normalize_review_row(new_row)
 

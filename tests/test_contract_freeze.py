@@ -18,8 +18,8 @@ def _runtime():
     })()
 
 def test_exact_20_column_freeze():
-    # 1. Assert exactly 20 columns in the static contract
-    assert len(REVIEW_QUEUE_COLUMNS) == 20
+    # Phase 8: schema now has 22 columns (added ai_outcome_decision, semantic_gate_status)
+    assert len(REVIEW_QUEUE_COLUMNS) == 22
     
     # 2. Verify exact ordered parity of a representative materialized row
     issue = {
@@ -36,7 +36,7 @@ def test_exact_20_column_freeze():
         
         # EXACT PUBLIC column count and order check (Exclude internal metadata)
         actual_keys = [k for k in row.keys() if not k.startswith("_")]
-        assert len(actual_keys) == 20
+        assert len(actual_keys) == 22
         assert actual_keys == REVIEW_QUEUE_COLUMNS
 
 def test_json_xlsx_parity_readback(tmp_path):
@@ -71,7 +71,7 @@ def test_json_xlsx_parity_readback(tmp_path):
             all_rows = tree.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row')
             xlsx_row_count = len(all_rows) - 1
     
-    assert len(xlsx_headers) == 20
+    assert len(xlsx_headers) == 22
     assert xlsx_headers == REVIEW_QUEUE_COLUMNS
     assert xlsx_row_count == 1
     assert xlsx_headers == list(json_data[0].keys())

@@ -4,6 +4,7 @@ import unicodedata
 
 from l10n_audit.core.audit_runtime import compute_text_hash
 from l10n_audit.core.source_identity import (
+    _CANONICAL_SOURCE_GUARD_DISABLE_FLAG,
     canonical_source_guard_enabled,
     canonicalize_source_identity,
     compute_canonical_source_hash,
@@ -45,11 +46,22 @@ def test_compute_canonical_source_hash_hashes_canonical_value() -> None:
     assert compute_canonical_source_hash(raw) == compute_text_hash(canonical)
 
 
-def test_canonical_source_guard_flag_disabled_by_default(monkeypatch) -> None:
+def test_canonical_source_guard_enabled_by_default(monkeypatch) -> None:
+    # Phase 1 Completion: guard is ON by default — no env var needed.
     monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    monkeypatch.delenv(_CANONICAL_SOURCE_GUARD_DISABLE_FLAG, raising=False)
+    assert canonical_source_guard_enabled() is True
+
+
+def test_canonical_source_guard_disabled_by_disable_flag(monkeypatch) -> None:
+    # Escape hatch: set DISABLE flag to turn guard off for debugging.
+    monkeypatch.setenv(_CANONICAL_SOURCE_GUARD_DISABLE_FLAG, "1")
     assert canonical_source_guard_enabled() is False
 
 
 def test_canonical_source_guard_flag_enabled_truthy(monkeypatch) -> None:
+    # Old enable flag no longer controls the guard; guard is on by default.
+    # Confirm it doesn't accidentally disable the guard when the old var is set.
     monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", "1")
+    monkeypatch.delenv(_CANONICAL_SOURCE_GUARD_DISABLE_FLAG, raising=False)
     assert canonical_source_guard_enabled() is True

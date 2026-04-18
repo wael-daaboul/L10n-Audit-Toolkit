@@ -211,10 +211,13 @@ class TestSinglePlanConstraint:
         assert "plan-CURRENT" in rejection["details"]["allowed_plan_ids"]
 
     def test_stale_reason_code_is_distinguishable_from_hash_mismatch(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         """A stale-plan rejection must have a different reason_code than
         source_hash_mismatch so callers can distinguish them."""
+        # Use disable flag: in canonical mode source_hash alone is not
+        # authoritative, so we test in raw mode to exercise source_hash_mismatch.
+        monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
         queue = tmp_path / "q.xlsx"
         final = tmp_path / "f.xlsx"
         report_stale = tmp_path / "report_stale.json"

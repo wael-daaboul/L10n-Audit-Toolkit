@@ -143,7 +143,11 @@ def test_prepare_apply_rejects_source_old_value_current_value_mismatch(tmp_path:
     assert payload["rejections"][0]["reason_code"] == "source_value_mismatch"
 
 
-def test_prepare_apply_rejects_source_hash_mismatch(tmp_path: Path) -> None:
+def test_prepare_apply_rejects_source_hash_mismatch(tmp_path: Path, monkeypatch) -> None:
+    # In canonical mode (default), a wrong source_hash is not sufficient to
+    # cause source_hash_mismatch when source_old_value == current_value.
+    # This test uses the disable flag to verify raw-mode rejection behavior.
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"
     report = tmp_path / "rejection_report.json"
@@ -156,7 +160,7 @@ def test_prepare_apply_rejects_source_hash_mismatch(tmp_path: Path) -> None:
 
 
 def test_prepare_apply_flag_off_rejects_edge_whitespace_drift(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"
     report = tmp_path / "rejection_report.json"
@@ -236,7 +240,10 @@ def test_prepare_apply_is_idempotent(tmp_path: Path) -> None:
     assert first_report == second_report
 
 
-def test_prepare_apply_mixed_rows_accepts_only_valid_rows(tmp_path: Path) -> None:
+def test_prepare_apply_mixed_rows_accepts_only_valid_rows(tmp_path: Path, monkeypatch) -> None:
+    # Use disable flag so the raw source_hash mismatch is exercised as expected.
+    # In canonical mode the wrong-hash row would be accepted since source_old_value == current_value.
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
     queue = tmp_path / "review_queue.xlsx"
     final = tmp_path / "review_final.xlsx"
     report = tmp_path / "rejection_report.json"

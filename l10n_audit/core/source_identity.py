@@ -8,6 +8,9 @@ from l10n_audit.core.audit_runtime import compute_text_hash
 # v1: Keep edge trimming narrow to preserve NBSP and zero-width chars.
 _EDGE_TRIMMABLE_CHARS: frozenset[str] = frozenset({" ", "\t", "\n", "\r", "\f", "\v"})
 _CANONICAL_SOURCE_GUARD_FLAG = "L10N_AUDIT_CANONICAL_SOURCE_GUARD"
+# Phase 1 Completion: disable flag for debugging / backward investigation.
+# Setting this to a truthy value turns the guard OFF temporarily.
+_CANONICAL_SOURCE_GUARD_DISABLE_FLAG = "L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE"
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
@@ -37,5 +40,15 @@ def compute_canonical_source_hash(text: str) -> str:
 
 
 def canonical_source_guard_enabled() -> bool:
-    raw = str(os.environ.get(_CANONICAL_SOURCE_GUARD_FLAG, "")).strip().lower()
-    return raw in _TRUTHY
+    # Phase 1 Completion: canonical guard is ON by default.
+    # Canonical comparison prevents false source_hash_mismatch rejections caused
+    # by encoding drift (CRLF/LF, NFD/NFC, edge whitespace) between the plan
+    # time value and the runtime file value — while still rejecting true semantic
+    # mutations.
+    #
+    # To disable for debugging / backward investigation set:
+    #   L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE=1
+    disable_raw = str(os.environ.get(_CANONICAL_SOURCE_GUARD_DISABLE_FLAG, "")).strip().lower()
+    if disable_raw in _TRUTHY:
+        return False
+    return True

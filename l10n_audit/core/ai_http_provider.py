@@ -6,7 +6,12 @@ the :class:`~l10n_audit.core.ai_protocol.AIProvider` protocol.
 """
 from __future__ import annotations
 
+import logging
+
 from l10n_audit.ai.provider import request_ai_review
+from l10n_audit.core.ai_trace import emit_ai_fallback, is_ai_debug_mode
+
+logger = logging.getLogger("l10n_audit.ai_http_provider")
 
 
 class HttpAIProvider:
@@ -35,11 +40,24 @@ class HttpAIProvider:
         if batch and all(_is_structured_payload(item) for item in batch):
             fixes: list[dict] = []
             for item in batch:
+                item_key = str(item.get("key", "<unknown>"))
                 item_glossary = item.get("glossary", {}) if isinstance(item.get("glossary"), dict) else {}
                 prompt = get_review_prompt([item], item_glossary, locale=str(item.get("locale", "ar")))
                 response = request_ai_review(prompt, config, original_batch=[item], glossary=glossary)
                 translated_text = _extract_translated_text(response)
                 if translated_text is None:
+                    # Phase 9: fallback — provider returned no usable suggestion.
+                    _reason = "parse_error" if response is None else "output_contract_violation"
+                    emit_ai_fallback(
+                        key=item_key,
+                        reason=_reason,
+                        details={"response_type": type(response).__name__},
+                    )
+                    if is_ai_debug_mode():
+                        logger.debug(
+                            "AI PROVIDER: No usable response for key='%s' reason='%s' response=%s",
+                            item_key, _reason, response,
+                        )
                     continue
                 fixes.append(
                     {
@@ -57,6 +75,13 @@ class HttpAIProvider:
         response = request_ai_review(prompt, config, original_batch=batch, glossary=glossary)
         if response and "fixes" in response:
             return verify_batch_fixes(batch, response["fixes"], glossary=glossary)
+        # Phase 9: fallback — legacy batch produced no usable response.
+        _batch_keys = [str(item.get("key", "<unknown>")) for item in batch]
+        emit_ai_fallback(
+            key=", ".join(_batch_keys[:3]) + ("..." if len(_batch_keys) > 3 else ""),
+            reason="no_suggestion",
+            details={"batch_size": len(batch), "has_response": response is not None},
+        )
         return []
 
     def request(self, system_prompt: str, batch: list[dict], config: dict | None = None) -> dict:

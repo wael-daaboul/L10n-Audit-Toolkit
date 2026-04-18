@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 from l10n_audit.ai.verification import (
+    decide_ai_outcome,
     evaluate_semantic_acceptance,
     verify_batch_fixes,
 )
@@ -209,6 +210,21 @@ def test_suspicious_key_concept_loss():
 # 7. Integration: verify_batch_fixes drops semantic rejects
 # ---------------------------------------------------------------------------
 
+def test_decide_ai_outcome_accept():
+    result = decide_ai_outcome("accept", has_existing_translation=True)
+    assert result == {"decision": "safe", "allow_apply": True, "needs_review": False}
+
+
+def test_decide_ai_outcome_suspicious():
+    result = decide_ai_outcome("suspicious", has_existing_translation=False)
+    assert result == {"decision": "review", "allow_apply": False, "needs_review": True}
+
+
+def test_decide_ai_outcome_reject():
+    result = decide_ai_outcome("reject", has_existing_translation=True)
+    assert result == {"decision": "reject", "allow_apply": False, "needs_review": True}
+
+
 def test_verify_batch_fixes_drops_semantic_reject():
     """verify_batch_fixes must not pass a candidate rejected by the semantic gate."""
     batch = [
@@ -240,7 +256,10 @@ def test_verify_batch_fixes_keeps_semantic_accept():
     results = verify_batch_fixes(batch, fixes, glossary=None)
     assert len(results) == 1
     assert results[0]["suggestion"] == "اختر وقتاً"
+    assert results[0]["verified"] is True
+    assert results[0]["needs_review"] is False
     assert results[0]["extra"]["semantic_gate_status"] == "accept"
+    assert results[0]["extra"]["ai_outcome_decision"] == "safe"
 
 
 def test_verify_batch_fixes_surfaces_reason_codes():
@@ -259,6 +278,10 @@ def test_verify_batch_fixes_surfaces_reason_codes():
     # Should be accepted or suspicious (not rejected outright for this case)
     if results:
         assert "semantic_gate_status" in results[0]["extra"]
+        if results[0]["extra"]["semantic_gate_status"] == "suspicious":
+            assert results[0]["verified"] is False
+            assert results[0]["needs_review"] is True
+            assert results[0]["extra"]["ai_outcome_decision"] == "review"
 
 
 def test_verify_batch_fixes_drops_polarity_mismatch():

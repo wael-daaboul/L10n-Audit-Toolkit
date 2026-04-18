@@ -78,9 +78,14 @@ def _write_review_queue(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def test_apply_rejects_source_hash_mismatch(tmp_path: Path) -> None:
+    # With canonical guard on by default, the authoritative check is
+    # canonical(source_old_value) == canonical(live runtime value).
+    # A truly stale row = runtime file has genuinely changed since planning.
     runtime = _make_runtime(tmp_path)
+    # Make the runtime file genuinely stale: value changed since the plan was built
+    _write_json(runtime.ar_file, {"welcome": "نص مختلف تماماً", "keep": "كما هو"})
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
-    _write_review_queue(review_queue, [_review_row(source_hash=compute_text_hash("قيمة قديمة"))])
+    _write_review_queue(review_queue, [_review_row()])  # source_old_value="اهلا" no longer matches runtime
 
     report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
 
@@ -316,7 +321,7 @@ def test_apply_rejects_stale_row(tmp_path: Path) -> None:
 
 
 def test_apply_flag_off_rejects_runtime_lf_crlf_drift(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
     runtime = _make_runtime(tmp_path)
     _write_json(runtime.ar_file, {"welcome": "line1\r\nline2", "keep": "كما هو"})
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
@@ -338,7 +343,7 @@ def test_apply_flag_off_rejects_runtime_lf_crlf_drift(tmp_path: Path, monkeypatc
 
 
 def test_apply_flag_off_rejects_runtime_nfc_nfd_drift(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD", raising=False)
+    monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
     runtime = _make_runtime(tmp_path)
     nfc = "Café"
     nfd = "Cafe\u0301"
@@ -439,7 +444,8 @@ def test_apply_records_all_rejections_in_metadata(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-missing", current_value=""),
-            _review_row(plan_id="plan-stale", source_hash=compute_text_hash("قيمة قديمة")),
+            # Truly stale: source_old_value differs from the live runtime value "اهلا"
+            _review_row(plan_id="plan-stale", source_old_value="نص مختلف", source_hash=compute_text_hash("نص مختلف")),
         ],
     )
 
@@ -459,7 +465,8 @@ def test_apply_trace_contains_applied_and_skipped_rows(tmp_path: Path) -> None:
         review_queue,
         [
             _review_row(plan_id="plan-applied"),
-            _review_row(plan_id="plan-skipped", source_hash="invalid_hash_for_skip"),
+            # Truly stale source_old_value: canonically different from live runtime value "اهلا"
+            _review_row(plan_id="plan-skipped", source_old_value="نص مختلف", source_hash="invalid_hash_for_skip"),
         ],
     )
 
@@ -529,7 +536,8 @@ def test_trace_contains_decision_context(tmp_path: Path) -> None:
 def test_trace_context_for_hash_mismatch(tmp_path: Path) -> None:
     runtime = _make_runtime(tmp_path)
     review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
-    _write_review_queue(review_queue, [_review_row(source_hash=compute_text_hash("قيمة قديمة"))])
+    # Truly stale: source_old_value canonically differs from live runtime value "اهلا"
+    _write_review_queue(review_queue, [_review_row(source_old_value="نص مختلف", source_hash=compute_text_hash("نص مختلف"))])
 
     report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
 
