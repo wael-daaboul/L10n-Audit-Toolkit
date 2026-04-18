@@ -29,6 +29,18 @@ from l10n_audit.core.artifact_resolver import (
     resolve_review_machine_queue_json_path,
     resolve_review_queue_json_path
 )
+from l10n_audit.core.ai_trace import (
+    SKIP_REASON_AUTO_SAFE_CLASSIFICATION,
+    SKIP_REASON_DETERMINISTIC_FIX,
+    SKIP_REASON_FORMATTING_ONLY,
+    SKIP_REASON_NON_LINGUISTIC_SOURCE,
+    SKIP_REASON_PLACEHOLDER_ONLY,
+    SKIP_REASON_SHORT_AMBIGUOUS_NO_CONTEXT,
+    emit_ai_decision_trace,
+    get_metrics,
+    is_ai_debug_mode,
+    reset_metrics,
+)
 
 def load_issues(runtime):
     """Read existing local audits with role-based priority (Phase 9).
@@ -287,8 +299,16 @@ def _requires_semantic_repair(finding: dict[str, Any]) -> bool:
     return any(any(marker in issue_type for marker in semantic_markers) for issue_type in issue_types)
 
 
-def should_invoke_ai(finding, context) -> bool:
-    """Deterministic gate for live AI invocation control."""
+def should_invoke_ai(finding, context) -> tuple[bool, str | None]:
+    """Deterministic gate for live AI invocation control.
+
+    Returns
+    -------
+    (invoke, skip_reason)
+        ``invoke`` is ``True`` when the AI should be called for this finding.
+        ``skip_reason`` is one of the ``SKIP_REASON_*`` constants when
+        ``invoke`` is ``False``, and ``None`` otherwise.
+    """
     from l10n_audit.core.audit_runtime import is_likely_technical_text
 
     source_text = str(finding.get("source_text", "") or "").strip()
@@ -300,18 +320,24 @@ def should_invoke_ai(finding, context) -> bool:
 
     # Hard block: empty or non-linguistic source does not benefit from AI.
     if not source_text or is_likely_technical_text(source_text):
-        return False
+        return False, SKIP_REASON_NON_LINGUISTIC_SOURCE
 
-    no_ai_issue_types = {"formatting", "whitespace", "spacing", "punctuation", "placeholder-only"}
-    if issue_types.intersection(no_ai_issue_types) or any("placeholder" in it for it in issue_types):
-        return False
+    # Placeholder / formatting issues — deterministic rules already handle them.
+    _is_placeholder = bool(issue_types.intersection({"placeholder-only"})) or any(
+        "placeholder" in it for it in issue_types
+    )
+    _is_formatting = bool(
+        issue_types.intersection({"formatting", "whitespace", "spacing", "punctuation"})
+    )
+    if _is_placeholder or _is_formatting:
+        return False, SKIP_REASON_PLACEHOLDER_ONLY if _is_placeholder else SKIP_REASON_FORMATTING_ONLY
 
     deterministic_issue_types = {"known_safe_replacement", "safe_normalization", "normalization"}
     if issue_types.intersection(deterministic_issue_types):
-        return False
+        return False, SKIP_REASON_DETERMINISTIC_FIX
 
     if str(finding.get("classification", "")).strip().lower() == "auto_safe":
-        return False
+        return False, SKIP_REASON_AUTO_SAFE_CLASSIFICATION
 
     current_text_str = str(current_text or "").strip()
     missing_translation = (
@@ -321,15 +347,15 @@ def should_invoke_ai(finding, context) -> bool:
         or "empty_ar" in issue_types
     )
     if missing_translation:
-        return True
+        return True, None
 
     glossary = finding.get("glossary") if isinstance(finding.get("glossary"), dict) else {}
     has_context = bool(str(finding.get("context", "") or "").strip())
     short_ambiguous_threshold = int(context.get("short_ambiguous_threshold", 4)) if isinstance(context, dict) else 4
     if _word_count(source_text) <= short_ambiguous_threshold and not glossary and not has_context:
-        return False
+        return False, SKIP_REASON_SHORT_AMBIGUOUS_NO_CONTEXT
 
-    return _requires_semantic_repair(finding)
+    return _requires_semantic_repair(finding), None
 
 
 def _build_ai_input_payload(
@@ -522,20 +548,46 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
 
     target_locale = runtime.target_locales[0] if runtime.target_locales else "ar"
     invocation_context = {"short_ambiguous_threshold": 4}
+    # Phase 9: reset module-level metrics for this run so each invocation of
+    # run_stage starts with a clean slate.
+    reset_metrics()
     batch_items = []
     for item in flawed_keys.values():
         payload = _build_ai_input_payload(item, locale=target_locale, glossary_map=glossary_translation_map)
         payload["issue_types"] = sorted({str(it) for it in payload.get("issue_types", []) if str(it).strip()})
-        if should_invoke_ai(payload, invocation_context):
+        invoke_ai, skip_reason = should_invoke_ai(payload, invocation_context)
+        _item_key = payload.get("key", "")
+        if invoke_ai:
             batch_items.append(payload)
+            get_metrics().record_invoked()
+            if is_ai_debug_mode():
+                logger.debug("AI INPUT PAYLOAD [key=%s]: %s", _item_key, payload)
         else:
-            logger.debug("AI INVOCATION CONTROL: Skipping key='%s' due to deterministic guard.", payload.get("key"))
+            get_metrics().record_skipped()
+            emit_ai_decision_trace(
+                key=_item_key,
+                invoked=False,
+                skip_reason=skip_reason,
+                payload=payload,
+            )
+            logger.debug(
+                "AI INVOCATION CONTROL: Skipping key='%s' skip_reason='%s'",
+                _item_key,
+                skip_reason,
+            )
     
     if enforcer.enabled:
         logger.info("Routing Metrics [ai_review run_stage]: %s", enforcer.metrics.to_dict())
         enforcer.save_metrics(runtime)
             
     if not batch_items:
+        # Phase 9: store metrics even when all keys were skipped.
+        get_metrics().log_summary()
+        try:
+            if hasattr(runtime, "metadata"):
+                runtime.metadata["ai_decision_metrics"] = get_metrics().to_dict()
+        except Exception:
+            pass
         return []
 
     # --- Phase 10: Conflict Resolution (Governance Layer) ---
@@ -654,6 +706,14 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             **row,
             "old": row.get("target", ""),   # live AR target → detected_value
         }
+
+    # Phase 9: emit AI decision summary and store metrics in runtime metadata.
+    get_metrics().log_summary()
+    try:
+        if hasattr(runtime, "metadata"):
+            runtime.metadata["ai_decision_metrics"] = get_metrics().to_dict()
+    except Exception:
+        pass
 
     normalized = [
         normalize_audit_finding(

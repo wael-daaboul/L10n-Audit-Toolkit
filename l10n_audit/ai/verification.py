@@ -4,6 +4,13 @@ import re
 import logging
 from typing import Any
 
+from l10n_audit.core.ai_trace import (
+    emit_ai_decision_trace,
+    emit_ai_fallback,
+    get_metrics,
+    is_ai_debug_mode,
+)
+
 # ---------------------------------------------------------------------------
 # Phase 5: Deterministic Semantic Acceptance Gate
 # ---------------------------------------------------------------------------
@@ -521,6 +528,12 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
         suggestion = fix.get("suggestion")
         
         if not key or not suggestion or key not in source_by_key:
+            # Phase 9: output contract violation — key or suggestion missing.
+            emit_ai_fallback(
+                key=key or "<unknown>",
+                reason="output_contract_violation",
+                details={"has_key": bool(key), "has_suggestion": bool(suggestion)},
+            )
             continue
             
         source_text = source_by_key[key]
@@ -529,6 +542,10 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
         # Capture original source for reporting if it was pre-processed
         item = next((i for i in original_batch if i.get("key") == key), {})
         original_source = item.get("original_source", source_text)
+
+        # Phase 9: log full AI response in debug mode.
+        if is_ai_debug_mode():
+            logging.debug("AI RAW RESPONSE [key=%s]: %s", key, fix)
         
         # If suggestion is identical, skip
         if suggestion.strip() == target_text.strip():
@@ -568,7 +585,22 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                 semantic_result["status"],
                 has_existing_translation=has_valid_existing_translation,
             )
+
+            # Phase 9: log semantic result in debug mode.
+            if is_ai_debug_mode():
+                logging.debug(
+                    "AI SEMANTIC RESULT [key=%s]: status=%s reason_codes=%s",
+                    key, semantic_result["status"], semantic_result["reason_codes"],
+                )
+
             if outcome["decision"] == "reject":
+                # Phase 9: fallback event + counter for semantic reject.
+                emit_ai_fallback(
+                    key=key,
+                    reason="semantic_reject",
+                    details={"reason_codes": semantic_result["reason_codes"]},
+                )
+                get_metrics().record_rejected()
                 logging.debug(
                     "AI Suggestion for %s rejected by semantic gate: %s",
                     key, semantic_result["reason_codes"],
@@ -592,7 +624,33 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
                     "semantic_reason_codes": semantic_result["reason_codes"],
                 },
             })
+
+            # Phase 9: trace event + counter for accepted / suspicious outcomes.
+            if semantic_result["status"] == "accept":
+                emit_ai_decision_trace(
+                    key=key,
+                    invoked=True,
+                    semantic_status="accept",
+                    final_decision="safe",
+                )
+                get_metrics().record_accepted()
+            else:
+                # suspicious
+                emit_ai_decision_trace(
+                    key=key,
+                    invoked=True,
+                    semantic_status=semantic_result["status"],
+                    final_decision=outcome["decision"],
+                )
+                get_metrics().record_suspicious()
         else:
-            logging.debug(f"AI Suggestion for {key} rejected by verification: {failed}")
+            # Phase 9: fallback event + counter for structural failures.
+            emit_ai_fallback(
+                key=key,
+                reason="structural_failure",
+                details={"failures": failed},
+            )
+            get_metrics().record_rejected()
+            logging.debug("AI Suggestion for %s rejected by structural verification: %s", key, failed)
             
     return verified_fixes
