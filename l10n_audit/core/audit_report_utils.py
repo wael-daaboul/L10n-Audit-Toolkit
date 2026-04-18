@@ -306,7 +306,9 @@ def normalize_icu_message_audit(payload: dict[str, Any]) -> list[dict[str, Any]]
         )
     return issues
 
-
+# Maps internal semantic reason codes (from the AI acceptance gate) to concise
+# human-readable text shown in the review queue's review_reason column.
+# Codes not present here are left as-is (raw code is still surfaced).
 _AI_REASON_CODE_TEXT: dict[str, str] = {
     "semantic_concept_injection": "concept injection",
     "semantic_polarity_mismatch": "polarity mismatch",
