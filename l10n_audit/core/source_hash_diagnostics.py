@@ -145,6 +145,12 @@ def emit_source_hash_compare(
             "stored_source_hash": stored_source_hash,
             "actual_source_hash": actual_source_hash,
             "hash_match": stored_source_hash == actual_source_hash,
+            # Phase 1 Completion: divergence_detected flags when the raw value hash
+            # differs from its canonical hash.  This means the value contains
+            # whitespace / encoding variants that canonicalize differently.
+            # True  → canonical guard matters for this value (encoding drift present)
+            # False → raw and canonical are identical (no encoding drift)
+            "divergence_detected": payload["computed_hash"] != payload["canonical_computed_hash"],
         }
     )
     if canonical_stored_source_hash is not None:

@@ -216,8 +216,11 @@ class TestRejectedRowsInReport:
         assert payload["rows"][0]["reason_code"] == "invalid_status_for_freeze"
 
     def test_hash_mismatch_rejection_appears_with_correct_reason(
-        self, tmp_path: Path
+        self, tmp_path: Path, monkeypatch
     ) -> None:
+        # Use disable flag: in canonical mode source_hash alone is not
+        # sufficient to cause mismatch when source_old_value == current_value.
+        monkeypatch.setenv("L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE", "1")
         queue, final, report_path = (
             tmp_path / "q.xlsx", tmp_path / "f.xlsx", tmp_path / "r.json"
         )
