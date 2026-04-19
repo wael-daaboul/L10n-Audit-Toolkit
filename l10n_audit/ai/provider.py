@@ -115,6 +115,9 @@ def _retry_backoff_seconds(
         config.get("provider_retry_backoff_max_seconds"),
         DEFAULT_RETRY_BACKOFF_MAX_SECONDS,
     )
+    # retry_index is 1-based; subtract 1 so the first retry (index 1) maps to
+    # exponent 0 → delay = base * 1.  The cap ensures no extreme values even if
+    # max_retries is somehow set very high (2^10 * base is still bounded by max_delay).
     exponent = min(MAX_BACKOFF_EXPONENT, max(0, retry_index - 1))
     delay = min(max_delay, base * (2 ** exponent))
     if category == "provider_rate_limited":
