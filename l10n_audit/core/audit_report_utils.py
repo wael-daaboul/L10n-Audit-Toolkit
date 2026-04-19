@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import json
 from pathlib import Path
 from typing import Any
 
@@ -514,7 +515,12 @@ def _to_json_safe(value: Any) -> Any:
         return [_to_json_safe(item) for item in value]
     if isinstance(value, set):
         normalized = [_to_json_safe(item) for item in value]
-        return sorted(normalized, key=lambda item: repr(item))
+        def _sort_key(item: Any) -> str:
+            try:
+                return json.dumps(item, ensure_ascii=False, sort_keys=True)
+            except TypeError:
+                return str(item)
+        return sorted(normalized, key=_sort_key)
     return value
 
 

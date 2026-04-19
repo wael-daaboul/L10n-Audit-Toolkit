@@ -16,6 +16,7 @@ from l10n_audit.core.artifact_resolver import (
     resolve_master_path, 
     resolve_final_report_path,
     resolve_review_queue_path,
+    resolve_review_queue_json_path,
     resolve_review_projection_path,
     resolve_review_projection_json_path,
     resolve_review_machine_queue_json_path,  # Added (Phase 9)
@@ -1672,6 +1673,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         review_json = resolve_review_projection_json_path(runtime)
         review_xlsx = resolve_review_queue_path(runtime)
         review_machine = resolve_review_machine_queue_json_path(runtime)  # Added (Phase 9)
+        normalized_include_sources = sorted(include_sources) if include_sources else sorted(reports.keys())
 
         md_file.write_text(markdown, encoding="utf-8")
         export_successes.append("Final Report (Markdown)")
@@ -1681,7 +1683,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         warn_deprecated_artifact("aggregated_issues_json", aggr_file, "write", options.strict_deprecations)
         _write_json_artifact(
             aggr_file,
-            {"included_sources": sorted(include_sources) if include_sources else sorted(reports.keys()), "issues": issues},
+            {"included_sources": normalized_include_sources, "issues": issues},
             "Aggregated Issues (JSON)",
         )
 
@@ -1705,11 +1707,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         )
 
         # Legacy compatibility fallback (best-effort)
-        try:
-            _write_json_artifact(resolve_review_queue_json_path(runtime), {"rows": review_rows}, "Review Queue Legacy (JSON)")
-        except Exception as legacy_exc:
-            export_failures.append(f"Review Queue Legacy (JSON): {legacy_exc}")
-            logger.error("Failed to write Review Queue Legacy (JSON): %s", legacy_exc)
+        _write_json_artifact(resolve_review_queue_json_path(runtime), {"rows": review_rows}, "Review Queue Legacy (JSON)")
 
         try:
             write_audit_master(
@@ -1723,7 +1721,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
                 review_rows=review_rows,
                 payload=payload,
                 missing=missing,
-                include_sources=sorted(include_sources) if include_sources else sorted(reports.keys()),
+                include_sources=normalized_include_sources,
                 source_status=source_status,
                 project_root=runtime.project_root,
                 runtime=runtime,

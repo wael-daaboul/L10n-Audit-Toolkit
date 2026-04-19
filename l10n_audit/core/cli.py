@@ -239,8 +239,6 @@ def cmd_run(args: argparse.Namespace) -> int:
         previous_debug_flag = os.environ.get(debug_flag)
         if verbose:
             os.environ[debug_flag] = "1"
-        elif previous_debug_flag is None:
-            os.environ.pop(debug_flag, None)
         
         for label in _stage_module_names(stage, ai_enabled=ai_enabled):
             print(f"Running {label}...")

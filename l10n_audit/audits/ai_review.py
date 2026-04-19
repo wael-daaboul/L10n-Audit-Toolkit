@@ -681,8 +681,9 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             if is_ai_debug_mode() and exc.details:
                 _details["provider_error"] = exc.details
             emit_ai_fallback(key=f"batch:{i}", reason=exc.category, details=_details)
-            attempt = exc.details.get("attempt") if isinstance(exc.details, dict) else None
-            max_attempts = exc.details.get("max_attempts") if isinstance(exc.details, dict) else None
+            details = exc.details if isinstance(exc.details, dict) else {}
+            attempt = details.get("attempt")
+            max_attempts = details.get("max_attempts")
             if exc.category == "provider_rate_limited" and attempt and max_attempts:
                 print(f"AI Review: batch {i}/{len(batches)} rate-limited (attempt {attempt}/{max_attempts})")
             print(f"AI Review: batch {i}/{len(batches)} failed [{exc.category}]")
