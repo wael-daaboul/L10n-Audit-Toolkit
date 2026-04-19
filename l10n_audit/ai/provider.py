@@ -25,7 +25,7 @@ def setup_audit_logger():
 
 audit_logger = setup_audit_logger()
 
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
 
 
 @dataclass
