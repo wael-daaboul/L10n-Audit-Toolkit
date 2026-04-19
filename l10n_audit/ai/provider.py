@@ -302,7 +302,10 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                     temperature=0.0,
                     response_format=response_format,
                     timeout=timeout_seconds,
-                    num_retries=1  # handle retries manually for better logging
+                    # Keep provider-level retries disabled so the toolkit's
+                    # bounded retry/backoff policy remains the single source
+                    # of waiting behavior.
+                    num_retries=0
                 )
             
             content = response.choices[0].message.content

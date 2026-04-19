@@ -273,6 +273,36 @@ def test_provider_error_classification_unaffected_by_io_suppression(monkeypatch)
     assert exc_info.value.category == "provider_rate_limited"
 
 
+def test_litellm_internal_retry_is_disabled_to_avoid_duplicate_waiting():
+    observed_num_retries = []
+
+    def _failing_completion(**kwargs):
+        observed_num_retries.append(kwargs.get("num_retries"))
+        raise RuntimeError("connection reset by peer")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_failing_completion):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    assert observed_num_retries == [0]
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_manual_retry_attempt_count_is_preserved_when_internal_retry_disabled(mock_sleep):
+    attempts = []
+
+    def _failing_completion(**kwargs):
+        attempts.append(1)
+        raise RuntimeError("connection reset by peer")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_failing_completion):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=3)
+
+    assert len(attempts) == 3
+    assert mock_sleep.call_count == 2
+
+
 @patch("l10n_audit.ai.provider.time.sleep")
 def test_rate_limited_retry_uses_stronger_backoff(mock_sleep):
     completion_side_effects = [

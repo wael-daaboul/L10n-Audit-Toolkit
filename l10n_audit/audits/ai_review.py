@@ -2,11 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import contextlib
 import logging
 import os
 import re
 import json
 import concurrent.futures
+import threading
+import time as _time
 from pathlib import Path
 from typing import Any
 
@@ -435,6 +438,123 @@ def _coerce_float_option(value: Any, default: float, *, minimum: float | None = 
         parsed = maximum
     return parsed
 
+
+def _coerce_bool_option(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+
+class _AIReviewWaitIndicator:
+    """Low-noise CLI indicator shown only while waiting on provider responses."""
+
+    def __init__(
+        self,
+        *,
+        batch_index: int,
+        total_batches: int,
+        enabled: bool,
+        interval_seconds: float,
+        stream=None,
+    ) -> None:
+        import sys
+
+        self._batch_index = batch_index
+        self._total_batches = total_batches
+        self._enabled = enabled
+        self._interval_seconds = max(0.05, float(interval_seconds))
+        self._stream = stream if stream is not None else sys.stdout
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._line_width = 0
+        is_tty = False
+        try:
+            is_tty = bool(self._stream.isatty())
+        except Exception:
+            is_tty = False
+        self._use_spinner = is_tty and not is_ai_debug_mode()
+
+    def start(self) -> None:
+        if not self._enabled:
+            return
+        self._thread = threading.Thread(
+            target=self._run,
+            name="ai-review-wait-indicator",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        if self._thread is None:
+            return
+        self._stop_event.set()
+        self._thread.join(timeout=max(1.0, self._interval_seconds * 2.0))
+        self._thread = None
+        if self._use_spinner and self._line_width:
+            self._stream.write("\r" + (" " * self._line_width) + "\r")
+            self._stream.flush()
+
+    def _run(self) -> None:
+        started_at = _time.monotonic()
+        frame_index = 0
+        next_heartbeat_seconds = 10
+        while not self._stop_event.wait(self._interval_seconds):
+            elapsed_seconds = int(max(0.0, _time.monotonic() - started_at))
+            if self._use_spinner:
+                frame = _SPINNER_FRAMES[frame_index % len(_SPINNER_FRAMES)]
+                frame_index += 1
+                line = (
+                    f"AI Review: processing {self._total_batches} batch(es)... "
+                    f"{frame} waiting {elapsed_seconds}s"
+                )
+                self._render_spinner_line(line)
+                continue
+            if elapsed_seconds >= next_heartbeat_seconds:
+                self._stream.write(
+                    "AI Review: still working "
+                    f"(batch {self._batch_index}/{self._total_batches}, elapsed {elapsed_seconds}s)\n"
+                )
+                self._stream.flush()
+                next_heartbeat_seconds += 10
+
+    def _render_spinner_line(self, line: str) -> None:
+        pad = max(0, self._line_width - len(line))
+        self._line_width = max(self._line_width, len(line))
+        self._stream.write(f"\r{line}{' ' * pad}")
+        self._stream.flush()
+
+
+@contextlib.contextmanager
+def _provider_wait_indicator(
+    *,
+    batch_index: int,
+    total_batches: int,
+    enabled: bool,
+    interval_seconds: float,
+):
+    indicator = _AIReviewWaitIndicator(
+        batch_index=batch_index,
+        total_batches=total_batches,
+        enabled=enabled,
+        interval_seconds=interval_seconds,
+    )
+    indicator.start()
+    try:
+        yield
+    finally:
+        indicator.stop()
+
 # ---------------------------------------------------------------------------
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
@@ -686,6 +806,16 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
         0.5,
         minimum=0.0,
     )
+    activity_indicator_enabled = _coerce_bool_option(
+        getattr(options.ai_review, "activity_indicator_enabled", True),
+        True,
+    )
+    activity_indicator_interval_seconds = _coerce_float_option(
+        getattr(options.ai_review, "activity_indicator_interval_seconds", 0.2),
+        0.2,
+        minimum=0.05,
+        maximum=2.0,
+    )
     consecutive_failures = 0
     consecutive_rate_limits = 0
     provider_failures = 0
@@ -695,15 +825,22 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
         "retries_attempted": 0,
         "inter_batch_delay_applied": 0,
     }
+    total_batches = len(batches)
 
-    print(f"\nAI Review: processing {len(batches)} batch(es)...")
+    print(f"\nAI Review: processing {total_batches} batch(es)...")
 
     for i, batch in enumerate(batches, start=1):
         provider_usage["requests_sent"] += 1
         should_stop = False
         try:
-            # Pass BOTH glossary_terms (for prompt) and raw_glossary (for validation)
-            fixes = ai_provider.review_batch(batch, ai_config, glossary=raw_glossary)
+            with _provider_wait_indicator(
+                batch_index=i,
+                total_batches=total_batches,
+                enabled=activity_indicator_enabled,
+                interval_seconds=activity_indicator_interval_seconds,
+            ):
+                # Pass BOTH glossary_terms (for prompt) and raw_glossary (for validation)
+                fixes = ai_provider.review_batch(batch, ai_config, glossary=raw_glossary)
             consecutive_failures = 0
             consecutive_rate_limits = 0
             
@@ -751,8 +888,8 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             if isinstance(attempt, int) and attempt > 1:
                 provider_usage["retries_attempted"] += attempt - 1
             if exc.category == "provider_rate_limited" and attempt is not None and max_attempts is not None:
-                print(f"AI Review: batch {i}/{len(batches)} rate limited — applying backoff (attempt {attempt}/{max_attempts})")
-            print(f"AI Review: batch {i}/{len(batches)} failed [{exc.category}]")
+                print(f"AI Review: batch {i}/{total_batches} rate limited — applying backoff (attempt {attempt}/{max_attempts})")
+            print(f"AI Review: batch {i}/{total_batches} failed [{exc.category}]")
             if is_ai_debug_mode():
                 logger.exception("AI review batch %d provider failure [%s]", i, exc.category)
             else:
@@ -772,7 +909,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 reason="provider_api_error",
                 details={"batch_index": i, "batch_size": len(batch), "error_type": type(exc).__name__},
             )
-            print(f"AI Review: batch {i}/{len(batches)} failed [provider_api_error]")
+            print(f"AI Review: batch {i}/{total_batches} failed [provider_api_error]")
             if is_ai_debug_mode():
                 logger.exception("AI review batch %d failed with unexpected provider error", i)
             else:
@@ -782,7 +919,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 should_stop = True
         if should_stop:
             break
-        if i < len(batches):
+        if i < total_batches:
             time.sleep(inter_batch_delay_seconds)
             provider_usage["inter_batch_delay_applied"] += 1
 
@@ -806,7 +943,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 runtime.metadata["conflict_metrics"] = metrics
             runtime.metadata["ai_review_status"] = {
                 "status": "degraded" if provider_failures else "ok",
-                "batches_total": len(batches),
+                "batches_total": total_batches,
                 "provider_failures": provider_failures,
                 "degraded": bool(provider_failures),
                 "provider_usage": provider_usage,
