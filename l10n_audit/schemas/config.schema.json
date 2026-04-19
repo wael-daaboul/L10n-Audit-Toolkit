@@ -33,6 +33,8 @@
         "model": { "type": "string" },
         "api_key_env": { "type": "string" },
         "batch_size": { "type": "integer" },
+        "request_timeout_seconds": { "type": "number", "minimum": 1 },
+        "max_consecutive_failures": { "type": "integer", "minimum": 1 },
         "short_label_threshold": { "type": "integer" }
       }
     },

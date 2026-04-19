@@ -18,6 +18,7 @@ from l10n_audit.core.audit_runtime import (
     write_json,
 )
 from l10n_audit.core.workspace import read_json
+from l10n_audit.ai.provider import AIProviderError
 from l10n_audit.ai.provider import request_ai_review
 from l10n_audit.ai.prompts import get_review_prompt
 from l10n_audit.ai.verification import verify_batch_fixes
@@ -37,6 +38,7 @@ from l10n_audit.core.ai_trace import (
     SKIP_REASON_PLACEHOLDER_ONLY,
     SKIP_REASON_SHORT_AMBIGUOUS_NO_CONTEXT,
     emit_ai_decision_trace,
+    emit_ai_fallback,
     get_metrics,
     is_ai_debug_mode,
     reset_metrics,
@@ -384,6 +386,17 @@ def _build_ai_input_payload(
         "current_translation": current_text or "",
     }
 
+
+def _provider_reason_text(reason: str) -> str:
+    reason_map = {
+        "provider_timeout": "provider timeout",
+        "provider_connection_error": "provider connection error",
+        "provider_rate_limited": "rate limited, retry skipped",
+        "provider_api_error": "provider API error",
+        "provider_invalid_response": "provider invalid response",
+    }
+    return reason_map.get(reason, "provider failure")
+
 # ---------------------------------------------------------------------------
 # Python API adapter — called by l10n_audit.core.engine
 # ---------------------------------------------------------------------------
@@ -423,6 +436,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
         ai_api_base=None, # Fetched from env or platform default
         ai_provider=options.ai_review.provider,
     )
+    ai_config["request_timeout_seconds"] = getattr(options.ai_review, "request_timeout_seconds", 60)
 
     if ai_provider is None:
         from l10n_audit.core.ai_factory import get_ai_provider
@@ -613,25 +627,19 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
     # Process in batches using the injected AI provider
     all_fixes: list[dict] = []
     batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
-    
-    # Display interactive waiting message
-    print("\n🚀 Sending review request to AI (Waiting for cloud response)...", end="", flush=True)
+    max_consecutive_failures = int(getattr(options.ai_review, "max_consecutive_failures", 3) or 3)
+    if max_consecutive_failures < 1:
+        max_consecutive_failures = 1
+    consecutive_failures = 0
+    provider_failures = 0
 
-    import threading
-    def _heartbeat(stop_event):
-        while not stop_event.is_set():
-            stop_event.wait(2.0)
-            if not stop_event.is_set():
-                print(".", end="", flush=True)
+    print(f"\nAI Review: processing {len(batches)} batch(es)...")
 
-    for i, batch in enumerate(batches):
-        stop_event = threading.Event()
-        hb_thread = threading.Thread(target=_heartbeat, args=(stop_event,))
-        hb_thread.start()
-            
+    for i, batch in enumerate(batches, start=1):
         try:
             # Pass BOTH glossary_terms (for prompt) and raw_glossary (for validation)
             fixes = ai_provider.review_batch(batch, ai_config, glossary=raw_glossary)
+            consecutive_failures = 0
             
             # 2. Register AI fixes with Priority 2
             for f in fixes:
@@ -655,15 +663,49 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                     logger.warning("AI CONFLICT: Skipping AI suggestion for key '%s' due to priority override.", k)
             
             # Anti-rate-limit sleep between batches (except the last one)
-            if i < len(batches) - 1:
+            if i < len(batches):
                 time.sleep(2)
+        except AIProviderError as exc:
+            provider_failures += 1
+            consecutive_failures += 1
+            _details = {
+                "batch_index": i,
+                "batch_size": len(batch),
+                "consecutive_failures": consecutive_failures,
+            }
+            if is_ai_debug_mode() and exc.details:
+                _details["provider_error"] = exc.details
+            emit_ai_fallback(key=f"batch:{i}", reason=exc.category, details=_details)
+            print(f"AI Review: {_provider_reason_text(exc.category)} on batch {i}")
+            if is_ai_debug_mode():
+                logger.exception("AI review batch %d provider failure [%s]", i, exc.category)
+            else:
+                logger.warning("AI review batch %d failed [%s]", i, exc.category)
+            if consecutive_failures >= max_consecutive_failures:
+                print(f"AI Review: stopping after {consecutive_failures} consecutive provider failures")
+                break
         except Exception as exc:
-            logger.error("AI review batch %d failed: %s", i + 1, exc)
-        finally:
-            stop_event.set()
-            hb_thread.join()
+            provider_failures += 1
+            consecutive_failures += 1
+            emit_ai_fallback(
+                key=f"batch:{i}",
+                reason="provider_api_error",
+                details={"batch_index": i, "batch_size": len(batch), "error_type": type(exc).__name__},
+            )
+            print(f"AI Review: {_provider_reason_text('provider_api_error')} on batch {i}")
+            if is_ai_debug_mode():
+                logger.exception("AI review batch %d failed with unexpected provider error", i)
+            else:
+                logger.warning("AI review batch %d failed [provider_api_error]", i)
+            if consecutive_failures >= max_consecutive_failures:
+                print(f"AI Review: stopping after {consecutive_failures} consecutive provider failures")
+                break
 
-    print(" ✅ Response received.")
+    if provider_failures:
+        if all_fixes:
+            print("AI Review: completed with degraded provider responses; retained successful earlier results.")
+        else:
+            print("AI Review: provider failures detected; continuing run without AI suggestions.")
 
     # Update metrics in metadata
     try:

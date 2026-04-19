@@ -453,6 +453,8 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
             "model": _get_nested(effective_config, "ai_review.model", "gpt-4o-mini"),
             "api_key_env": _get_nested(effective_config, "ai_review.api_key_env", "OPENAI_API_KEY"),
             "batch_size": _get_nested(effective_config, "ai_review.batch_size", 20),
+            "request_timeout_seconds": _get_nested(effective_config, "ai_review.request_timeout_seconds", 60),
+            "max_consecutive_failures": _get_nested(effective_config, "ai_review.max_consecutive_failures", 3),
             "short_label_threshold": _get_nested(effective_config, "ai_review.short_label_threshold", 3),
         },
         output={

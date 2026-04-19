@@ -353,6 +353,8 @@ class AIReview:
     api_key_env: str | None = None  # Env var for API key / اسم متغير البيئة لمفتاح API
     batch_size: int = 10  # Number of keys per AI request / عدد المفاتيح في كل طلب للذكاء الاصطناعي
     max_retries: int = 5  # Maximum retry attempts for glossary compliance / أقصى عدد لمحاولات إعادة المحاولة
+    request_timeout_seconds: int = 60  # Per-request provider timeout in seconds / مهلة الطلب لمزود الذكاء الاصطناعي بالثواني
+    max_consecutive_failures: int = 3  # Circuit-breaker threshold for provider failures / حد إيقاف المحاولات بعد فشل متتالي
     short_label_threshold: int = 3  # Min words for context evaluation / الحد الأدنى للكلمات لتقييم السياق
     translate_missing: bool = False  # Auto-translate missing keys / الترجمة الآلية للمفاتيح المفقودة
 
@@ -547,7 +549,13 @@ class AuditOptions:
                 "api_key_env": self.ai_review.api_key_env or "OPENAI_API_KEY",
 
                 "//_batch_size": "Number of labels per AI request | عدد النصوص في كل طلب",
-                "batch_size": self.ai_review.batch_size
+                "batch_size": self.ai_review.batch_size,
+
+                "//_request_timeout_seconds": "Provider timeout per request (seconds) | مهلة المزود لكل طلب (بالثواني)",
+                "request_timeout_seconds": self.ai_review.request_timeout_seconds,
+
+                "//_max_consecutive_failures": "Stop AI stage after repeated provider failures | إيقاف مرحلة الذكاء بعد فشل المزود المتكرر",
+                "max_consecutive_failures": self.ai_review.max_consecutive_failures,
             },
 
             "output": {
