@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from l10n_audit.ai.provider import request_ai_review
+from l10n_audit.ai.provider import AIProviderError, request_ai_review
 from l10n_audit.core.ai_trace import emit_ai_fallback, is_ai_debug_mode
 
 logger = logging.getLogger("l10n_audit.ai_http_provider")
@@ -43,7 +43,25 @@ class HttpAIProvider:
                 item_key = str(item.get("key", "<unknown>"))
                 item_glossary = item.get("glossary", {}) if isinstance(item.get("glossary"), dict) else {}
                 prompt = get_review_prompt([item], item_glossary, locale=str(item.get("locale", "ar")))
-                response = request_ai_review(prompt, config, original_batch=[item], glossary=glossary)
+                try:
+                    response = request_ai_review(
+                        prompt,
+                        config,
+                        original_batch=[item],
+                        glossary=glossary,
+                        raise_on_provider_error=True,
+                    )
+                except AIProviderError as exc:
+                    emit_ai_fallback(
+                        key=item_key,
+                        reason=exc.category,
+                        details=exc.details or {"error_type": type(exc.cause).__name__ if exc.cause else "unknown"},
+                    )
+                    if is_ai_debug_mode():
+                        logger.exception("AI PROVIDER failure [key=%s reason=%s]", item_key, exc.category)
+                    else:
+                        logger.warning("AI PROVIDER failure [key=%s reason=%s]", item_key, exc.category)
+                    raise
                 translated_text = _extract_translated_text(response)
                 if translated_text is None:
                     # Phase 9: fallback — provider returned no usable suggestion.
@@ -72,7 +90,26 @@ class HttpAIProvider:
 
         # Legacy batch compatibility path.
         prompt = get_review_prompt(batch, {})
-        response = request_ai_review(prompt, config, original_batch=batch, glossary=glossary)
+        try:
+            response = request_ai_review(
+                prompt,
+                config,
+                original_batch=batch,
+                glossary=glossary,
+                raise_on_provider_error=True,
+            )
+        except AIProviderError as exc:
+            _batch_keys = [str(item.get("key", "<unknown>")) for item in batch]
+            emit_ai_fallback(
+                key=", ".join(_batch_keys[:3]) + ("..." if len(_batch_keys) > 3 else ""),
+                reason=exc.category,
+                details=exc.details or {"batch_size": len(batch)},
+            )
+            if is_ai_debug_mode():
+                logger.exception("AI PROVIDER legacy batch failure [reason=%s]", exc.category)
+            else:
+                logger.warning("AI PROVIDER legacy batch failure [reason=%s]", exc.category)
+            raise
         if response and "fixes" in response:
             return verify_batch_fixes(batch, response["fixes"], glossary=glossary)
         # Phase 9: fallback — legacy batch produced no usable response.

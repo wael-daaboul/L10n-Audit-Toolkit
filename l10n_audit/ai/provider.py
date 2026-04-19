@@ -2,7 +2,10 @@ import json
 import logging
 import litellm
 import time
-from l10n_audit.ai.verification import verify_batch_fixes, validate_glossary_compliance, GlossaryViolationError
+from dataclasses import dataclass
+from typing import Any
+from l10n_audit.ai.verification import validate_glossary_compliance
+from l10n_audit.core.ai_trace import is_ai_debug_mode
 
 def setup_audit_logger():
     """Configure a file logger for critical audit errors."""
@@ -21,6 +24,43 @@ def setup_audit_logger():
     return logger
 
 audit_logger = setup_audit_logger()
+
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
+
+
+@dataclass
+class AIProviderError(RuntimeError):
+    category: str
+    message: str
+    details: dict[str, Any] | None = None
+    cause: Exception | None = None
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def classify_provider_exception(exc: Exception) -> str:
+    """Map provider/network failures to deterministic reason codes."""
+    text = str(exc).lower()
+    name = type(exc).__name__.lower()
+    status_code = getattr(exc, "status_code", None)
+    if status_code is None:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+
+    timeout_markers = ("timeout", "timed out", "readtimeout", "apitimeouterror", "timeoutexception")
+    connection_markers = ("connection", "connecterror", "apiconnectionerror", "ssl", "dns", "network")
+    rate_limit_markers = ("rate limit", "too many requests", "quota")
+
+    if isinstance(exc, TimeoutError) or any(m in text or m in name for m in timeout_markers):
+        return "provider_timeout"
+    if status_code == 429 or any(m in text for m in rate_limit_markers):
+        return "provider_rate_limited"
+    if any(m in text or m in name for m in connection_markers):
+        return "provider_connection_error"
+    if isinstance(status_code, int) and status_code >= 400:
+        return "provider_api_error"
+    return "provider_api_error"
 
 def clean_json_response(raw_content):
     """
@@ -47,7 +87,7 @@ def clean_json_response(raw_content):
         return content
     return content
 
-def request_ai_review(prompt, config, original_batch=None, glossary=None, max_retries=None):
+def request_ai_review(prompt, config, original_batch=None, glossary=None, max_retries=None, raise_on_provider_error=False):
     """
     Connects to AI using litellm to get a review suggestion.
     Implements a SOFT enforcement mechanism for glossary compliance.
@@ -65,7 +105,12 @@ def request_ai_review(prompt, config, original_batch=None, glossary=None, max_re
             # Inject negative prompt to force correction
             full_prompt += f"\n\n### IMPORTANT FIX NEEDED (Attempt {attempt + 1})\n{negative_feedback}\nPLEASE RE-EVALUATE AND ENSURE GLOSSARY COMPLIANCE."
 
-        response = request_ai_review_litellm(full_prompt, config)
+        try:
+            response = request_ai_review_litellm(full_prompt, config)
+        except AIProviderError:
+            if raise_on_provider_error:
+                raise
+            return None
         
         if not response or "fixes" not in response:
             continue
@@ -115,6 +160,13 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
     api_key = config.get('api_key')
     api_base = config.get('api_base')
     model = config.get('model', 'gpt-4o-mini')
+    timeout_seconds = config.get("request_timeout_seconds", DEFAULT_REQUEST_TIMEOUT_SECONDS)
+    try:
+        timeout_seconds = float(timeout_seconds)
+    except (TypeError, ValueError):
+        timeout_seconds = DEFAULT_REQUEST_TIMEOUT_SECONDS
+    if timeout_seconds <= 0:
+        timeout_seconds = DEFAULT_REQUEST_TIMEOUT_SECONDS
     
     if not api_key:
         logging.warning("AI Review skipped: No API Key provided.")
@@ -131,6 +183,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
     if "openai" in (api_base or "").lower() or "gpt" in model.lower() or "deepseek" in (api_base or "").lower():
         response_format = {"type": "json_object"}
 
+    last_provider_error: AIProviderError | None = None
     for attempt in range(max_retries):
         try:
             response = litellm.completion(
@@ -140,7 +193,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                 base_url=api_base,
                 temperature=0.0,
                 response_format=response_format,
-                timeout=60, # 60 second timeout per request
+                timeout=timeout_seconds,
                 num_retries=1 # handle retries manually for better logging
             )
             
@@ -150,14 +203,59 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
             try:
                 return json.loads(content)
             except json.JSONDecodeError:
-                logging.warning(f"AI Review LiteLLM: Failed to parse JSON content: {content[:100]}...")
+                category = "provider_invalid_response"
+                last_provider_error = AIProviderError(
+                    category=category,
+                    message="AI provider returned invalid JSON response.",
+                    details={"attempt": attempt + 1, "content_preview": content[:160]},
+                )
+                if is_ai_debug_mode():
+                    logging.exception(
+                        "AI Review LiteLLM invalid response (attempt %d/%d): %s",
+                        attempt + 1,
+                        max_retries,
+                        content[:300],
+                    )
+                else:
+                    logging.warning(
+                        "AI Review provider error [%s] on attempt %d/%d",
+                        category,
+                        attempt + 1,
+                        max_retries,
+                    )
                 continue
 
         except Exception as e:
-            logging.warning(f"AI Review LiteLLM error (attempt {attempt + 1}): {e}")
-            if "429" in str(e):
+            category = classify_provider_exception(e)
+            last_provider_error = AIProviderError(
+                category=category,
+                message=f"AI provider request failed ({category}).",
+                details={"attempt": attempt + 1, "error_type": type(e).__name__, "error": str(e)},
+                cause=e,
+            )
+            if is_ai_debug_mode():
+                logging.exception(
+                    "AI Review LiteLLM request failure [%s] (attempt %d/%d)",
+                    category,
+                    attempt + 1,
+                    max_retries,
+                )
+            else:
+                logging.warning(
+                    "AI Review provider error [%s] on attempt %d/%d",
+                    category,
+                    attempt + 1,
+                    max_retries,
+                )
+            if category == "provider_rate_limited" and attempt < max_retries - 1:
                 time.sleep(2 * (attempt + 1))
+            if attempt < max_retries - 1:
                 continue
-            break
-            
-    return None
+            raise last_provider_error from e
+
+    if last_provider_error is not None:
+        raise last_provider_error from last_provider_error.cause
+    raise AIProviderError(
+        category="provider_invalid_response",
+        message="AI provider returned no usable response.",
+    )

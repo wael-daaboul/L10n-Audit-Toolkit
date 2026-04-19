@@ -234,6 +234,8 @@ def run_audit(
                 model=ai_model or runtime.ai_review["model"],
                 api_key_env=ai_api_key_env or runtime.ai_review["api_key_env"],
                 batch_size=runtime.ai_review["batch_size"],
+                request_timeout_seconds=runtime.ai_review.get("request_timeout_seconds", 60),
+                max_consecutive_failures=runtime.ai_review.get("max_consecutive_failures", 3),
                 short_label_threshold=runtime.ai_review["short_label_threshold"],
                 translate_missing=translate_missing,
             ),
