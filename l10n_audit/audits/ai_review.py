@@ -599,6 +599,12 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
         try:
             if hasattr(runtime, "metadata"):
                 runtime.metadata["ai_decision_metrics"] = get_metrics().to_dict()
+                runtime.metadata["ai_review_status"] = {
+                    "status": "skipped",
+                    "batches_total": 0,
+                    "provider_failures": 0,
+                    "degraded": False,
+                }
         except Exception:
             pass
         return []
@@ -675,11 +681,16 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             if is_ai_debug_mode() and exc.details:
                 _details["provider_error"] = exc.details
             emit_ai_fallback(key=f"batch:{i}", reason=exc.category, details=_details)
-            print(f"AI Review: {_provider_reason_text(exc.category)} on batch {i}")
+            details = exc.details if isinstance(exc.details, dict) else {}
+            attempt = details.get("attempt")
+            max_attempts = details.get("max_attempts")
+            if exc.category == "provider_rate_limited" and attempt is not None and max_attempts is not None:
+                print(f"AI Review: batch {i}/{len(batches)} rate-limited (attempt {attempt}/{max_attempts})")
+            print(f"AI Review: batch {i}/{len(batches)} failed [{exc.category}]")
             if is_ai_debug_mode():
                 logger.exception("AI review batch %d provider failure [%s]", i, exc.category)
             else:
-                logger.warning("AI review batch %d failed [%s]", i, exc.category)
+                logger.debug("AI review batch %d failed [%s]", i, exc.category)
             if consecutive_failures >= max_consecutive_failures:
                 print(f"AI Review: stopping after {consecutive_failures} consecutive provider failures")
                 break
@@ -691,11 +702,11 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 reason="provider_api_error",
                 details={"batch_index": i, "batch_size": len(batch), "error_type": type(exc).__name__},
             )
-            print(f"AI Review: {_provider_reason_text('provider_api_error')} on batch {i}")
+            print(f"AI Review: batch {i}/{len(batches)} failed [provider_api_error]")
             if is_ai_debug_mode():
                 logger.exception("AI review batch %d failed with unexpected provider error", i)
             else:
-                logger.warning("AI review batch %d failed [provider_api_error]", i)
+                logger.debug("AI review batch %d failed [provider_api_error]", i)
             if consecutive_failures >= max_consecutive_failures:
                 print(f"AI Review: stopping after {consecutive_failures} consecutive provider failures")
                 break
@@ -718,6 +729,12 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 m["rejected_low_priority"] += metrics["rejected_low_priority"]
             else:
                 runtime.metadata["conflict_metrics"] = metrics
+            runtime.metadata["ai_review_status"] = {
+                "status": "degraded" if provider_failures else "ok",
+                "batches_total": len(batches),
+                "provider_failures": provider_failures,
+                "degraded": bool(provider_failures),
+            }
     except Exception:
         pass
 

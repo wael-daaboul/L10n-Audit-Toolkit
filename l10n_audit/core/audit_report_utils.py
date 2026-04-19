@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import json
 from pathlib import Path
 from typing import Any
 
@@ -507,5 +508,23 @@ def summarize_issues(issues: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _to_json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe(item) for item in value]
+    if isinstance(value, set):
+        normalized = [_to_json_safe(item) for item in value]
+        return sorted(normalized, key=_json_safe_sort_key)
+    return value
+
+
+def _json_safe_sort_key(item: Any) -> str:
+    try:
+        return json.dumps(item, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(item)
+
+
 def write_unified_json(path: Path, payload: dict[str, Any]) -> None:
-    write_json(payload, path)
+    write_json(_to_json_safe(payload), path)

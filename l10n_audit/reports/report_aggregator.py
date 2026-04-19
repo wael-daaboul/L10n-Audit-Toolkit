@@ -16,6 +16,7 @@ from l10n_audit.core.artifact_resolver import (
     resolve_master_path, 
     resolve_final_report_path,
     resolve_review_queue_path,
+    resolve_review_queue_json_path,
     resolve_review_projection_path,
     resolve_review_projection_json_path,
     resolve_review_machine_queue_json_path,  # Added (Phase 9)
@@ -1547,6 +1548,27 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         include_sources = {s.strip() for s in include_sources.split(",") if s.strip()}
 
     artifacts: list[ReportArtifact] = []
+    export_failures: list[str] = []
+    export_successes: list[str] = []
+
+    def _record_export_status() -> None:
+        if not hasattr(runtime, "metadata") or not isinstance(runtime.metadata, dict):
+            return
+        runtime.metadata["report_export_status"] = {
+            "status": "partial_failure" if export_failures else "ok",
+            "failed_exports": list(export_failures),
+            "successful_exports": list(export_successes),
+        }
+
+    def _write_json_artifact(path: Path, payload: dict[str, Any], label: str) -> bool:
+        try:
+            write_unified_json(path, payload)
+            export_successes.append(label)
+            return True
+        except Exception as exc:
+            export_failures.append(f"{label}: {exc}")
+            logger.error("Failed to write %s: %s", label, exc)
+            return False
 
     try:
         issues: list = []
@@ -1651,79 +1673,95 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         review_json = resolve_review_projection_json_path(runtime)
         review_xlsx = resolve_review_queue_path(runtime)
         review_machine = resolve_review_machine_queue_json_path(runtime)  # Added (Phase 9)
+        sorted_include_sources = sorted(include_sources) if include_sources else sorted(reports.keys())
 
         md_file.write_text(markdown, encoding="utf-8")
+        export_successes.append("Final Report (Markdown)")
         logger.debug("Phase G2/G3: Multilingual markdown variants successfully removed. Dead flags cleared.")
+        _write_json_artifact(json_file, payload, "Final Report (JSON)")
+
+        warn_deprecated_artifact("aggregated_issues_json", aggr_file, "write", options.strict_deprecations)
+        _write_json_artifact(
+            aggr_file,
+            {"included_sources": sorted_include_sources, "issues": issues},
+            "Aggregated Issues (JSON)",
+        )
+
+        logger.debug(
+            "Phase E: aggregated_issues.json written for compatibility "
+            "(classification: compatibility_required; replacement: audit_master.json[issue_inventory]). "
+            "Path: %s", aggr_file
+        )
+        _write_json_artifact(
+            review_json,
+            {"columns": REVIEW_PROJECTION_COLUMNS, "rows": review_rows},
+            "Review Projection (JSON)",
+        )
+
+        # --- Phase 9: Explicit Machine Queue Emission ---
+        # Distinct from pure analysis (review_projection.json)
+        _write_json_artifact(
+            review_machine,
+            {"review_queue": review_rows, "plan_id_source": "report_aggregator"},
+            "Review Machine Queue (JSON)",
+        )
+
+        # Legacy compatibility fallback (best-effort)
+        _write_json_artifact(resolve_review_queue_json_path(runtime), {"rows": review_rows}, "Review Queue Legacy (JSON)")
+
         try:
-            write_unified_json(json_file, payload)
-            
-            warn_deprecated_artifact("aggregated_issues_json", aggr_file, "write", options.strict_deprecations)
-            write_unified_json(aggr_file, {"included_sources": include_sources, "issues": issues})
-            
-            logger.debug(
-                "Phase E: aggregated_issues.json written for compatibility "
-                "(classification: compatibility_required; replacement: audit_master.json[issue_inventory]). "
-                "Path: %s", aggr_file
+            write_audit_master(
+                artifacts_dir=results_dir / "artifacts",
+                aggr_file=aggr_file,
+                json_file=json_file,
+                review_json=review_json,
+                review_xlsx=review_xlsx,
+                review_machine=review_machine,
+                issues=issues,
+                review_rows=review_rows,
+                payload=payload,
+                missing=missing,
+                include_sources=sorted_include_sources,
+                source_status=source_status,
+                project_root=runtime.project_root,
+                runtime=runtime,
+                options=options,
             )
-            write_unified_json(review_json, {"columns": REVIEW_PROJECTION_COLUMNS, "rows": review_rows})
-            
-            # --- Phase 9: Explicit Machine Queue Emission ---
-            # Distinct from pure analysis (review_projection.json)
-            write_unified_json(review_machine, {"review_queue": review_rows, "plan_id_source": "report_aggregator"})
-            
-            # Legacy compatibility fallback (best-effort)
-            try:
-                write_unified_json(resolve_review_queue_json_path(runtime), {"rows": review_rows})
-            except Exception:
-                pass
-            
-            try:
-                write_audit_master(
-                    artifacts_dir=results_dir / "artifacts",
-                    aggr_file=aggr_file,
-                    json_file=json_file,
-                    review_json=review_json,
-                    review_xlsx=review_xlsx,
-                    review_machine=review_machine,
-                    issues=issues,
-                    review_rows=review_rows,
-                    payload=payload,
-                    missing=missing,
-                    include_sources=include_sources,
-                    source_status=source_status,
-                    project_root=runtime.project_root,
-                    runtime=runtime,
-                    options=options,
-                )
-            except Exception as master_exc:
-                logger.error("Failed to write audit_master.json: %s", master_exc)
-            
-            # Migrate verified translations to staged storage
-            try:
-                from l10n_audit.core.results_manager import migrate_verified_to_staged
-                migrate_verified_to_staged(runtime.project_root, payload)
-            except Exception as migrate_exc:
-                logger.warning("Failed to migrate verified translations: %s", migrate_exc)
+            export_successes.append("Audit Master (JSON)")
+        except Exception as master_exc:
+            export_failures.append(f"Audit Master (JSON): {master_exc}")
+            logger.error("Failed to write audit_master.json: %s", master_exc)
 
-        except Exception as json_exc:
-            logger.error("Failed to write unified JSON reports: %s", json_exc)
+        # Migrate verified translations to staged storage
+        try:
+            from l10n_audit.core.results_manager import migrate_verified_to_staged
+            migrate_verified_to_staged(runtime.project_root, payload)
+        except Exception as migrate_exc:
+            logger.warning("Failed to migrate verified translations: %s", migrate_exc)
 
-        artifacts.extend([
-            ReportArtifact(name="Final Report (Markdown)", path=str(md_file), format="markdown", category="summary"),
-            ReportArtifact(name="Final Report (JSON)", path=str(json_file), format="json", category="summary"),
-            ReportArtifact(name="Review Projection (JSON)", path=str(review_json), format="json", category="review"),
-            ReportArtifact(name="Review Machine Queue (JSON)", path=str(review_machine), format="json", category="machine"),
-        ])
+        if md_file.exists():
+            artifacts.append(ReportArtifact(name="Final Report (Markdown)", path=str(md_file), format="markdown", category="summary"))
+        if json_file.exists():
+            artifacts.append(ReportArtifact(name="Final Report (JSON)", path=str(json_file), format="json", category="summary"))
+        if review_json.exists():
+            artifacts.append(ReportArtifact(name="Review Projection (JSON)", path=str(review_json), format="json", category="review"))
+        if review_machine.exists():
+            artifacts.append(ReportArtifact(name="Review Machine Queue (JSON)", path=str(review_machine), format="json", category="machine"))
 
         try:
             human_review_rows = build_human_review_queue(review_rows)
             write_simple_xlsx(human_review_rows, REVIEW_QUEUE_WORKBOOK_COLUMNS, review_xlsx, sheet_name="Review Queue")
             artifacts.append(ReportArtifact(name="Review Queue (Excel)", path=str(review_xlsx), format="xlsx", category="review"))
+            export_successes.append("Review Queue (Excel)")
         except Exception as xlsx_exc:
+            export_failures.append(f"Review Queue (Excel): {xlsx_exc}")
             logger.warning("Could not write review XLSX: %s", xlsx_exc)
 
+        _record_export_status()
         logger.info("Report aggregator: %d issues aggregated, %d in review queue", len(issues), len(review_rows))
     except Exception as exc:
+        export_failures.append(f"Report Aggregator: {exc}")
+        _record_export_status()
         logger.warning("Report aggregation failed: %s", exc)
 
     return artifacts

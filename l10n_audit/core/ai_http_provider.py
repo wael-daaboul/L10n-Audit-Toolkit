@@ -60,7 +60,7 @@ class HttpAIProvider:
                     if is_ai_debug_mode():
                         logger.exception("AI PROVIDER failure [key=%s reason=%s]", item_key, exc.category)
                     else:
-                        logger.warning("AI PROVIDER failure [key=%s reason=%s]", item_key, exc.category)
+                        logger.debug("AI PROVIDER failure [key=%s reason=%s]", item_key, exc.category)
                     raise
                 translated_text = _extract_translated_text(response)
                 if translated_text is None:
@@ -108,7 +108,7 @@ class HttpAIProvider:
             if is_ai_debug_mode():
                 logger.exception("AI PROVIDER legacy batch failure [reason=%s]", exc.category)
             else:
-                logger.warning("AI PROVIDER legacy batch failure [reason=%s]", exc.category)
+                logger.debug("AI PROVIDER legacy batch failure [reason=%s]", exc.category)
             raise
         if response and "fixes" in response:
             return verify_batch_fixes(batch, response["fixes"], glossary=glossary)

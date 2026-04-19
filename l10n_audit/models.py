@@ -623,6 +623,7 @@ class AuditResult:
     # Status
     success: bool = True
     error_message: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ #
 
@@ -654,6 +655,7 @@ class AuditResult:
             "duration_ms": self.duration_ms,
             "success": self.success,
             "error_message": self.error_message,
+            "metadata": self.metadata,
             "summary": self.summary.to_dict(),
             "issues": [i.to_dict() for i in self.issues],
             "reports": [r.to_dict() for r in self.reports],
