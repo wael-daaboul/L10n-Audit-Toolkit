@@ -1,6 +1,9 @@
+import contextlib
+import io
 import json
 import logging
 import litellm
+import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +41,53 @@ def _suppress_provider_noise_in_normal_mode() -> None:
         return
     for logger_name in ("litellm", "LiteLLM", "httpx", "openai"):
         logging.getLogger(logger_name).setLevel(logging.ERROR)
+
+
+@contextlib.contextmanager
+def _suppress_litellm_io():
+    """Redirect LiteLLM stdout/stderr to /dev/null in normal mode.
+
+    Redirects at both the Python object level (sys.stdout/sys.stderr) and the
+    OS file-descriptor level (fd 1 and 2) so that LiteLLM spam is suppressed
+    regardless of whether it is printed via Python's ``print()`` or via C
+    extensions that write directly to the underlying fd.
+
+    In debug mode the streams are left untouched so raw provider output
+    remains visible.  The toolkit's own logging handlers write to files or
+    a logging stream — they are never affected by this context manager.
+    """
+    if is_ai_debug_mode():
+        yield
+        return
+
+    import sys
+
+    with open(os.devnull, "w") as devnull_file:
+        # Python-level: catches sys.stdout.write() and print()
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = devnull_file
+        sys.stderr = devnull_file
+        # OS-level: catches C-extension writes directly to fd 1 / fd 2
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        try:
+            saved_stdout_fd = os.dup(1)
+            saved_stderr_fd = os.dup(2)
+            try:
+                os.dup2(devnull_fd, 1)
+                os.dup2(devnull_fd, 2)
+                try:
+                    yield
+                finally:
+                    os.dup2(saved_stdout_fd, 1)
+                    os.dup2(saved_stderr_fd, 2)
+            finally:
+                os.close(saved_stdout_fd)
+                os.close(saved_stderr_fd)
+        finally:
+            os.close(devnull_fd)
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 
 def _coerce_positive_float(value: Any, default: float) -> float:
@@ -240,16 +290,17 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
     consecutive_rate_limits = 0
     for attempt in range(max_retries):
         try:
-            response = litellm.completion(
-                model=model,
-                messages=messages,
-                api_key=api_key,
-                base_url=api_base,
-                temperature=0.0,
-                response_format=response_format,
-                timeout=timeout_seconds,
-                num_retries=1 # handle retries manually for better logging
-            )
+            with _suppress_litellm_io():
+                response = litellm.completion(
+                    model=model,
+                    messages=messages,
+                    api_key=api_key,
+                    base_url=api_base,
+                    temperature=0.0,
+                    response_format=response_format,
+                    timeout=timeout_seconds,
+                    num_retries=1  # handle retries manually for better logging
+                )
             
             content = response.choices[0].message.content
             content = clean_json_response(content)

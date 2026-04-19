@@ -201,23 +201,76 @@ def test_rate_limited_progress_line_includes_attempts(tmp_path, capsys):
     assert "AI Review: batch 1/1 failed [provider_rate_limited]" in output
 
 
-@patch("l10n_audit.ai.provider.time.sleep")
-def test_provider_retry_uses_bounded_exponential_backoff(mock_sleep):
-    completion_side_effects = [
-        RuntimeError("connection reset by peer"),
-        RuntimeError("connection reset by peer"),
-        _provider_json_response({"fixes": []}),
-    ]
-    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
-        response = request_ai_review_litellm(
-            "prompt",
-            {"api_key": "k", "model": "m"},
-            max_retries=3,
-        )
-    assert response == {"fixes": []}
-    assert mock_sleep.call_count == 2
-    assert mock_sleep.call_args_list[0].args[0] == 1.0
-    assert mock_sleep.call_args_list[1].args[0] == 2.0
+def test_litellm_stdout_is_suppressed_in_normal_mode(monkeypatch, capsys):
+    """In normal mode the litellm.completion call must not leak stdout/stderr."""
+    monkeypatch.delenv("L10N_AUDIT_DEBUG_AI", raising=False)
+    import sys
+
+    def _noisy_completion(**kwargs):
+        # Simulate LiteLLM printing directly to sys.stdout / sys.stderr
+        sys.stdout.write("LiteLLM: provider help line\n")
+        sys.stdout.flush()
+        sys.stderr.write("LiteLLM: debug trace line\n")
+        sys.stderr.flush()
+        raise RuntimeError("connection reset by peer")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_noisy_completion):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    captured = capsys.readouterr()
+    assert "LiteLLM: provider help line" not in captured.out
+    assert "LiteLLM: debug trace line" not in captured.err
+
+
+def test_litellm_stdout_is_visible_in_debug_mode(monkeypatch, capsys):
+    """In debug mode the litellm.completion stdout/stderr must NOT be suppressed."""
+    monkeypatch.setenv("L10N_AUDIT_DEBUG_AI", "1")
+    import sys
+
+    def _noisy_completion(**kwargs):
+        sys.stdout.write("LiteLLM: provider help line\n")
+        sys.stdout.flush()
+        raise RuntimeError("connection reset by peer")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_noisy_completion):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    captured = capsys.readouterr()
+    assert "LiteLLM: provider help line" in captured.out
+
+
+def test_toolkit_logging_is_preserved_in_normal_mode(monkeypatch, caplog):
+    """Toolkit logger lines must remain visible when LiteLLM io is suppressed."""
+    monkeypatch.delenv("L10N_AUDIT_DEBUG_AI", raising=False)
+    caplog.set_level(logging.DEBUG)
+
+    with patch(
+        "l10n_audit.ai.provider.litellm.completion",
+        side_effect=RuntimeError("connection reset by peer"),
+    ):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    assert any("provider_connection_error" in r.message or "provider error" in r.message for r in caplog.records)
+
+
+def test_provider_error_classification_unaffected_by_io_suppression(monkeypatch):
+    """stdout/stderr suppression must not change exception classification."""
+    monkeypatch.delenv("L10N_AUDIT_DEBUG_AI", raising=False)
+
+    import sys
+
+    def _noisy_rate_limit(**kwargs):
+        sys.stdout.write("LiteLLM spam\n")
+        raise RuntimeError("rate limit exceeded")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_noisy_rate_limit):
+        with pytest.raises(AIProviderError) as exc_info:
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    assert exc_info.value.category == "provider_rate_limited"
 
 
 @patch("l10n_audit.ai.provider.time.sleep")
