@@ -684,7 +684,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             details = exc.details if isinstance(exc.details, dict) else {}
             attempt = details.get("attempt")
             max_attempts = details.get("max_attempts")
-            if exc.category == "provider_rate_limited" and attempt and max_attempts:
+            if exc.category == "provider_rate_limited" and attempt is not None and max_attempts is not None:
                 print(f"AI Review: batch {i}/{len(batches)} rate-limited (attempt {attempt}/{max_attempts})")
             print(f"AI Review: batch {i}/{len(batches)} failed [{exc.category}]")
             if is_ai_debug_mode():

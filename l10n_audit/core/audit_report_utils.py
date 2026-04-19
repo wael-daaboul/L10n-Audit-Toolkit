@@ -515,13 +515,15 @@ def _to_json_safe(value: Any) -> Any:
         return [_to_json_safe(item) for item in value]
     if isinstance(value, set):
         normalized = [_to_json_safe(item) for item in value]
-        def _sort_key(item: Any) -> str:
-            try:
-                return json.dumps(item, ensure_ascii=False, sort_keys=True)
-            except TypeError:
-                return str(item)
-        return sorted(normalized, key=_sort_key)
+        return sorted(normalized, key=_json_safe_sort_key)
     return value
+
+
+def _json_safe_sort_key(item: Any) -> str:
+    try:
+        return json.dumps(item, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(item)
 
 
 def write_unified_json(path: Path, payload: dict[str, Any]) -> None:

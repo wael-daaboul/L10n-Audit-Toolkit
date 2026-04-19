@@ -1673,7 +1673,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         review_json = resolve_review_projection_json_path(runtime)
         review_xlsx = resolve_review_queue_path(runtime)
         review_machine = resolve_review_machine_queue_json_path(runtime)  # Added (Phase 9)
-        normalized_include_sources = sorted(include_sources) if include_sources else sorted(reports.keys())
+        sorted_include_sources = sorted(include_sources) if include_sources else sorted(reports.keys())
 
         md_file.write_text(markdown, encoding="utf-8")
         export_successes.append("Final Report (Markdown)")
@@ -1683,7 +1683,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
         warn_deprecated_artifact("aggregated_issues_json", aggr_file, "write", options.strict_deprecations)
         _write_json_artifact(
             aggr_file,
-            {"included_sources": normalized_include_sources, "issues": issues},
+            {"included_sources": sorted_include_sources, "issues": issues},
             "Aggregated Issues (JSON)",
         )
 
@@ -1721,7 +1721,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
                 review_rows=review_rows,
                 payload=payload,
                 missing=missing,
-                include_sources=normalized_include_sources,
+                include_sources=sorted_include_sources,
                 source_status=source_status,
                 project_root=runtime.project_root,
                 runtime=runtime,
