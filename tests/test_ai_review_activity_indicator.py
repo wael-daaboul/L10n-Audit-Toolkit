@@ -99,6 +99,8 @@ def test_activity_indicator_starts_during_provider_wait(tmp_path, capsys, monkey
     output = capsys.readouterr().out
     assert "AI Review: processing 1 batch(es)..." in output
     assert any(frame in output for frame in spinner_frames)
+    assert "AI Review: batch 1/1 waiting on provider response..." in output
+    assert "AI Review: processing 1 batch(es)... ⠏" not in output
 
 
 def test_activity_indicator_stop_cleanup_on_success(tmp_path, monkeypatch):

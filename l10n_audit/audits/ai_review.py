@@ -515,15 +515,17 @@ class _AIReviewWaitIndicator:
                 frame = _SPINNER_FRAMES[frame_index % len(_SPINNER_FRAMES)]
                 frame_index += 1
                 line = (
-                    f"AI Review: processing {self._total_batches} batch(es)... "
-                    f"{frame} waiting {elapsed_seconds}s"
+                    "AI Review: "
+                    f"batch {self._batch_index}/{self._total_batches} "
+                    f"waiting on provider response... {frame} {elapsed_seconds}s"
                 )
                 self._render_spinner_line(line)
                 continue
             if elapsed_seconds >= next_heartbeat_seconds:
                 self._stream.write(
-                    "AI Review: still working "
-                    f"(batch {self._batch_index}/{self._total_batches}, elapsed {elapsed_seconds}s)\n"
+                    "AI Review: "
+                    f"batch {self._batch_index}/{self._total_batches} "
+                    f"waiting on provider response... {elapsed_seconds}s\n"
                 )
                 self._stream.flush()
                 next_heartbeat_seconds += 10
