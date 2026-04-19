@@ -507,5 +507,16 @@ def summarize_issues(issues: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _to_json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(k): _to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_json_safe(item) for item in value]
+    if isinstance(value, set):
+        normalized = [_to_json_safe(item) for item in value]
+        return sorted(normalized, key=lambda item: repr(item))
+    return value
+
+
 def write_unified_json(path: Path, payload: dict[str, Any]) -> None:
-    write_json(payload, path)
+    write_json(_to_json_safe(payload), path)

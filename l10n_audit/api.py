@@ -197,6 +197,8 @@ def run_audit(
             runtime = load_runtime_from_path(path)
             # Recovery & Enhancement: Create isolated workspace (replaces paths in runtime)
             runtime = prepare_audit_workspace(runtime)
+            if not hasattr(runtime, "metadata") or not isinstance(getattr(runtime, "metadata", None), dict):
+                runtime.metadata = {}
             logger.info("Audit workspace prepared and runtime paths isolated.")
         except AuditRuntimeError as exc:
             raise InvalidProjectError(f"Invalid project configuration: {exc}") from exc
@@ -317,6 +319,7 @@ def run_audit(
 
         result.issues = issues
         result.reports = reports
+        result.metadata = dict(getattr(runtime, "metadata", {}) or {})
         result.summary = AuditSummary.from_issues(issues)
         # Populate total_keys from locale data (best effort)
         try:

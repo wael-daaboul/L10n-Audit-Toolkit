@@ -179,6 +179,17 @@ def get_ai_model(args, config_dict):
     return "deepseek/deepseek-chat"
 
 
+def _format_duration(duration_ms: int) -> str:
+    if duration_ms < 1000:
+        return f"{duration_ms} ms"
+    total_seconds = duration_ms / 1000
+    minutes = int(total_seconds // 60)
+    seconds = total_seconds - (minutes * 60)
+    if minutes:
+        return f"{minutes}m {seconds:.1f}s"
+    return f"{seconds:.1f}s"
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     path_val = args.project_root if getattr(args, "project_root", None) else args.path
     project_root = find_project_root(Path(path_val).resolve())
@@ -223,38 +234,60 @@ def cmd_run(args: argparse.Namespace) -> int:
         
         resolved_model = get_ai_model(args, config_dict)
         ai_enabled = getattr(args, "ai_enabled", False)
+
+        debug_flag = "L10N_AUDIT_DEBUG_AI"
+        previous_debug_flag = os.environ.get(debug_flag)
+        if verbose:
+            os.environ[debug_flag] = "1"
+        elif previous_debug_flag is None:
+            os.environ.pop(debug_flag, None)
         
         for label in _stage_module_names(stage, ai_enabled=ai_enabled):
             print(f"Running {label}...")
 
         # Unify arguments with the main API
-        result = l10n_audit.run_audit(
-            project_root,
-            stage=stage,
-            ai_enabled=ai_enabled,
-            ai_api_key=getattr(args, "ai_api_key", None),
-            ai_model=resolved_model,
-            ai_api_base=getattr(args, "ai_api_base", None),
-            write_reports=True,
-            apply_safe_fixes=getattr(args, "apply_safe_fixes", False),
-            results_retention_mode=getattr(args, "retention_mode", None),
-            results_retention_prefix=getattr(args, "retention_prefix", None),
-            # New Power-User Arguments
-            translate_missing=getattr(args, "translate_missing", False),
-            glossary_path=getattr(args, "glossary", None),
-            out_xlsx=getattr(args, "out_xlsx", None),
-            config_schema=getattr(args, "schema", None),
-            verbose=args.verbose,
-            force=args.force,
-            input_report=getattr(args, "input_report", None),
-        )
+        try:
+            result = l10n_audit.run_audit(
+                project_root,
+                stage=stage,
+                ai_enabled=ai_enabled,
+                ai_api_key=getattr(args, "ai_api_key", None),
+                ai_model=resolved_model,
+                ai_api_base=getattr(args, "ai_api_base", None),
+                write_reports=True,
+                apply_safe_fixes=getattr(args, "apply_safe_fixes", False),
+                results_retention_mode=getattr(args, "retention_mode", None),
+                results_retention_prefix=getattr(args, "retention_prefix", None),
+                # New Power-User Arguments
+                translate_missing=getattr(args, "translate_missing", False),
+                glossary_path=getattr(args, "glossary", None),
+                out_xlsx=getattr(args, "out_xlsx", None),
+                config_schema=getattr(args, "schema", None),
+                verbose=args.verbose,
+                force=args.force,
+                input_report=getattr(args, "input_report", None),
+            )
+        finally:
+            if previous_debug_flag is None:
+                os.environ.pop(debug_flag, None)
+            else:
+                os.environ[debug_flag] = previous_debug_flag
 
         if not result.success:
             print(f"\n❌ Audit failed: {result.error_message}", file=sys.stderr)
             return 1
 
         summary = result.summary
-        print(f"\n✨ Audit complete — stage: {stage}")
+        metadata = getattr(result, "metadata", {})
+        metadata = metadata if isinstance(metadata, dict) else {}
+        ai_status = metadata.get("ai_review_status", {}) if isinstance(metadata.get("ai_review_status"), dict) else {}
+        export_status = metadata.get("report_export_status", {}) if isinstance(metadata.get("report_export_status"), dict) else {}
+        export_failed = list(export_status.get("failed_exports", [])) if isinstance(export_status.get("failed_exports"), list) else []
+        ai_degraded = bool(ai_status.get("degraded", False))
+        heading = "✨ Audit completed"
+        if export_failed or ai_degraded:
+            heading = "⚠️ Audit completed with warnings"
+        print(f"\n{heading} — stage: {stage}")
         print(f"   Total issues     : {summary.total_issues}")
         print(f"   Missing keys     : {summary.missing_keys}")
         print(f"   Unused keys      : {summary.unused_keys}")
@@ -268,9 +301,23 @@ def cmd_run(args: argparse.Namespace) -> int:
             if verbose:
                 for r in result.reports:
                     print(f"     - {r.path}")
+
+        if ai_status:
+            status_label = str(ai_status.get("status", "unknown")).replace("_", " ")
+            print(f"   AI review        : {status_label}")
+            if ai_degraded:
+                print("   AI note          : provider failures detected; run continued with partial/no AI suggestions.")
+
+        if export_status:
+            if export_failed:
+                print(f"   Report export    : partial failure ({len(export_failed)} file(s))")
+                for failure in export_failed:
+                    print(f"     - {failure}")
+            else:
+                print("   Report export    : ok")
         
         if result.duration_ms:
-            print(f"   Duration         : {result.duration_ms} ms")
+            print(f"   Duration         : {_format_duration(result.duration_ms)}")
         
         return 0
 

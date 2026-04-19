@@ -28,6 +28,13 @@ audit_logger = setup_audit_logger()
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
 
 
+def _suppress_provider_noise_in_normal_mode() -> None:
+    if is_ai_debug_mode():
+        return
+    for logger_name in ("litellm", "LiteLLM", "httpx", "openai"):
+        logging.getLogger(logger_name).setLevel(logging.ERROR)
+
+
 @dataclass
 class AIProviderError(RuntimeError):
     category: str
@@ -167,6 +174,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
         timeout_seconds = DEFAULT_REQUEST_TIMEOUT_SECONDS
     if timeout_seconds <= 0:
         timeout_seconds = DEFAULT_REQUEST_TIMEOUT_SECONDS
+    _suppress_provider_noise_in_normal_mode()
     
     if not api_key:
         logging.warning("AI Review skipped: No API Key provided.")
@@ -207,7 +215,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                 last_provider_error = AIProviderError(
                     category=category,
                     message="AI provider returned invalid JSON response.",
-                    details={"attempt": attempt + 1, "content_preview": content[:160]},
+                    details={"attempt": attempt + 1, "max_attempts": max_retries, "content_preview": content[:160]},
                 )
                 if is_ai_debug_mode():
                     logging.exception(
@@ -217,7 +225,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                         content[:300],
                     )
                 else:
-                    logging.warning(
+                    logging.debug(
                         "AI Review provider error [%s] on attempt %d/%d",
                         category,
                         attempt + 1,
@@ -230,7 +238,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
             last_provider_error = AIProviderError(
                 category=category,
                 message=f"AI provider request failed ({category}).",
-                details={"attempt": attempt + 1, "error_type": type(e).__name__, "error": str(e)},
+                details={"attempt": attempt + 1, "max_attempts": max_retries, "error_type": type(e).__name__, "error": str(e)},
                 cause=e,
             )
             if is_ai_debug_mode():
@@ -241,7 +249,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                     max_retries,
                 )
             else:
-                logging.warning(
+                logging.debug(
                     "AI Review provider error [%s] on attempt %d/%d",
                     category,
                     attempt + 1,
