@@ -149,7 +149,7 @@ def test_cli_status_is_concise_in_normal_mode(tmp_path, capsys, caplog, monkeypa
         run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
 
     output = capsys.readouterr().out
-    assert "AI Review: provider timeout on batch 1" in output
+    assert "AI Review: batch 1/1 failed [provider_timeout]" in output
     assert "socket read timed out" not in output
 
 
@@ -172,3 +172,23 @@ def test_debug_mode_keeps_provider_details_and_emits_fallback_reason(tmp_path, c
 
     assert "provider_timeout" in caplog.text
     assert "socket read timed out" in caplog.text
+
+
+def test_rate_limited_progress_line_includes_attempts(tmp_path, capsys):
+    runtime = _make_runtime(tmp_path)
+    options = _make_options(batch_size=1, max_consecutive_failures=1)
+    provider = MagicMock()
+    provider.review_batch.side_effect = AIProviderError(
+        "provider_rate_limited",
+        "rate limited",
+        details={"attempt": 2, "max_attempts": 3},
+    )
+    issues = _make_issues(1)
+    en_data, ar_data = _make_locale_state(1)
+
+    with patch("l10n_audit.core.validators.validate_ai_config", return_value={"api_key": "test"}):
+        run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
+
+    output = capsys.readouterr().out
+    assert "AI Review: batch 1/1 rate-limited (attempt 2/3)" in output
+    assert "AI Review: batch 1/1 failed [provider_rate_limited]" in output
