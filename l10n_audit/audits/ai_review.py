@@ -416,7 +416,6 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
     ar_data:
         Optional pre-hydrated canonical AR locale dict (Phase B injection).
     """
-    import os
     import time
     from l10n_audit.models import issue_from_dict
     from l10n_audit.exceptions import AIConfigError

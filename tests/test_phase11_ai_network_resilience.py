@@ -52,6 +52,7 @@ def _make_issues(count: int) -> list[dict]:
             "key": f"home.title.{i}",
             "issue_type": "ar_qc",
             "message": "Possible semantic issue.",
+            "context": "Screen title shown in settings dashboard header",
             "severity": "warning",
             "decision": {"route": "ai_review", "confidence": 0.8, "risk": "low"},
         }
@@ -60,7 +61,7 @@ def _make_issues(count: int) -> list[dict]:
 
 
 def _make_locale_state(count: int) -> tuple[dict, dict]:
-    en_data = {f"home.title.{i}": f"English source text {i}" for i in range(count)}
+    en_data = {f"home.title.{i}": f"This is a longer English source text {i}" for i in range(count)}
     ar_data = {f"home.title.{i}": f"نص عربي حالي {i}" for i in range(count)}
     return en_data, ar_data
 

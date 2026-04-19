@@ -4,7 +4,7 @@ import litellm
 import time
 from dataclasses import dataclass
 from typing import Any
-from l10n_audit.ai.verification import verify_batch_fixes, validate_glossary_compliance, GlossaryViolationError
+from l10n_audit.ai.verification import validate_glossary_compliance
 from l10n_audit.core.ai_trace import is_ai_debug_mode
 
 def setup_audit_logger():
