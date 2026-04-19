@@ -1,4 +1,5 @@
 import logging
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -6,6 +7,12 @@ import pytest
 
 from l10n_audit.ai.provider import AIProviderError, request_ai_review_litellm
 from l10n_audit.audits.ai_review import run_stage
+
+
+def _provider_json_response(payload: dict) -> MagicMock:
+    response = MagicMock()
+    response.choices = [MagicMock(message=MagicMock(content=json.dumps(payload)))]
+    return response
 
 
 def _make_runtime(tmp_path: Path):
@@ -190,5 +197,180 @@ def test_rate_limited_progress_line_includes_attempts(tmp_path, capsys):
         run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
 
     output = capsys.readouterr().out
-    assert "AI Review: batch 1/1 rate-limited (attempt 2/3)" in output
+    assert "AI Review: batch 1/1 rate limited — applying backoff (attempt 2/3)" in output
     assert "AI Review: batch 1/1 failed [provider_rate_limited]" in output
+
+
+def test_litellm_stdout_is_suppressed_in_normal_mode(monkeypatch, capsys):
+    """In normal mode the litellm.completion call must not leak stdout/stderr."""
+    monkeypatch.delenv("L10N_AUDIT_DEBUG_AI", raising=False)
+    import sys
+
+    def _noisy_completion(**kwargs):
+        # Simulate LiteLLM printing directly to sys.stdout / sys.stderr
+        sys.stdout.write("LiteLLM: provider help line\n")
+        sys.stdout.flush()
+        sys.stderr.write("LiteLLM: debug trace line\n")
+        sys.stderr.flush()
+        raise RuntimeError("connection reset by peer")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_noisy_completion):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    captured = capsys.readouterr()
+    assert "LiteLLM: provider help line" not in captured.out
+    assert "LiteLLM: debug trace line" not in captured.err
+
+
+def test_litellm_stdout_is_visible_in_debug_mode(monkeypatch, capsys):
+    """In debug mode the litellm.completion stdout/stderr must NOT be suppressed."""
+    monkeypatch.setenv("L10N_AUDIT_DEBUG_AI", "1")
+    import sys
+
+    def _noisy_completion(**kwargs):
+        sys.stdout.write("LiteLLM: provider help line\n")
+        sys.stdout.flush()
+        raise RuntimeError("connection reset by peer")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_noisy_completion):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    captured = capsys.readouterr()
+    assert "LiteLLM: provider help line" in captured.out
+
+
+def test_toolkit_logging_is_preserved_in_normal_mode(monkeypatch, caplog):
+    """Toolkit logger lines must remain visible when LiteLLM io is suppressed."""
+    monkeypatch.delenv("L10N_AUDIT_DEBUG_AI", raising=False)
+    caplog.set_level(logging.DEBUG)
+
+    with patch(
+        "l10n_audit.ai.provider.litellm.completion",
+        side_effect=RuntimeError("connection reset by peer"),
+    ):
+        with pytest.raises(AIProviderError):
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    assert any("provider_connection_error" in r.message or "provider error" in r.message for r in caplog.records)
+
+
+def test_provider_error_classification_unaffected_by_io_suppression(monkeypatch):
+    """stdout/stderr suppression must not change exception classification."""
+    monkeypatch.delenv("L10N_AUDIT_DEBUG_AI", raising=False)
+
+    import sys
+
+    def _noisy_rate_limit(**kwargs):
+        sys.stdout.write("LiteLLM spam\n")
+        raise RuntimeError("rate limit exceeded")
+
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=_noisy_rate_limit):
+        with pytest.raises(AIProviderError) as exc_info:
+            request_ai_review_litellm("prompt", {"api_key": "k", "model": "m"}, max_retries=1)
+
+    assert exc_info.value.category == "provider_rate_limited"
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_rate_limited_retry_uses_stronger_backoff(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        with pytest.raises(AIProviderError) as exc_info:
+            request_ai_review_litellm(
+                "prompt",
+                {"api_key": "k", "model": "m"},
+                max_retries=3,
+            )
+    assert exc_info.value.category == "provider_rate_limited"
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 2.0
+    assert mock_sleep.call_args_list[1].args[0] == 4.0
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_provider_retry_backoff_is_capped(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("connection reset by peer"),
+        RuntimeError("connection reset by peer"),
+        RuntimeError("connection reset by peer"),
+        _provider_json_response({"fixes": []}),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        request_ai_review_litellm(
+            "prompt",
+            {
+                "api_key": "k",
+                "model": "m",
+                "provider_retry_backoff_max_seconds": 2,
+            },
+            max_retries=4,
+        )
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [1.0, 2.0, 2.0]
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_rate_limited_backoff_is_capped(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+        _provider_json_response({"fixes": []}),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        request_ai_review_litellm(
+            "prompt",
+            {
+                "api_key": "k",
+                "model": "m",
+                "provider_rate_limit_backoff_max_seconds": 3,
+            },
+            max_retries=4,
+        )
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [2.0, 3.0, 3.0]
+
+
+@patch("time.sleep")
+def test_inter_batch_delay_uses_deterministic_spacing(mock_sleep, tmp_path):
+    runtime = _make_runtime(tmp_path)
+    options = _make_options(batch_size=1, max_consecutive_failures=3)
+    provider = MagicMock()
+    provider.review_batch.return_value = []
+    issues = _make_issues(3)
+    en_data, ar_data = _make_locale_state(3)
+
+    with patch("l10n_audit.core.validators.validate_ai_config", return_value={"api_key": "test"}):
+        run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
+
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 0.5
+    assert mock_sleep.call_args_list[1].args[0] == 0.5
+
+
+def test_repeated_rate_limits_stop_remaining_batches_early(tmp_path, capsys):
+    runtime = _make_runtime(tmp_path)
+    options = _make_options(batch_size=1, max_consecutive_failures=5)
+    provider = MagicMock()
+    provider.review_batch.side_effect = [
+        AIProviderError("provider_rate_limited", "rate limited", details={"attempt": 2, "max_attempts": 3}),
+        AIProviderError("provider_rate_limited", "rate limited", details={"attempt": 3, "max_attempts": 3}),
+        [],
+    ]
+    issues = _make_issues(4)
+    en_data, ar_data = _make_locale_state(4)
+
+    with patch("l10n_audit.core.validators.validate_ai_config", return_value={"api_key": "test"}):
+        run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
+
+    output = capsys.readouterr().out
+    assert provider.review_batch.call_count == 2
+    assert "AI Review: rate limited — stopping remaining batches after repeated provider throttling" in output
+    usage = runtime.metadata["ai_review_status"]["provider_usage"]
+    assert usage["requests_sent"] == 2
+    assert usage["rate_limit_failures"] == 2
+    assert usage["retries_attempted"] == 3

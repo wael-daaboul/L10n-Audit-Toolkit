@@ -75,7 +75,7 @@ def test_write_unified_json_normalizes_sets_to_sorted_lists(tmp_path: Path) -> N
 
 def test_cmd_run_summary_surfaces_export_failure_and_ai_degradation(tmp_path: Path, capsys) -> None:
     fake_root = ModuleType("l10n_audit")
-    fake_root.__version__ = "1.7.0"
+    fake_root.__version__ = "1.7.1"
     fake_root.run_audit = lambda *args, **kwargs: _fake_success_result()
     fake_api = ModuleType("l10n_audit.api")
     fake_api._stage_module_names = lambda *args, **kwargs: ["audits.l10n_audit_pro"]

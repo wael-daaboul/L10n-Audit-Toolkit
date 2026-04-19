@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.7.1] — Release Stabilization
+
+### Improved
+- Canonical source guard now enabled by default, enforcing deterministic source-identity across all audit runs.
+- AI invocation hardened with stricter semantic validation; false-positive suggestions reduced.
+- AI review outcomes are fully deterministic and reproducible across runs.
+- Review/apply safety alignment tightened; frozen-artifact enforcement is explicit.
+- AI provider resilience: bounded exponential backoff and rate-limit-aware circuit breaker prevent burst-retry loops.
+- Deterministic inter-batch pacing (configurable `inter_batch_delay_seconds`, default 0.5 s).
+- CLI final summary now truthfully surfaces AI review status and export status.
+- LiteLLM stdout/stderr spam suppressed in normal mode; full provider output preserved when `L10N_AUDIT_DEBUG_AI=1`.
+- Semantic precision improvements for short and domain-sensitive UI strings.
+
+### Notes
+- No breaking changes. All existing workflows and contracts are preserved.
+- Debug flag `L10N_AUDIT_DEBUG_AI=1` exposes raw provider output for diagnostics.
+- Environment flag `L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE=1` is available to opt out of the source guard if needed.
+
 ## [v1.7.0] — Workflow Hardening & Closure
 
 ### Completed

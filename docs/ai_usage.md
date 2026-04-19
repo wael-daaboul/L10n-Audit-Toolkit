@@ -68,3 +68,49 @@ The adaptive config workflow is separate:
 `generate-adaptation-report -> generate-manifest -> review-manifest -> apply-manifest`
 
 AI review suggestions do not bypass this chain and do not write directly to manifest artifacts.
+
+---
+
+## Provider Resilience
+
+The AI review stage handles provider failures gracefully without crashing the pipeline:
+
+- **Automatic retry with bounded backoff:** Transient errors (timeouts, connection resets) are retried with exponential backoff capped at a configurable maximum. Rate-limited responses use a stronger backoff multiplier.
+- **Rate-limit circuit breaker:** Repeated throttling across batches triggers an early-stop with a clear CLI message. Previously processed batches are preserved.
+- **Graceful degradation:** If the provider fails persistently, AI review is skipped for remaining batches. The rest of the audit pipeline continues normally.
+- **No crash on provider failure:** The toolkit never exits with an error solely due to AI provider unavailability.
+
+The CLI final summary always reports the AI review outcome (completed, degraded, or skipped).
+
+---
+
+## Debug Mode
+
+Set the environment variable `L10N_AUDIT_DEBUG_AI=1` to enable AI debug mode:
+
+```bash
+export L10N_AUDIT_DEBUG_AI=1
+l10n-audit run --stage ai-review --ai-enabled --ai-model "openai/gpt-4o-mini"
+```
+
+In debug mode:
+- Raw LiteLLM and provider stdout/stderr output is preserved (not suppressed).
+- Detailed per-attempt provider error information is logged.
+- Fallback reason codes are emitted for every skipped or degraded decision.
+
+In normal mode (default):
+- LiteLLM help/provider spam is suppressed to keep toolkit progress output readable.
+- Toolkit-owned log lines remain fully visible.
+- Provider errors are logged at `DEBUG` level.
+
+---
+
+## Canonical Source Guard
+
+The canonical source guard (`L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE`) prevents source-identity drift during AI review. It is **enabled by default** in v1.7.1.
+
+To disable it (not recommended for production):
+
+```bash
+export L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE=1
+```

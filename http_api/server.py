@@ -44,7 +44,7 @@ import l10n_audit
 app = FastAPI(
     title="L10n Audit Toolkit API",
     description="HTTP reference API for the L10n Audit Toolkit.",
-    version="1.7.0",
+    version="1.7.1",
 )
 
 
@@ -79,7 +79,7 @@ class InitRequest(BaseModel):
 @app.get("/health", tags=["Health"])
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "version": "1.7.0"}
+    return {"status": "ok", "version": "1.7.1"}
 
 
 @app.post("/audit/run", tags=["Audit"])

@@ -90,3 +90,34 @@ When `l10n-audit init` generates the workspace, it maps the chosen `project_prof
 You can manually change any of these fields. **Explicit fields defined in `config.json` will ALWAYS override the implicit defaults of the `project_profile`.**
 
 For instance, if your Next.js app has locales in `public/locales` instead of `src/locales`, you simply edit `locale_paths` in `config.json`, and the toolkit will respect your custom path while keeping the rest of the React/Next.js intelligence intact.
+
+---
+
+## Environment Variable Flags
+
+The following environment variables control optional runtime behaviors. They are not stored in `config.json` and do not affect the audit contract.
+
+### `L10N_AUDIT_DEBUG_AI`
+
+Enables verbose AI diagnostics mode.
+
+```bash
+export L10N_AUDIT_DEBUG_AI=1
+```
+
+When set to `1`, `true`, `yes`, or `on`:
+- Raw LiteLLM and provider stdout/stderr output is preserved (not suppressed).
+- Detailed per-attempt provider error traces are emitted to the log.
+- Fallback and skip reason codes are logged for every AI decision.
+
+Default: unset (normal mode — LiteLLM output suppressed, toolkit logs visible).
+
+### `L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE`
+
+Disables the canonical source guard. **Not recommended for production.**
+
+```bash
+export L10N_AUDIT_CANONICAL_SOURCE_GUARD_DISABLE=1
+```
+
+The canonical source guard (enabled by default in v1.7.1) enforces deterministic source-identity across audit runs, preventing source-key drift during AI review and apply operations. Disabling it may allow stale or diverged source values to propagate into the fix pipeline.

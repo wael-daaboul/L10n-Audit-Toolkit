@@ -391,11 +391,49 @@ def _provider_reason_text(reason: str) -> str:
     reason_map = {
         "provider_timeout": "provider timeout",
         "provider_connection_error": "provider connection error",
-        "provider_rate_limited": "rate limited, retry skipped",
+        "provider_rate_limited": "rate limited — applying backoff",
         "provider_api_error": "provider API error",
         "provider_invalid_response": "provider invalid response",
     }
     return reason_map.get(reason, "provider failure")
+
+
+def _coerce_int_option(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    if isinstance(value, bool):
+        parsed = default
+    elif isinstance(value, int):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except ValueError:
+            parsed = default
+    else:
+        parsed = default
+    if minimum is not None and parsed < minimum:
+        parsed = minimum
+    if maximum is not None and parsed > maximum:
+        parsed = maximum
+    return parsed
+
+
+def _coerce_float_option(value: Any, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    if isinstance(value, bool):
+        parsed = default
+    elif isinstance(value, (int, float)):
+        parsed = float(value)
+    elif isinstance(value, str):
+        try:
+            parsed = float(value.strip())
+        except ValueError:
+            parsed = default
+    else:
+        parsed = default
+    if minimum is not None and parsed < minimum:
+        parsed = minimum
+    if maximum is not None and parsed > maximum:
+        parsed = maximum
+    return parsed
 
 # ---------------------------------------------------------------------------
 # Python API adapter — called by l10n_audit.core.engine
@@ -632,19 +670,42 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
     # Process in batches using the injected AI provider
     all_fixes: list[dict] = []
     batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
-    max_consecutive_failures = int(getattr(options.ai_review, "max_consecutive_failures", 3) or 3)
-    if max_consecutive_failures < 1:
-        max_consecutive_failures = 1
+    max_consecutive_failures = _coerce_int_option(
+        getattr(options.ai_review, "max_consecutive_failures", 3),
+        3,
+        minimum=1,
+    )
+    max_consecutive_rate_limits = _coerce_int_option(
+        getattr(options.ai_review, "max_consecutive_rate_limits", 2),
+        2,
+        minimum=1,
+        maximum=3,
+    )
+    inter_batch_delay_seconds = _coerce_float_option(
+        getattr(options.ai_review, "inter_batch_delay_seconds", 0.5),
+        0.5,
+        minimum=0.0,
+    )
     consecutive_failures = 0
+    consecutive_rate_limits = 0
     provider_failures = 0
+    provider_usage = {
+        "requests_sent": 0,
+        "rate_limit_failures": 0,
+        "retries_attempted": 0,
+        "inter_batch_delay_applied": 0,
+    }
 
     print(f"\nAI Review: processing {len(batches)} batch(es)...")
 
     for i, batch in enumerate(batches, start=1):
+        provider_usage["requests_sent"] += 1
+        should_stop = False
         try:
             # Pass BOTH glossary_terms (for prompt) and raw_glossary (for validation)
             fixes = ai_provider.review_batch(batch, ai_config, glossary=raw_glossary)
             consecutive_failures = 0
+            consecutive_rate_limits = 0
             
             # 2. Register AI fixes with Priority 2
             for f in fixes:
@@ -667,16 +728,19 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 else:
                     logger.warning("AI CONFLICT: Skipping AI suggestion for key '%s' due to priority override.", k)
             
-            # Anti-rate-limit sleep between batches (except the last one)
-            if i < len(batches):
-                time.sleep(2)
         except AIProviderError as exc:
             provider_failures += 1
             consecutive_failures += 1
+            if exc.category == "provider_rate_limited":
+                consecutive_rate_limits += 1
+                provider_usage["rate_limit_failures"] += 1
+            else:
+                consecutive_rate_limits = 0
             _details = {
                 "batch_index": i,
                 "batch_size": len(batch),
                 "consecutive_failures": consecutive_failures,
+                "consecutive_rate_limits": consecutive_rate_limits,
             }
             if is_ai_debug_mode() and exc.details:
                 _details["provider_error"] = exc.details
@@ -684,19 +748,25 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
             details = exc.details if isinstance(exc.details, dict) else {}
             attempt = details.get("attempt")
             max_attempts = details.get("max_attempts")
+            if isinstance(attempt, int) and attempt > 1:
+                provider_usage["retries_attempted"] += attempt - 1
             if exc.category == "provider_rate_limited" and attempt is not None and max_attempts is not None:
-                print(f"AI Review: batch {i}/{len(batches)} rate-limited (attempt {attempt}/{max_attempts})")
+                print(f"AI Review: batch {i}/{len(batches)} rate limited — applying backoff (attempt {attempt}/{max_attempts})")
             print(f"AI Review: batch {i}/{len(batches)} failed [{exc.category}]")
             if is_ai_debug_mode():
                 logger.exception("AI review batch %d provider failure [%s]", i, exc.category)
             else:
                 logger.debug("AI review batch %d failed [%s]", i, exc.category)
-            if consecutive_failures >= max_consecutive_failures:
+            if consecutive_rate_limits >= max_consecutive_rate_limits:
+                print("AI Review: rate limited — stopping remaining batches after repeated provider throttling")
+                should_stop = True
+            elif consecutive_failures >= max_consecutive_failures:
                 print(f"AI Review: stopping after {consecutive_failures} consecutive provider failures")
-                break
+                should_stop = True
         except Exception as exc:
             provider_failures += 1
             consecutive_failures += 1
+            consecutive_rate_limits = 0
             emit_ai_fallback(
                 key=f"batch:{i}",
                 reason="provider_api_error",
@@ -709,7 +779,12 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 logger.debug("AI review batch %d failed [provider_api_error]", i)
             if consecutive_failures >= max_consecutive_failures:
                 print(f"AI Review: stopping after {consecutive_failures} consecutive provider failures")
-                break
+                should_stop = True
+        if should_stop:
+            break
+        if i < len(batches):
+            time.sleep(inter_batch_delay_seconds)
+            provider_usage["inter_batch_delay_applied"] += 1
 
     if provider_failures:
         if all_fixes:
@@ -734,6 +809,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 "batches_total": len(batches),
                 "provider_failures": provider_failures,
                 "degraded": bool(provider_failures),
+                "provider_usage": provider_usage,
             }
     except Exception:
         pass
