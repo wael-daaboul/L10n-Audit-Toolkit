@@ -1,4 +1,5 @@
 import logging
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -6,6 +7,12 @@ import pytest
 
 from l10n_audit.ai.provider import AIProviderError, request_ai_review_litellm
 from l10n_audit.audits.ai_review import run_stage
+
+
+def _provider_json_response(payload: dict) -> MagicMock:
+    response = MagicMock()
+    response.choices = [MagicMock(message=MagicMock(content=json.dumps(payload)))]
+    return response
 
 
 def _make_runtime(tmp_path: Path):
@@ -190,5 +197,85 @@ def test_rate_limited_progress_line_includes_attempts(tmp_path, capsys):
         run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
 
     output = capsys.readouterr().out
-    assert "AI Review: batch 1/1 rate-limited (attempt 2/3)" in output
+    assert "AI Review: batch 1/1 rate limited — applying backoff (attempt 2/3)" in output
     assert "AI Review: batch 1/1 failed [provider_rate_limited]" in output
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_provider_retry_uses_bounded_exponential_backoff(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("connection reset by peer"),
+        RuntimeError("connection reset by peer"),
+        _provider_json_response({"fixes": []}),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        response = request_ai_review_litellm(
+            "prompt",
+            {"api_key": "k", "model": "m"},
+            max_retries=3,
+        )
+    assert response == {"fixes": []}
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 1.0
+    assert mock_sleep.call_args_list[1].args[0] == 2.0
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_rate_limited_retry_uses_stronger_backoff(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        with pytest.raises(AIProviderError) as exc_info:
+            request_ai_review_litellm(
+                "prompt",
+                {"api_key": "k", "model": "m"},
+                max_retries=3,
+            )
+    assert exc_info.value.category == "provider_rate_limited"
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 2.0
+    assert mock_sleep.call_args_list[1].args[0] == 4.0
+
+
+@patch("time.sleep")
+def test_inter_batch_spacing_is_deterministic(mock_sleep, tmp_path):
+    runtime = _make_runtime(tmp_path)
+    options = _make_options(batch_size=1, max_consecutive_failures=3)
+    provider = MagicMock()
+    provider.review_batch.return_value = []
+    issues = _make_issues(3)
+    en_data, ar_data = _make_locale_state(3)
+
+    with patch("l10n_audit.core.validators.validate_ai_config", return_value={"api_key": "test"}):
+        run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
+
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 0.5
+    assert mock_sleep.call_args_list[1].args[0] == 0.5
+
+
+def test_repeated_rate_limits_stop_remaining_batches_early(tmp_path, capsys):
+    runtime = _make_runtime(tmp_path)
+    options = _make_options(batch_size=1, max_consecutive_failures=5)
+    provider = MagicMock()
+    provider.review_batch.side_effect = [
+        AIProviderError("provider_rate_limited", "rate limited", details={"attempt": 2, "max_attempts": 3}),
+        AIProviderError("provider_rate_limited", "rate limited", details={"attempt": 3, "max_attempts": 3}),
+        [],
+    ]
+    issues = _make_issues(4)
+    en_data, ar_data = _make_locale_state(4)
+
+    with patch("l10n_audit.core.validators.validate_ai_config", return_value={"api_key": "test"}):
+        run_stage(runtime, options, ai_provider=provider, previous_issues=issues, en_data=en_data, ar_data=ar_data)
+
+    output = capsys.readouterr().out
+    assert provider.review_batch.call_count == 2
+    assert "AI Review: rate limited — stopping remaining batches after repeated provider throttling" in output
+    usage = runtime.metadata["ai_review_status"]["provider_usage"]
+    assert usage["requests_sent"] == 2
+    assert usage["rate_limit_failures"] == 2
+    assert usage["retries_attempted"] == 3

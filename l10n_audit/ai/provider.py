@@ -26,6 +26,10 @@ def setup_audit_logger():
 audit_logger = setup_audit_logger()
 
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60
+DEFAULT_RETRY_BACKOFF_BASE_SECONDS = 1.0
+DEFAULT_RETRY_BACKOFF_MAX_SECONDS = 4.0
+DEFAULT_RATE_LIMIT_BACKOFF_MULTIPLIER = 2.0
+DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS = 8.0
 
 
 def _suppress_provider_noise_in_normal_mode() -> None:
@@ -33,6 +37,45 @@ def _suppress_provider_noise_in_normal_mode() -> None:
         return
     for logger_name in ("litellm", "LiteLLM", "httpx", "openai"):
         logging.getLogger(logger_name).setLevel(logging.ERROR)
+
+
+def _coerce_positive_float(value: Any, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if parsed <= 0:
+        return default
+    return parsed
+
+
+def _retry_backoff_seconds(
+    *,
+    retry_index: int,
+    category: str,
+    config: dict[str, Any],
+) -> float:
+    """Deterministic bounded exponential backoff delay."""
+    base = _coerce_positive_float(
+        config.get("provider_retry_backoff_base_seconds"),
+        DEFAULT_RETRY_BACKOFF_BASE_SECONDS,
+    )
+    max_delay = _coerce_positive_float(
+        config.get("provider_retry_backoff_max_seconds"),
+        DEFAULT_RETRY_BACKOFF_MAX_SECONDS,
+    )
+    delay = min(max_delay, base * (2 ** max(0, retry_index - 1)))
+    if category == "provider_rate_limited":
+        multiplier = _coerce_positive_float(
+            config.get("provider_rate_limit_backoff_multiplier"),
+            DEFAULT_RATE_LIMIT_BACKOFF_MULTIPLIER,
+        )
+        rate_limit_cap = _coerce_positive_float(
+            config.get("provider_rate_limit_backoff_max_seconds"),
+            DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS,
+        )
+        delay = min(rate_limit_cap, delay * multiplier)
+    return delay
 
 
 @dataclass
@@ -192,6 +235,7 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
         response_format = {"type": "json_object"}
 
     last_provider_error: AIProviderError | None = None
+    consecutive_rate_limits = 0
     for attempt in range(max_retries):
         try:
             response = litellm.completion(
@@ -212,10 +256,16 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                 return json.loads(content)
             except json.JSONDecodeError:
                 category = "provider_invalid_response"
+                consecutive_rate_limits = 0
                 last_provider_error = AIProviderError(
                     category=category,
                     message="AI provider returned invalid JSON response.",
-                    details={"attempt": attempt + 1, "max_attempts": max_retries, "content_preview": content[:160]},
+                    details={
+                        "attempt": attempt + 1,
+                        "max_attempts": max_retries,
+                        "retries_attempted": attempt,
+                        "content_preview": content[:160],
+                    },
                 )
                 if is_ai_debug_mode():
                     logging.exception(
@@ -231,14 +281,33 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                         attempt + 1,
                         max_retries,
                     )
+                if attempt < max_retries - 1:
+                    retry_index = attempt + 1
+                    backoff_seconds = _retry_backoff_seconds(
+                        retry_index=retry_index,
+                        category=category,
+                        config=config,
+                    )
+                    time.sleep(backoff_seconds)
                 continue
 
         except Exception as e:
             category = classify_provider_exception(e)
+            if category == "provider_rate_limited":
+                consecutive_rate_limits += 1
+            else:
+                consecutive_rate_limits = 0
             last_provider_error = AIProviderError(
                 category=category,
                 message=f"AI provider request failed ({category}).",
-                details={"attempt": attempt + 1, "max_attempts": max_retries, "error_type": type(e).__name__, "error": str(e)},
+                details={
+                    "attempt": attempt + 1,
+                    "max_attempts": max_retries,
+                    "retries_attempted": attempt,
+                    "consecutive_rate_limits": consecutive_rate_limits if category == "provider_rate_limited" else 0,
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                },
                 cause=e,
             )
             if is_ai_debug_mode():
@@ -255,9 +324,14 @@ def request_ai_review_litellm(prompt, config, max_retries=3):
                     attempt + 1,
                     max_retries,
                 )
-            if category == "provider_rate_limited" and attempt < max_retries - 1:
-                time.sleep(2 * (attempt + 1))
             if attempt < max_retries - 1:
+                retry_index = attempt + 1
+                backoff_seconds = _retry_backoff_seconds(
+                    retry_index=retry_index,
+                    category=category,
+                    config=config,
+                )
+                time.sleep(backoff_seconds)
                 continue
             raise last_provider_error from e
 
