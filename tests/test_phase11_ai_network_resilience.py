@@ -240,6 +240,48 @@ def test_rate_limited_retry_uses_stronger_backoff(mock_sleep):
     assert mock_sleep.call_args_list[1].args[0] == 4.0
 
 
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_provider_retry_backoff_is_capped(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("connection reset by peer"),
+        RuntimeError("connection reset by peer"),
+        RuntimeError("connection reset by peer"),
+        _provider_json_response({"fixes": []}),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        request_ai_review_litellm(
+            "prompt",
+            {
+                "api_key": "k",
+                "model": "m",
+                "provider_retry_backoff_max_seconds": 2,
+            },
+            max_retries=4,
+        )
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [1.0, 2.0, 2.0]
+
+
+@patch("l10n_audit.ai.provider.time.sleep")
+def test_rate_limited_backoff_is_capped(mock_sleep):
+    completion_side_effects = [
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+        RuntimeError("rate limit exceeded"),
+        _provider_json_response({"fixes": []}),
+    ]
+    with patch("l10n_audit.ai.provider.litellm.completion", side_effect=completion_side_effects):
+        request_ai_review_litellm(
+            "prompt",
+            {
+                "api_key": "k",
+                "model": "m",
+                "provider_rate_limit_backoff_max_seconds": 3,
+            },
+            max_retries=4,
+        )
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [2.0, 3.0, 3.0]
+
+
 @patch("time.sleep")
 def test_inter_batch_delay_uses_deterministic_spacing(mock_sleep, tmp_path):
     runtime = _make_runtime(tmp_path)
