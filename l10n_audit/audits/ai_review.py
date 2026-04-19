@@ -400,7 +400,7 @@ def _provider_reason_text(reason: str) -> str:
 
 def _coerce_int_option(value: Any, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
     if isinstance(value, bool):
-        parsed = int(value)
+        parsed = default
     elif isinstance(value, int):
         parsed = value
     elif isinstance(value, str):
@@ -419,7 +419,7 @@ def _coerce_int_option(value: Any, default: int, *, minimum: int | None = None, 
 
 def _coerce_float_option(value: Any, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
     if isinstance(value, bool):
-        parsed = float(value)
+        parsed = default
     elif isinstance(value, (int, float)):
         parsed = float(value)
     elif isinstance(value, str):

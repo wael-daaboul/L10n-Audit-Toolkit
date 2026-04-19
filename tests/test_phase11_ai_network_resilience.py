@@ -241,7 +241,7 @@ def test_rate_limited_retry_uses_stronger_backoff(mock_sleep):
 
 
 @patch("time.sleep")
-def test_inter_batch_spacing_is_deterministic(mock_sleep, tmp_path):
+def test_inter_batch_delay_uses_deterministic_spacing(mock_sleep, tmp_path):
     runtime = _make_runtime(tmp_path)
     options = _make_options(batch_size=1, max_consecutive_failures=3)
     provider = MagicMock()

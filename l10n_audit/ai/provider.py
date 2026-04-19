@@ -30,6 +30,7 @@ DEFAULT_RETRY_BACKOFF_BASE_SECONDS = 1.0
 DEFAULT_RETRY_BACKOFF_MAX_SECONDS = 4.0
 DEFAULT_RATE_LIMIT_BACKOFF_MULTIPLIER = 2.0
 DEFAULT_RATE_LIMIT_BACKOFF_MAX_SECONDS = 8.0
+MAX_BACKOFF_EXPONENT = 10
 
 
 def _suppress_provider_noise_in_normal_mode() -> None:
@@ -64,7 +65,8 @@ def _retry_backoff_seconds(
         config.get("provider_retry_backoff_max_seconds"),
         DEFAULT_RETRY_BACKOFF_MAX_SECONDS,
     )
-    delay = min(max_delay, base * (2 ** max(0, retry_index - 1)))
+    exponent = min(MAX_BACKOFF_EXPONENT, max(0, retry_index - 1))
+    delay = min(max_delay, base * (2 ** exponent))
     if category == "provider_rate_limited":
         multiplier = _coerce_positive_float(
             config.get("provider_rate_limit_backoff_multiplier"),
