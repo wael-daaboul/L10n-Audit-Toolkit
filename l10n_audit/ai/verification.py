@@ -81,6 +81,69 @@ _CORE_CONCEPT_PRESENCE: dict[str, tuple[str, ...]] = {
     "status":  ("حالة",),
 }
 
+# ---------------------------------------------------------------------------
+# Phase 10: Domain confusion sets, transliteration blocklist
+# ---------------------------------------------------------------------------
+
+# Mapping from a casefold English source fragment to a tuple of
+# (wrong_Arabic_form, reason_code) pairs.
+#
+# reason_code semantics:
+#   semantic_confusion_set_match    — clearly domain-wrong (e.g. horse-riding vs ride-hailing) → REJECT
+#   semantic_ui_label_mismatch      — wrong UI action phrasing (dictionary sense vs product sense) → SUSPICIOUS
+#   semantic_ui_state_mismatch      — wrong UI state phrasing (rescue/salvation sense vs saved state) → SUSPICIOUS
+#   semantic_domain_term_mismatch   — plausible but product-wrong generic/formal term → SUSPICIOUS
+#
+# Short strings (≤3 source tokens) with SUSPICIOUS-level codes are escalated
+# to REJECT in evaluate_semantic_acceptance via short-string domain escalation.
+_DOMAIN_CONFUSION_SETS: dict[str, tuple[tuple[str, str], ...]] = {
+    # In ride-hailing, "rides" = رحلات (trips), not horse-riding.
+    "rides": (
+        ("ركوب الخيل", "semantic_confusion_set_match"),   # equestrian — completely wrong domain
+        ("ركوب",       "semantic_domain_term_mismatch"),  # too generic, normally wrong in product
+    ),
+    # "cancel" in UI = إلغاء (action). شطب = strikethrough / debt write-off; wrong UI sense.
+    "cancel": (
+        ("شطب", "semantic_ui_label_mismatch"),
+    ),
+    # "saved" as a UI result state = تم الحفظ. أنقذ = rescued/saved (rescue sense) is wrong.
+    "saved": (
+        ("أنقذ", "semantic_ui_state_mismatch"),
+    ),
+    # "notification" standard UI term = إشعار. إخطار is a formal/legal notification.
+    "notification": (
+        ("إخطار", "semantic_ui_label_mismatch"),
+    ),
+    # "medium" as a tier/size label. واسطة = intermediary/medium, wrong sense in product.
+    "medium": (
+        ("واسطة", "semantic_domain_term_mismatch"),
+    ),
+    # "gold customer" is a tier label; adjective form عميل ذهبي is correct, not possessive عميل الذهب.
+    "gold customer": (
+        ("عميل الذهب", "semantic_ui_label_mismatch"),
+    ),
+    # "distance away" in UI context — تنأى بعيدا / تنأى بعيداً is literary/poetic, not a UI label.
+    "distance away": (
+        ("تنأى بعيدا",  "semantic_ui_label_mismatch"),
+        ("تنأى بعيداً", "semantic_ui_label_mismatch"),
+    ),
+    # "luxury" as a UI tier label. ترف = opulence (abstract noun); فاخر / فخم is the product term.
+    "luxury": (
+        ("ترف", "semantic_ui_label_mismatch"),
+    ),
+}
+
+# Arabic phonetic transliterations that must be rejected when the source contains
+# the corresponding English term and an approved Arabic equivalent exists.
+# Glossary-approved exceptions override this table.
+# Each entry: (arabic_transliteration, tuple_of_en_source_triggers)
+_TRANSLITERATION_BLOCKLIST: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # "رايدر" is a phonetic spelling of "rider" — approved Arabic is "راكب".
+    ("رايدر", ("rider",)),
+    # "درايفر" is a phonetic spelling of "driver" — approved Arabic is "سائق".
+    ("درايفر", ("driver",)),
+)
+
 
 def _word_tokens(text: str) -> list[str]:
     """Return lowercase word tokens from any mixed-language text."""
@@ -171,7 +234,11 @@ def _check_named_entities(
     candidate_text: str,
     glossary: dict[str, Any] | None,
 ) -> list[str]:
-    """Detect when named entities from glossary disappear or mutate in candidate."""
+    """Detect when named entities from glossary disappear or mutate in candidate.
+
+    Phase 10 addition: also flag when a glossary-forbidden Arabic form appears
+    in the candidate — this tightens domain enforcement for project-specific terms.
+    """
     codes: list[str] = []
     if not glossary:
         return codes
@@ -188,6 +255,12 @@ def _check_named_entities(
             if approved_ar not in candidate_text:
                 codes.append("semantic_named_entity_mismatch")
                 break
+            # Phase 10: also reject if any forbidden_ar form appears in candidate.
+            for forbidden in item.get("forbidden_ar", []):
+                forbidden_str = str(forbidden).strip()
+                if forbidden_str and forbidden_str in candidate_text:
+                    codes.append("semantic_named_entity_mismatch")
+                    return codes
     return codes
 
 
@@ -224,6 +297,59 @@ def _check_short_string_strict(
         if not has_context_support and not has_glossary_support:
             codes.append("semantic_short_text_expansion")
 
+    return codes
+
+
+def _check_domain_confusion_sets(
+    source_text: str,
+    candidate_text: str,
+) -> list[str]:
+    """Check for domain-specific wrong Arabic translations (Phase 10).
+
+    Scans the source for known English terms and checks whether the candidate
+    contains a wrong Arabic form listed in _DOMAIN_CONFUSION_SETS.
+    Returns reason codes; the caller decides severity based on the code.
+    """
+    codes: list[str] = []
+    source_lower = source_text.casefold()
+    for en_term, entries in _DOMAIN_CONFUSION_SETS.items():
+        if en_term not in source_lower:
+            continue
+        for ar_form, reason_code in entries:
+            if ar_form in candidate_text and reason_code not in codes:
+                codes.append(reason_code)
+    return codes
+
+
+def _check_transliteration(
+    source_text: str,
+    candidate_text: str,
+    glossary: dict[str, Any] | None,
+) -> list[str]:
+    """Detect forbidden transliterations when a proper Arabic term is known (Phase 10).
+
+    Flags Arabic phonetic spellings (e.g. رايدر for "rider") as
+    semantic_transliteration_forbidden.  A glossary that explicitly approves
+    the transliteration overrides this check.
+    """
+    codes: list[str] = []
+    source_lower = source_text.casefold()
+    for ar_translit, en_triggers in _TRANSLITERATION_BLOCKLIST:
+        if not any(en in source_lower for en in en_triggers):
+            continue
+        if ar_translit not in candidate_text:
+            continue
+        # Glossary exception: if project explicitly approves this transliteration, skip.
+        if glossary and isinstance(glossary, dict):
+            approved_by_glossary = any(
+                str(t.get("approved_ar", "")) == ar_translit
+                for t in glossary.get("terms", [])
+                if isinstance(t, dict)
+            )
+            if approved_by_glossary:
+                continue
+        codes.append("semantic_transliteration_forbidden")
+        break
     return codes
 
 
@@ -282,6 +408,30 @@ def evaluate_semantic_acceptance(
     reason_codes.extend(short_codes)
     details["short_string"] = short_codes
 
+    # --- Check 7 (Phase 10): domain confusion sets ---
+    confusion_codes = _check_domain_confusion_sets(source_text, candidate_text)
+    reason_codes.extend(confusion_codes)
+    details["domain_confusion"] = confusion_codes
+
+    # --- Check 8 (Phase 10): transliteration blocking ---
+    translit_codes = _check_transliteration(source_text, candidate_text, glossary)
+    reason_codes.extend(translit_codes)
+    details["transliteration"] = translit_codes
+
+    # --- Phase 10 short-string domain escalation ---
+    # For sources with ≤ 3 tokens, suspicious-level domain/UI mismatch codes are
+    # hard signs of a wrong translation: no room for ambiguity on a single-word UI label.
+    # Escalate to reject by injecting semantic_short_text_expansion if not already present.
+    _SHORT_ESCALATE_CODES = frozenset({
+        "semantic_ui_label_mismatch",
+        "semantic_ui_state_mismatch",
+        "semantic_domain_term_mismatch",
+    })
+    if _source_token_count(source_text) <= 3:
+        if any(c in _SHORT_ESCALATE_CODES for c in reason_codes):
+            if "semantic_short_text_expansion" not in reason_codes:
+                reason_codes.append("semantic_short_text_expansion")
+
     # De-duplicate while preserving first-occurrence order.
     seen: set[str] = set()
     unique_codes: list[str] = []
@@ -298,11 +448,16 @@ def evaluate_semantic_acceptance(
         "semantic_number_mismatch",
         "semantic_named_entity_mismatch",
         "semantic_short_text_expansion",
+        "semantic_confusion_set_match",        # Phase 10: clear domain-wrong forms
+        "semantic_transliteration_forbidden",  # Phase 10: blocked transliterations
     })
-    # Soft codes: alone → suspicious
+    # Soft codes: alone → suspicious (unless escalated by short-string rule above)
     _SUSPICIOUS_CODES = frozenset({
         "semantic_key_concept_loss",
         "semantic_intent_shift",
+        "semantic_ui_label_mismatch",          # Phase 10
+        "semantic_ui_state_mismatch",          # Phase 10
+        "semantic_domain_term_mismatch",       # Phase 10
     })
 
     if unique_codes:
