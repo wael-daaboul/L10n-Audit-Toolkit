@@ -130,6 +130,12 @@ def _dispatch_stage(
     issues : list[AuditIssue]
     reports : list[ReportArtifact]
     """
+    # Grammar/full stages require Java (LanguageTool). All other stages are pure Python.
+    # Prerequisites are scoped here so that reports/autofix/ar-qc/etc. work without Java.
+    if stage in {"full", "grammar"}:
+        from l10n_audit.api import check_prerequisites
+        check_prerequisites()
+
     # Phase B: Pre-hydrate explicit canonical state for the entire orchestration cycle
     data_stores = _load_canonical_data_stores(runtime)
 

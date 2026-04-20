@@ -171,8 +171,6 @@ def run_audit(
     AIConfigError
         If AI is enabled but the API key is missing.
     """
-    check_prerequisites()
-
     from l10n_audit.core.validators import (
         validate_ai_config,
         validate_project_path,
