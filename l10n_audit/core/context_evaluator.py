@@ -60,6 +60,13 @@ TEXT_TYPE_HINTS = {
     "form_hint": {"hint", "placeholder"},
 }
 
+# Pre-compiled word-boundary patterns for ACTION_CUE_MAP terms.
+# Built once at import time to avoid per-call re.compile overhead.
+_ACTION_TERM_RE: dict[str, re.Pattern[str]] = {
+    term: re.compile(r'\b' + re.escape(term) + r'\b')
+    for term in ACTION_CUE_MAP
+}
+
 
 def split_key_tokens(key: str) -> list[str]:
     normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", key)
@@ -151,7 +158,7 @@ def action_mismatch_flags(en_value: str, ar_value: str) -> list[str]:
     ar_normalized = _normalize_ar(ar_value)
     flags: list[str] = []
     for term, arabic_candidates in ACTION_CUE_MAP.items():
-        if re.search(r'\b' + re.escape(term) + r'\b', en_lower) and not any(
+        if _ACTION_TERM_RE[term].search(en_lower) and not any(
             _normalize_ar(candidate) in ar_normalized for candidate in arabic_candidates
         ):
             flags.append(f"missing_action:{term}")

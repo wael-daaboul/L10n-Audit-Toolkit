@@ -38,6 +38,10 @@ def _is_status_or_informational(ar_text: str) -> bool:
     rather than an action label.  Synthesis is suppressed for such strings."""
     return bool(_STATUS_PATTERNS.search(ar_text))
 
+# Fix 2.3: characters that mark a sentence as already terminated.
+# Used when checking whether to append a period to a synthesized candidate.
+_SENTENCE_TERMINAL_CHARS = frozenset('.!؟،')
+
 ACTION_SUGGESTIONS = {
     "save": "احفظ",
     "add": "أضف",
@@ -114,7 +118,7 @@ def build_semantic_candidate(en_text: str, ar_text: str, bundle: dict[str, objec
     ar_stripped = ar_text.strip()
     # Fix 2.3: check terminal punctuation on ar_stripped before building the
     # candidate to prevent double-punctuation (e.g. "احفظ النص..").
-    already_terminated = bool(ar_stripped) and ar_stripped[-1] in '.!؟،'
+    already_terminated = bool(ar_stripped) and ar_stripped[-1] in _SENTENCE_TERMINAL_CHARS
     candidate = f"{arabic_verb} {ar_stripped}".strip()
     if not already_terminated and english_sentence_shape(en_text) == "sentence_like":
         candidate = f"{candidate}."
