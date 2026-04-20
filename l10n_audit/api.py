@@ -283,23 +283,24 @@ def run_audit(
         # Step 4: Unified Fix Generation (v1.3.0)
         # This replaces the old glossary-only fix logic with a unified plan
         from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
-        from l10n_audit.fixes.fix_merger import merge_and_export_fixes, export_review_queue
+        from l10n_audit.fixes.fix_merger import merge_and_export_fixes
         
         issue_dicts = [i.to_dict() if hasattr(i, "to_dict") else i for i in issues]
         fix_plan = build_fix_plan(issue_dicts, runtime.project_root)
         
-        # Save the full plan for future reference (internal)
+        # Save the full plan for future reference (internal cache; used by run_apply)
         fixes_dir = results_dir / ".cache" / "apply"
         fixes_dir.mkdir(parents=True, exist_ok=True)
         write_json({"plan": fix_plan}, fixes_dir / "fix_plan.json")
         
-        # 4.1 Export Review Queue if any manual review is needed
+        # NOTE: review_queue.xlsx is written exclusively by run_stage() (report_aggregator)
+        # which runs inside run_engine() above.  Do NOT write it here — doing so would
+        # overwrite the fully-hydrated, multi-locale-correct workbook produced by the
+        # authoritative path with a weaker, fix_plan-only version.
         review_required = [i for i in fix_plan if i["classification"] == "review_required"]
         if review_required:
-            review_xlsx = results_dir / "review" / "review_queue.xlsx"
-            export_review_queue(fix_plan, runtime, review_xlsx)
-            logger.info(f"Review Required: {len(review_required)} items added to {review_xlsx}")
-            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {review_xlsx}")
+            logger.info("Review Required: %d items in fix_plan (review_queue.xlsx already written by report stage).", len(review_required))
+            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {results_dir / 'review' / 'review_queue.xlsx'}")
             
         # 4.2 Immediate Auto-Fix Generation (.fix files next to originals)
         if effective_apply_safe_fixes:
