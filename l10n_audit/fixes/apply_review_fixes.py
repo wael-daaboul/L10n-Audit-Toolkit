@@ -700,7 +700,18 @@ def reconcile_master(results_dir: Path, all_rows: list[dict], applied_keys: set[
 
 
 def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_final_json: str | None = None, out_report: str | None = None) -> dict:
-    # Phase 1 — Master Reconciliation: sync frozen workbook edits → audit_master.json BEFORE apply
+    # --- Invariant: no artifact may be mutated before frozen-contract validation succeeds. ---
+    # Step A: Load rows and validate the artifact contract FIRST.
+    # Only after both H1 and H6 validations succeed may we reconcile master state.
+    rows = read_simple_xlsx(review_queue_path, required_columns=REQUIRED_REVIEW_COLUMNS)
+    # H1 — Artifact type boundary check (must run before any per-row logic).
+    _assert_frozen_artifact_type(rows, review_queue_path)
+    # H6 — Apply input contract pre-check: verify all required fields are
+    # non-empty on every row before any hash comparison or write logic runs.
+    _assert_apply_contract(rows, review_queue_path)
+
+    # Phase 1 — Master Reconciliation: sync frozen workbook edits → audit_master.json BEFORE apply.
+    # This runs only after the artifact has been confirmed valid by H1 and H6 above.
     if review_queue_path.exists():
         _master_path = resolve_master_path(runtime)
         try:
@@ -730,14 +741,6 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
                         auto_fixes_ar[i["key"]] = i["candidate_value"]
         except Exception as e:
             logger.warning(f"Could not load previous fix plan: {e}")
-
-    # 2. Load approved fixes from the frozen workbook
-    rows = read_simple_xlsx(review_queue_path, required_columns=REQUIRED_REVIEW_COLUMNS)
-    # H1 — Artifact type boundary check (must run before any per-row logic).
-    _assert_frozen_artifact_type(rows, review_queue_path)
-    # H6 — Apply input contract pre-check: verify all required fields are
-    # non-empty on every row before any hash comparison or write logic runs.
-    _assert_apply_contract(rows, review_queue_path)
     review_fixes_en = {}
     review_fixes_ar = {}
     applied_meta = []
