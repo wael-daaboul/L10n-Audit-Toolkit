@@ -562,3 +562,74 @@ def test_all_trace_entries_have_context(tmp_path: Path) -> None:
     for entry in report["trace"]:
         assert "decision_context" in entry
         assert isinstance(entry["decision_context"], dict)
+
+
+# ---------------------------------------------------------------------------
+# Fix 3.1: opt-in strict suggested_hash enforcement
+# ---------------------------------------------------------------------------
+
+def test_fix3_1_strict_hash_rejects_edited_approved_new(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With L10N_AUDIT_STRICT_SUGGESTED_HASH=1, a row whose approved_new differs
+    from the original suggestion must be rejected with suggested_hash_mismatch."""
+    monkeypatch.setenv("L10N_AUDIT_STRICT_SUGGESTED_HASH", "1")
+
+    runtime = _make_runtime(tmp_path)
+    original_suggestion = "مرحبا"
+    edited_approved_new = "أهلاً وسهلاً"  # human edited — differs from suggestion
+
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    row = _review_row(
+        approved_new=edited_approved_new,
+        suggested_hash=compute_text_hash(original_suggestion),  # hash of original, not edit
+    )
+    _write_review_queue(review_queue, [row])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    skipped = [e for e in report.get("trace", []) if e.get("reason") == "suggested_hash_mismatch"]
+    assert len(skipped) >= 1, (
+        f"Expected suggested_hash_mismatch skip, got: {report.get('trace', [])}"
+    )
+
+
+def test_fix3_1_strict_hash_accepts_matching_approved_new(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """With L10N_AUDIT_STRICT_SUGGESTED_HASH=1, a row where approved_new matches
+    suggested_hash must still be accepted (no spurious rejection)."""
+    monkeypatch.setenv("L10N_AUDIT_STRICT_SUGGESTED_HASH", "1")
+
+    runtime = _make_runtime(tmp_path)
+    suggestion = "مرحبا"
+
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    row = _review_row(
+        approved_new=suggestion,
+        suggested_hash=compute_text_hash(suggestion),
+    )
+    _write_review_queue(review_queue, [row])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    rejected = [e for e in report.get("trace", []) if e.get("reason") == "suggested_hash_mismatch"]
+    assert len(rejected) == 0, f"Unexpected suggested_hash_mismatch rejections: {rejected}"
+
+
+def test_fix3_1_default_mode_accepts_edited_approved_new(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without L10N_AUDIT_STRICT_SUGGESTED_HASH, human-edited approved_new must
+    still be accepted (default behavior unchanged)."""
+    monkeypatch.delenv("L10N_AUDIT_STRICT_SUGGESTED_HASH", raising=False)
+
+    runtime = _make_runtime(tmp_path)
+    original_suggestion = "مرحبا"
+    edited_approved_new = "أهلاً وسهلاً"
+
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    row = _review_row(
+        approved_new=edited_approved_new,
+        suggested_hash=compute_text_hash(original_suggestion),
+    )
+    _write_review_queue(review_queue, [row])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    rejected = [e for e in report.get("trace", []) if e.get("reason") == "suggested_hash_mismatch"]
+    assert len(rejected) == 0, f"Unexpected strict-mode rejections in default mode: {rejected}"

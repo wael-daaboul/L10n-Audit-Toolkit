@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json as _json
 import logging
+import os
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -339,6 +340,24 @@ def _validate_apply_row(
     if approved_new is None:
         rejection = _record_apply_rejection(runtime, row, "missing_required_fields", missing_fields=["approved_new"])
         return None, rejection
+
+    # Fix 3.1: opt-in strict suggested_hash enforcement.
+    # When L10N_AUDIT_STRICT_SUGGESTED_HASH=1, reject rows where approved_new
+    # diverges from the originally generated suggestion (suggested_hash mismatch).
+    # Default behavior (env var absent/0) is unchanged: human edits are accepted.
+    if os.getenv("L10N_AUDIT_STRICT_SUGGESTED_HASH") == "1":
+        _expected_suggested_hash = _normalized_non_empty_string(row.get("suggested_hash"))
+        if _expected_suggested_hash is not None:
+            _actual_approved_hash = compute_text_hash(approved_new)
+            if _actual_approved_hash != _expected_suggested_hash:
+                rejection = _record_apply_rejection(
+                    runtime,
+                    row,
+                    "suggested_hash_mismatch",
+                    expected=_expected_suggested_hash,
+                    actual=_actual_approved_hash,
+                )
+                return None, rejection
 
     canonical_guard_on = canonical_source_guard_enabled()
     source_guard_mode = "canonical" if canonical_guard_on else "raw"

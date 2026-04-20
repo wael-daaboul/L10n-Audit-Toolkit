@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -16,6 +17,30 @@ from l10n_audit.core.context_evaluator import (
 )
 from l10n_audit.core.audit_runtime import load_locale_mapping, load_runtime, write_csv, write_json, write_simple_xlsx
 from l10n_audit.core.usage_scanner import scan_code_usage
+
+# Fix 1.4: patterns that identify status/informational Arabic strings where
+# synthesis would produce structurally absurd candidates (e.g. "أضف تم حذف ...").
+_STATUS_PATTERNS = re.compile(
+    r'(?:'
+    r'تم\s'          # completed-action prefix ("تم [فعل]")
+    r'|بنجاح'        # success indicator
+    r'|فشل'          # failure indicator
+    r'|خطأ\b'        # error
+    r'|لا\s+يمكن'    # "cannot"
+    r'|غير\s+متاح'   # "not available"
+    r')',
+    re.UNICODE,
+)
+
+
+def _is_status_or_informational(ar_text: str) -> bool:
+    """Return True when ar_text appears to be a status/informational sentence
+    rather than an action label.  Synthesis is suppressed for such strings."""
+    return bool(_STATUS_PATTERNS.search(ar_text))
+
+# Fix 2.3: characters that mark a sentence as already terminated.
+# Used when checking whether to append a period to a synthesized candidate.
+_SENTENCE_TERMINAL_CHARS = frozenset('.!؟،')
 
 ACTION_SUGGESTIONS = {
     "save": "احفظ",
@@ -74,6 +99,9 @@ def build_semantic_candidate(en_text: str, ar_text: str, bundle: dict[str, objec
     missing_actions = [flag.split(":", 1)[1] for flag in semantic_flags if flag.startswith("missing_action:")]
     if not missing_actions:
         return "", "low"
+    # Fix 1.2: multi-action strings produce an incomplete candidate; suppress synthesis.
+    if len(missing_actions) > 1:
+        return "", "low"
 
     action = missing_actions[0]
     arabic_verb = ACTION_SUGGESTIONS.get(action)
@@ -82,8 +110,17 @@ def build_semantic_candidate(en_text: str, ar_text: str, bundle: dict[str, objec
     if arabic_verb in ar_text:
         return "", "low"
 
-    candidate = f"{arabic_verb} {ar_text.strip()}".strip()
-    if english_sentence_shape(en_text) == "sentence_like" and not candidate.endswith((".", "!", "؟")):
+    # Fix 1.4: suppress synthesis for status/informational strings to prevent
+    # structurally absurd candidates such as "أضف تم حذف العنوان بنجاح".
+    if _is_status_or_informational(ar_text):
+        return "", "low"
+
+    ar_stripped = ar_text.strip()
+    # Fix 2.3: check terminal punctuation on ar_stripped before building the
+    # candidate to prevent double-punctuation (e.g. "احفظ النص..").
+    already_terminated = bool(ar_stripped) and ar_stripped[-1] in _SENTENCE_TERMINAL_CHARS
+    candidate = f"{arabic_verb} {ar_stripped}".strip()
+    if not already_terminated and english_sentence_shape(en_text) == "sentence_like":
         candidate = f"{candidate}."
     return candidate, "medium"
 
