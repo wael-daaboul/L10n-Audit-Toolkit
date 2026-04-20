@@ -755,6 +755,8 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
 
     rows_by_key: dict[tuple[str, str], dict[str, str]] = {}
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    # Fix 3.2: track candidate suppression events for aggregation telemetry.
+    _candidate_conflict_count = 0
 
     for issue in issues:
         _issue_source = str(issue.get("source", ""))
@@ -863,6 +865,19 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
                 # Project approved_new if not already set
                 if not existing["approved_new"] and projected_approved_new:
                     existing["approved_new"] = projected_approved_new
+            else:
+                # Fix 2.1: a non-empty incoming candidate was discarded because it
+                # is incompatible with the existing row.  Emit visible conflict
+                # metadata so reviewers can identify suppressed candidates.
+                # Must not silently discard a non-empty candidate without trace.
+                incoming_candidate = str(resolution.get("candidate_value", "") or "")
+                if incoming_candidate:
+                    _suppression_hash = compute_text_hash(incoming_candidate)[:8]
+                    _suppression_token = f"[MERGE:CANDIDATE_SUPPRESSED:hash={_suppression_hash}]"
+                    if _suppression_token not in existing["notes"].split(" | "):
+                        existing["notes"] += f" | {_suppression_token}"
+                    # Fix 3.2: increment suppression counter for telemetry.
+                    _candidate_conflict_count += 1
             rows_by_key[row_key] = _normalize_review_row(existing)
         else:
             resolved_notes = " | ".join(filter(None, [message, notes_token, decision_token]))
@@ -925,6 +940,13 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             
     rows = meaningful_rows
     rows.sort(key=lambda row: (row["locale"], row["key"], row["issue_type"]))
+    # Fix 3.2: emit candidate suppression telemetry at INFO level.
+    if _candidate_conflict_count:
+        import logging as _logging
+        _logging.getLogger("l10n_audit.report_aggregator").info(
+            "build_review_queue: %d candidate(s) suppressed due to merge incompatibility.",
+            _candidate_conflict_count,
+        )
     return rows
 
 

@@ -76,3 +76,85 @@ def test_ar_semantic_qc_keeps_context_sensitive_role_pairs_review_only(tmp_path:
     finding = next(item for item in payload["findings"] if item["issue_type"] == "context_sensitive_meaning")
     assert finding["candidate_value"] == ""
     assert finding["fix_mode"] == "review_required"
+
+
+# ---------------------------------------------------------------------------
+# Fix 1.2: disable multi-action synthesis
+# ---------------------------------------------------------------------------
+
+def test_fix1_2_multi_action_returns_empty_candidate() -> None:
+    """build_semantic_candidate must return ('', 'low') for multi-action bundles."""
+    from l10n_audit.audits.ar_semantic_qc import build_semantic_candidate
+
+    bundle = {"semantic_flags": ["missing_action:save", "missing_action:send"]}
+    candidate, confidence = build_semantic_candidate(
+        "Save and send the document.", "المستند", bundle
+    )
+    assert candidate == ""
+    assert confidence == "low"
+
+
+# ---------------------------------------------------------------------------
+# Fix 1.4: disable synthesis for status/informational Arabic strings
+# ---------------------------------------------------------------------------
+
+def test_fix1_4_status_string_returns_empty_candidate() -> None:
+    """build_semantic_candidate must return ('', 'low') for status-like Arabic text."""
+    from l10n_audit.audits.ar_semantic_qc import build_semantic_candidate
+
+    bundle = {"semantic_flags": ["missing_action:add"]}
+    candidate, confidence = build_semantic_candidate(
+        "Add the item.", "تم حذف العنوان بنجاح", bundle
+    )
+    assert candidate == ""
+    assert confidence == "low"
+
+
+def test_fix1_4_failure_string_returns_empty_candidate() -> None:
+    """Failure-indicator strings must also be suppressed (Fix 1.4)."""
+    from l10n_audit.audits.ar_semantic_qc import build_semantic_candidate
+
+    bundle = {"semantic_flags": ["missing_action:send"]}
+    candidate, confidence = build_semantic_candidate(
+        "Send the message.", "فشل إرسال الرسالة", bundle
+    )
+    assert candidate == ""
+    assert confidence == "low"
+
+
+def test_fix1_4_plain_label_still_generates_candidate() -> None:
+    """A plain action label must still produce a candidate after Fix 1.4."""
+    from l10n_audit.audits.ar_semantic_qc import build_semantic_candidate
+
+    bundle = {"semantic_flags": ["missing_action:save"]}
+    candidate, confidence = build_semantic_candidate(
+        "Save profile.", "الملف الشخصي", bundle
+    )
+    assert candidate.startswith("احفظ")
+    assert confidence == "medium"
+
+
+# ---------------------------------------------------------------------------
+# Fix 2.3: punctuation hardening
+# ---------------------------------------------------------------------------
+
+def test_fix2_3_no_double_period() -> None:
+    """Candidate must not end with '..' when ar_text already ends with '.' (Fix 2.3)."""
+    from l10n_audit.audits.ar_semantic_qc import build_semantic_candidate
+
+    bundle = {"semantic_flags": ["missing_action:save"]}
+    candidate, _ = build_semantic_candidate(
+        "Save your profile to continue.", "الملف الشخصي للمتابعة.", bundle
+    )
+    assert not candidate.endswith("..")
+
+
+def test_fix2_3_arabic_comma_terminates_candidate() -> None:
+    """Candidate must not append '.' when ar_text ends with '،' (Fix 2.3)."""
+    from l10n_audit.audits.ar_semantic_qc import build_semantic_candidate
+
+    bundle = {"semantic_flags": ["missing_action:save"]}
+    candidate, _ = build_semantic_candidate(
+        "Save your profile to continue.", "الملف الشخصي،", bundle
+    )
+    assert not candidate.endswith("،.")

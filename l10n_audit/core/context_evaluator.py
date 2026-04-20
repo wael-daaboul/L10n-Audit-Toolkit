@@ -24,6 +24,28 @@ ACTION_CUE_MAP = {
     "enter": ("أدخل", "إدخال"),
 }
 
+# Fix 2.2: match-time Arabic normalization constants.
+# Strip tashkeel (U+064B–U+065F, U+0670)
+_AR_TASHKEEL_RE = re.compile(r'[\u064B-\u065F\u0670]')
+# Alef variants → plain alef (ا)
+_AR_ALEF_RE = re.compile(r'[أإآٱ]')
+
+
+def _normalize_ar(text: str) -> str:
+    """Return a normalised Arabic string for match-time comparison only.
+
+    Applied only when checking whether an Arabic candidate form appears in
+    ar_value — never mutates stored values.
+    Normalizations:
+      1. Strip tashkeel.
+      2. Unify alef variants → plain alef.
+      3. Normalize ta marbuta → ha (safe for single-token matching).
+    """
+    text = _AR_TASHKEEL_RE.sub('', text)
+    text = _AR_ALEF_RE.sub('ا', text)
+    text = text.replace('ة', 'ه')
+    return text
+
 TEXT_TYPE_HINTS = {
     "button": {"button", "btn", "cta", "submit", "save", "cancel"},
     "title": {"title", "heading", "header", "screen_title"},
@@ -121,10 +143,17 @@ def arabic_sentence_shape(ar_value: str) -> str:
 
 
 def action_mismatch_flags(en_value: str, ar_value: str) -> list[str]:
+    # Fix 1.1: use word-boundary matching (containment fix; punctuation-adjacent
+    # edge cases such as apostrophes and hyphenated tokens are addressed in Fix 2.2).
+    # Fix 2.2: apply match-time Arabic normalization so inflected/orthographic
+    # variants (tashkeel, alef variants, ta marbuta) do not produce false flags.
     en_lower = en_value.casefold()
+    ar_normalized = _normalize_ar(ar_value)
     flags: list[str] = []
     for term, arabic_candidates in ACTION_CUE_MAP.items():
-        if term in en_lower and not any(candidate in ar_value for candidate in arabic_candidates):
+        if re.search(r'\b' + re.escape(term) + r'\b', en_lower) and not any(
+            _normalize_ar(candidate) in ar_normalized for candidate in arabic_candidates
+        ):
             flags.append(f"missing_action:{term}")
     return flags
 

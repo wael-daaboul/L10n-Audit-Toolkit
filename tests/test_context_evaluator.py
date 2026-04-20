@@ -175,3 +175,48 @@ def test_semantic_evidence_is_deterministic() -> None:
     decision_b = evaluate_candidate_change(bundle, "تابع من الملف الشخصي.")
 
     assert decision_a["semantic_evidence"] == decision_b["semantic_evidence"]
+
+
+# ---------------------------------------------------------------------------
+# Fix 1.1: word-boundary English action detection
+# ---------------------------------------------------------------------------
+
+def test_fix1_1_no_false_positive_substring_embedding() -> None:
+    """'entertained' must not trigger missing_action:enter (Fix 1.1)."""
+    from l10n_audit.core.context_evaluator import action_mismatch_flags
+    flags = action_mismatch_flags("The entertainer entertained the crowd.", "")
+    assert "missing_action:enter" not in flags
+
+
+def test_fix1_1_exact_boundary_match_triggers() -> None:
+    """'enter' as a whole word must still trigger missing_action:enter (Fix 1.1)."""
+    from l10n_audit.core.context_evaluator import action_mismatch_flags
+    flags = action_mismatch_flags("Please enter your name.", "")
+    assert "missing_action:enter" in flags
+
+
+def test_fix1_1_center_does_not_trigger_enter() -> None:
+    """'center' must not trigger missing_action:enter (Fix 1.1)."""
+    from l10n_audit.core.context_evaluator import action_mismatch_flags
+    flags = action_mismatch_flags("Move to the center of the screen.", "")
+    assert "missing_action:enter" not in flags
+
+
+# ---------------------------------------------------------------------------
+# Fix 2.2: Arabic normalization at match time
+# ---------------------------------------------------------------------------
+
+def test_fix2_2_tashkeel_does_not_produce_false_flag() -> None:
+    """Arabic text with tashkeel over an action verb must not produce a false flag."""
+    from l10n_audit.core.context_evaluator import action_mismatch_flags
+    # احْفَظ is احفظ with tashkeel — should be recognized as present
+    flags = action_mismatch_flags("Save your work.", "احْفَظ عملك")
+    assert "missing_action:save" not in flags
+
+
+def test_fix2_2_alef_variant_does_not_produce_false_flag() -> None:
+    """Alef variant in an Arabic action verb must not produce a false flag."""
+    from l10n_audit.core.context_evaluator import action_mismatch_flags
+    # أضف with variant alef form — normalization should catch it
+    flags = action_mismatch_flags("Add a new item.", "أضِف عنصرًا جديدًا")
+    assert "missing_action:add" not in flags
