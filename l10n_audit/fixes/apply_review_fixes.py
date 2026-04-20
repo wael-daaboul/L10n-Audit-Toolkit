@@ -742,7 +742,10 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
         except Exception as e:
             logger.warning(f"Could not load previous fix plan: {e}")
     review_fixes_en = {}
-    review_fixes_ar = {}
+    # Per-target-locale fix maps: keyed by locale string, e.g. {"ar": {...}, "fr": {...}}
+    review_fixes_target: dict[str, dict[str, str]] = {loc: {} for loc in (runtime.target_locales or [])}
+    # Backward-compatible alias for single-target-locale code paths and conflict resolver
+    review_fixes_ar = review_fixes_target.get(runtime.target_locales[0], {}) if runtime.target_locales else {}
     applied_meta = []
     skipped = []
     apply_trace: list[dict[str, object]] = []
@@ -755,7 +758,17 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
     
     seen_keys = {} # (key, locale) -> approved_val
     current_en = load_locale_mapping(runtime.en_file, runtime, "en") if runtime.en_file.exists() else {}
-    current_ar = load_locale_mapping(runtime.ar_file, runtime, runtime.target_locales[0] if runtime.target_locales else "ar") if runtime.ar_file.exists() else {}
+    # Load every configured target locale independently so fixes are routed to the
+    # correct file. Keyed by locale string (e.g. {"ar": {...}, "fr": {...}}).
+    current_target: dict[str, dict] = {}
+    for _loc in (runtime.target_locales or []):
+        _loc_path = runtime.locale_paths.get(_loc, runtime.ar_file)
+        if _loc_path and _loc_path.exists():
+            current_target[_loc] = load_locale_mapping(_loc_path, runtime, _loc)
+        else:
+            current_target[_loc] = {}
+    # Backward-compatible alias used by validation and conflict-resolver registration below
+    current_ar = current_target.get(runtime.target_locales[0], {}) if runtime.target_locales else {}
 
     # --- Phase 10: Conflict Resolution (Governance Layer) ---
     from l10n_audit.core.conflict_resolution import get_conflict_resolver, MutationRecord
@@ -790,7 +803,10 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
         
         locale_hint = str(row.get("locale", "")).strip()
         key_hint = str(row.get("key", "")).strip()
-        current_val = current_en.get(key_hint) if locale_hint == "en" else current_ar.get(key_hint)
+        if locale_hint == "en":
+            current_val = current_en.get(key_hint)
+        else:
+            current_val = current_target.get(locale_hint, {}).get(key_hint)
         validated_row, rejection = _validate_apply_row(row, runtime, current_val, applied_suggestions)
         if rejection is not None:
             skipped.append(rejection)
