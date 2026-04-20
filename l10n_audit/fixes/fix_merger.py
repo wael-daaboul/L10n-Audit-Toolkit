@@ -150,12 +150,14 @@ def validate_review_row(item: Dict[str, Any]) -> tuple[bool, List[str]]:
     missing_fields: List[str] = []
     if key is None:
         missing_fields.append("key")
-    if locale not in {"ar", "en"}:
+    # Accept any non-empty locale string — not just "ar" and "en".
+    # Hard-coding to {"ar", "en"} rejects valid locales (e.g. "fr", "de").
+    if locale is None:
         missing_fields.append("locale")
     if issue_type is None:
         missing_fields.append("issue_type")
-    if message is None:
-        missing_fields.append("message")
+    # message is optional: a row may be actionable without a human-readable message.
+    # Requiring it caused valid rows from sources that omit the field to be silently dropped.
     if current_value is None:
         missing_fields.append("current_value")
     if candidate_value is None:
