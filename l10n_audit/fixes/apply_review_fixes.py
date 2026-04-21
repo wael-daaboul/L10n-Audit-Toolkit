@@ -726,7 +726,8 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
 
     # 1. Load auto_fixes from previous run's fix_plan
     auto_fixes_en = {}
-    auto_fixes_ar = {}
+    # Per-target-locale auto-fix maps: keyed by locale string, e.g. {"ar": {...}, "fr": {...}}
+    auto_fixes_target: dict[str, dict[str, str]] = {}
     plan_path = resolve_fix_plan_path(runtime)  # Phase B
     if plan_path.exists():
         import json as _json
@@ -738,14 +739,13 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
                     if i.get("locale") == "en":
                         auto_fixes_en[i["key"]] = i["candidate_value"]
                     else:
-                        auto_fixes_ar[i["key"]] = i["candidate_value"]
+                        _plan_loc = str(i.get("locale") or (runtime.target_locales[0] if runtime.target_locales else "ar"))
+                        auto_fixes_target.setdefault(_plan_loc, {})[i["key"]] = i["candidate_value"]
         except Exception as e:
             logger.warning(f"Could not load previous fix plan: {e}")
     review_fixes_en = {}
-    # Per-target-locale fix maps: keyed by locale string, e.g. {"ar": {...}, "fr": {...}}
+    # Per-target-locale review-fix maps: keyed by locale string, e.g. {"ar": {...}, "fr": {...}}
     review_fixes_target: dict[str, dict[str, str]] = {loc: {} for loc in (runtime.target_locales or [])}
-    # Backward-compatible alias for single-target-locale code paths and conflict resolver
-    review_fixes_ar = review_fixes_target.get(runtime.target_locales[0], {}) if runtime.target_locales else {}
     applied_meta = []
     skipped = []
     apply_trace: list[dict[str, object]] = []
@@ -757,12 +757,14 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
     applied_suggestions: set[str] = set()
     
     seen_keys = {} # (key, locale) -> approved_val
+    # Resolve locale → path map once; used for both current-data loading and final export.
+    locale_paths_map: dict = getattr(runtime, "locale_paths", {})
     current_en = load_locale_mapping(runtime.en_file, runtime, "en") if runtime.en_file.exists() else {}
     # Load every configured target locale independently so fixes are routed to the
     # correct file. Keyed by locale string (e.g. {"ar": {...}, "fr": {...}}).
     current_target: dict[str, dict] = {}
     for _loc in (runtime.target_locales or []):
-        _loc_path = runtime.locale_paths.get(_loc, runtime.ar_file)
+        _loc_path = locale_paths_map.get(_loc, runtime.ar_file)
         if _loc_path and _loc_path.exists():
             current_target[_loc] = load_locale_mapping(_loc_path, runtime, _loc)
         else:
@@ -843,7 +845,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
                     )
                 )
                 if locale == "en": review_fixes_en.pop(key, None)
-                else: review_fixes_ar.pop(key, None)
+                else: review_fixes_target.get(locale, {}).pop(key, None)
                 continue
         seen_keys[(key, locale)] = approved_val
         
@@ -880,7 +882,7 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
             
             review_fixes_en[key] = approved_val
         else:
-            review_fixes_ar[key] = approved_val
+            review_fixes_target.setdefault(locale, {})[key] = approved_val
 
         mutation_id = _mutation_identity(key, locale, approved_val)
         applied_suggestions.add(mutation_id)
@@ -940,11 +942,19 @@ def run_apply(runtime, review_queue_path: Path, apply_all: bool = False, out_fin
         
     count_ar = 0
     final_ar = {}
-    if runtime.original_ar_file:
-        final_ar = merge_mappings(current_ar, auto_fixes_ar, review_fixes_ar)
-        if auto_fixes_ar or review_fixes_ar:
-            merge_and_export_fixes(runtime.original_ar_file, auto_fixes_ar, review_fixes_ar, runtime=runtime)
-            count_ar = 1
+    for _loc in (runtime.target_locales or []):
+        _loc_path = locale_paths_map.get(_loc, runtime.ar_file)
+        _auto = auto_fixes_target.get(_loc, {})
+        _review = review_fixes_target.get(_loc, {})
+        _current = current_target.get(_loc, {})
+        if _loc_path:
+            _final_loc = merge_mappings(_current, _auto, _review)
+            if _auto or _review:
+                merge_and_export_fixes(_loc_path, _auto, _review, runtime=runtime)
+                count_ar += 1
+            if not final_ar:
+                # Backward-compat: keep first target locale result for out_final_json
+                final_ar = _final_loc
 
     if out_final_json:
         out_final_path = Path(out_final_json)

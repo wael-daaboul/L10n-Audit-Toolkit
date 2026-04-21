@@ -29,6 +29,7 @@ def _make_runtime(tmp_path: Path) -> SimpleNamespace:
         locale_format="json",
         source_locale="en",
         target_locales=("ar",),
+        locale_paths={"en": en_file, "ar": ar_file},
         metadata={},
     )
 
