@@ -10,21 +10,61 @@ from typing import Any
 from l10n_audit.ai.verification import validate_glossary_compliance
 from l10n_audit.core.ai_trace import is_ai_debug_mode
 
-def setup_audit_logger():
-    """Configure a file logger for critical audit errors."""
-    from pathlib import Path
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    log_path = log_dir / "audit_errors.log"
-    
+def setup_audit_logger(log_dir=None):
+    """Configure a file logger for critical audit errors.
+
+    Parameters
+    ----------
+    log_dir:
+        Optional absolute path to the directory where ``audit_errors.log``
+        should be written.  When *None* the logger uses only a NullHandler so
+        that no stray ``logs/`` directory is created relative to the process
+        CWD at import time.  Call :func:`configure_audit_logger_path` once the
+        runtime ``results_dir`` is known to attach a real file handler.
+    """
     logger = logging.getLogger("l10n_audit.audit_errors")
     if not logger.handlers:
-        handler = logging.FileHandler(log_path, encoding="utf-8")
+        if log_dir is not None:
+            from pathlib import Path as _Path
+            _log_dir = _Path(log_dir)
+            _log_dir.mkdir(parents=True, exist_ok=True)
+            _log_path = _log_dir / "audit_errors.log"
+            handler = logging.FileHandler(_log_path, encoding="utf-8")
+            formatter = logging.Formatter('%(asctime)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        else:
+            logger.addHandler(logging.NullHandler())
+        logger.setLevel(logging.ERROR)
+    return logger
+
+
+def configure_audit_logger_path(log_dir) -> None:
+    """Attach (or replace) a FileHandler anchored to *log_dir*.
+
+    Call this once the project ``results_dir`` is known (e.g. right after
+    ``load_runtime()``).  Safe to call multiple times — existing FileHandlers
+    pointing to the same path are left untouched; a new one is added only when
+    the path differs or no FileHandler exists yet.
+    """
+    from pathlib import Path as _Path
+    _log_dir = _Path(log_dir)
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _log_path = _log_dir / "audit_errors.log"
+    logger = logging.getLogger("l10n_audit.audit_errors")
+    # Remove NullHandlers and any stale FileHandlers pointing elsewhere.
+    for h in list(logger.handlers):
+        if isinstance(h, logging.NullHandler):
+            logger.removeHandler(h)
+        elif isinstance(h, logging.FileHandler) and h.baseFilename != str(_log_path.resolve()):
+            h.close()
+            logger.removeHandler(h)
+    if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
+        handler = logging.FileHandler(_log_path, encoding="utf-8")
         formatter = logging.Formatter('%(asctime)s - %(message)s')
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.setLevel(logging.ERROR)
-    return logger
+
 
 audit_logger = setup_audit_logger()
 

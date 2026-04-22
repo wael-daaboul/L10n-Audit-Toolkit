@@ -737,11 +737,16 @@ def _classify_decision_quality(
 
 def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, str]]:
     en_data = load_locale_mapping(runtime.en_file, runtime, runtime.source_locale)
+    # Stage 3: pre-load locale data stores for ALL target locales.
+    # Previously only target_locales[0] was loaded; issues for locale[1..n] would
+    # receive empty current_value because the locale was absent from the store.
+    _locale_data_stores: dict[str, dict] = {runtime.source_locale: en_data}
+    _locale_paths_map = getattr(runtime, "locale_paths", {})
+    for _tl in (runtime.target_locales if runtime.target_locales else ["ar"]):
+        _tl_file = _locale_paths_map.get(_tl, runtime.ar_file)
+        _locale_data_stores[_tl] = load_locale_mapping(_tl_file, runtime, _tl)
+    # Preserve the first-target alias for legacy fallback references in issue_type inference.
     target_locale = runtime.target_locales[0] if runtime.target_locales else "ar"
-    ar_data = load_locale_mapping(runtime.ar_file, runtime, target_locale)
-    # Stage 3: pre-load locale data stores for the orchestrator.
-    # The orchestrator receives these explicitly; it never loads files itself.
-    _locale_data_stores = {runtime.source_locale: en_data, target_locale: ar_data}
     auto_safe = {
         (
             str(item["key"]),
@@ -813,7 +818,11 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
             continue
         if _should_suppress_capitalization_by_key_profile(issue):
             continue
-        suggested_fix = suggested_fix_for_issue(issue, en_data, ar_data)
+        # Use the issue's own locale data store for the cross-locale fallback argument.
+        # For EN-locale issues suggested_fix_for_issue uses this as the "target" data;
+        # for target-locale issues it uses en_data instead, so the value is unused.
+        _issue_target_data = _locale_data_stores.get(locale_context or target_locale, _locale_data_stores.get(target_locale, {}))
+        suggested_fix = suggested_fix_for_issue(issue, en_data, _issue_target_data)
         resolution = _resolve_candidate_value(issue, current_value, suggested_fix)
         resolved_fix = resolution["candidate_value"]
         notes_token = resolution["notes_token"]
@@ -1259,6 +1268,7 @@ def main() -> None:
     parser.add_argument("--out-final-json", default=str(resolve_final_report_path(runtime)))
     parser.add_argument("--out-review-xlsx", default=str(resolve_review_queue_path(runtime)))
     parser.add_argument("--out-review-json", default=str(resolve_review_projection_json_path(runtime)))
+    parser.add_argument("--out-normalized", default=str(runtime.results_dir / "normalized" / "aggregated_issues.json"))
     parser.add_argument("--sources", default="")
     args = parser.parse_args()
 
