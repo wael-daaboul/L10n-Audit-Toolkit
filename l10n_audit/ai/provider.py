@@ -56,7 +56,7 @@ def configure_audit_logger_path(log_dir) -> None:
     for h in list(logger.handlers):
         if isinstance(h, logging.NullHandler):
             logger.removeHandler(h)
-        elif isinstance(h, logging.FileHandler) and h.baseFilename != str(_log_path.resolve()):
+        elif isinstance(h, logging.FileHandler) and _Path(h.baseFilename).resolve() != _log_path.resolve():
             h.close()
             logger.removeHandler(h)
     if not any(isinstance(h, logging.FileHandler) for h in logger.handlers):
