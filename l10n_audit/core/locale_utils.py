@@ -28,16 +28,29 @@ def normalized_non_empty_string(value: Any) -> Optional[str]:
 def resolve_issue_locale(issue: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
     """
     Canonical locale resolution for an audit issue.
-    Returns (locale, source_of_determination). Locale is 'ar' or 'en' or None.
+    Returns (locale, source_of_determination). Locale may be any non-empty string.
+
+    Resolution order:
+      1. Explicit non-empty ``locale`` field — accepted as-is (supports any locale tag,
+         not just 'ar'/'en').  Fallback inference is skipped when this is present.
+      2. Source-based inference via _SOURCE_LOCALE_MAP.
+      3. Key prefix inference (e.g. 'ar.auth.failed').
+      4. File path inference.
+      5. Code-based fallback.
+      6. Contextual hints from ``details.locale``.
     """
     if not isinstance(issue, dict):
         return None, None
 
-    # 1. Explicit locale field
+    # 1. Explicit locale field — accept any non-empty locale string so that
+    # projects with more than two locales (e.g. 'fr', 'de', 'ja') are handled
+    # correctly.  The old guard ``loc in {"ar", "en"}`` caused issues with a
+    # locale field like "fr" to be silently dropped and then re-inferred
+    # incorrectly from the source map (which defaults to "ar").
     loc = normalized_non_empty_string(issue.get("locale"))
-    if loc in {"ar", "en"}:
+    if loc:
         return loc, "explicit"
-    
+
     # 2. Source-based inference
     source = str(issue.get("source", "")).strip().lower()
     if source in _SOURCE_LOCALE_MAP:
@@ -68,7 +81,7 @@ def resolve_issue_locale(issue: Dict[str, Any]) -> tuple[Optional[str], Optional
     # 6. Contextual hints (if present)
     details = issue.get("details", {})
     loc_detail = normalized_non_empty_string(details.get("locale"))
-    if loc_detail in {"ar", "en"}:
+    if loc_detail:
         return loc_detail, "details_context"
 
     return None, None

@@ -25,26 +25,44 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+# Sentinel used by _import_provider_stubbed to distinguish "key absent" from "key → None"
+_MISSING = object()
+
+
 # ---------------------------------------------------------------------------
 # Helper: import provider.py with litellm stubbed out
 # ---------------------------------------------------------------------------
 
 def _import_provider_stubbed():
-    """Return the provider module with litellm replaced by a MagicMock."""
-    _to_remove = [k for k in list(sys.modules) if k in ("l10n_audit.ai.provider", "litellm")]
-    for k in _to_remove:
-        del sys.modules[k]
+    """Return the provider module with litellm replaced by a MagicMock.
 
+    Saves and restores previous sys.modules entries for both 'litellm' and
+    'l10n_audit.ai.provider' so that other test modules (e.g. test_v1_3_0_logic)
+    whose litellm stub was installed at collection time are not disrupted.
+    """
+    _prev_litellm = sys.modules.get("litellm", _MISSING)
+    _prev_provider = sys.modules.get("l10n_audit.ai.provider", _MISSING)
+
+    # Temporarily replace litellm with a minimal stub so provider.py imports cleanly.
     stub = types.ModuleType("litellm")
     stub.completion = MagicMock()
     sys.modules["litellm"] = stub
+    sys.modules.pop("l10n_audit.ai.provider", None)
 
     try:
         import l10n_audit.ai.provider as provider
         return provider
     finally:
-        sys.modules.pop("litellm", None)
-        sys.modules.pop("l10n_audit.ai.provider", None)
+        # Restore previous state: put back whatever was there (or remove if absent).
+        if _prev_litellm is _MISSING:
+            sys.modules.pop("litellm", None)
+        else:
+            sys.modules["litellm"] = _prev_litellm
+
+        if _prev_provider is _MISSING:
+            sys.modules.pop("l10n_audit.ai.provider", None)
+        else:
+            sys.modules["l10n_audit.ai.provider"] = _prev_provider
 
 
 # ---------------------------------------------------------------------------

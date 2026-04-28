@@ -98,12 +98,12 @@ def test_build_review_queue_loads_all_target_locales(tmp_path: Path) -> None:
     assert "ar" in locales_in_rows, "build_review_queue must include 'ar' locale rows"
     assert "fr" in locales_in_rows, "build_review_queue must include 'fr' locale rows (second target)"
 
-    # The 'fr' row must have a non-empty current_value sourced from fr.json
+    # The 'fr' row must have a non-empty old_value sourced from fr.json
     fr_rows = [r for r in rows if r["locale"] == "fr"]
     assert fr_rows, "No 'fr' rows in review queue"
-    # current_value is loaded from fr.json — must not be empty when key exists
-    assert fr_rows[0]["current_value"] == "bye-fr", (
-        f"Expected 'bye-fr' but got {fr_rows[0]['current_value']!r}. "
+    # old_value is populated from fr.json via hydration — must not be empty when key exists
+    assert fr_rows[0]["old_value"] == "bye-fr", (
+        f"Expected 'bye-fr' but got {fr_rows[0]['old_value']!r}. "
         "fr locale data was not loaded into _locale_data_stores."
     )
 
@@ -130,7 +130,7 @@ def test_build_review_queue_single_target_locale_unchanged(tmp_path: Path) -> No
     rows = build_review_queue(issues, runtime)
     ar_rows = [r for r in rows if r["locale"] == "ar"]
     assert ar_rows, "No 'ar' rows — single-target regression"
-    assert ar_rows[0]["current_value"] == "مرحبا"
+    assert ar_rows[0]["old_value"] == "مرحبا"
 
 
 # ---------------------------------------------------------------------------
