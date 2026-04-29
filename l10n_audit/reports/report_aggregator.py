@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from l10n_audit.core.audit_report_utils import load_all_report_issues, severity_rank, summarize_issues, write_unified_json
+from l10n_audit.core.camel_decorator import CAMEL_FIELDS, decorate_with_camel
 from l10n_audit.core.artifact_resolver import (
     resolve_master_path, 
     resolve_final_report_path,
@@ -61,6 +62,15 @@ REVIEW_PROJECTION_COLUMNS = [
     # Phase 8: AI outcome visibility fields (additive)
     "ai_outcome_decision",
     "semantic_gate_status",
+    # CAMeL shadow review layer (additive — appended after all core columns)
+    "camel_available",
+    "camel_reason",
+    "camel_mixed_script",
+    "camel_unknown_count",
+    "camel_unknown_tokens",
+    "camel_pos_summary",
+    "camel_dialect",
+    "camel_normalized_preview",
 ]
 REVIEW_QUEUE_COLUMNS = REVIEW_PROJECTION_COLUMNS
 REVIEW_QUEUE_WORKBOOK_COLUMNS = [
@@ -76,6 +86,15 @@ REVIEW_QUEUE_WORKBOOK_COLUMNS = [
     "suggested_hash",
     "plan_id",
     "generated_at",
+    # CAMeL shadow review layer (appended — existing column order unchanged)
+    "camel_available",
+    "camel_reason",
+    "camel_mixed_script",
+    "camel_unknown_count",
+    "camel_unknown_tokens",
+    "camel_pos_summary",
+    "camel_dialect",
+    "camel_normalized_preview",
 ]
 HIDDEN_WHEN_EMPTY = {"placeholders", "icu_message_audit"}
 # UNRESOLVED_LOOKUP_SOURCE_HASH is defined in l10n_audit.core.hydration_result
@@ -122,28 +141,32 @@ def build_human_review_queue(review_rows: list[dict[str, Any]]) -> list[dict[str
 
     This is the only human-edit contract emitted by the run workflow.
     ``review_projection.xlsx`` is not part of the human apply workflow.
+    CAMeL shadow columns are forwarded transparently so reviewers can evaluate
+    Arabic linguistic quality visually in Excel.
     """
     human_rows: list[dict[str, str]] = []
     for row in review_rows:
-        human_rows.append(
-            {
-                "key": str(row.get("key", "") or ""),
-                "locale": str(row.get("locale", "") or ""),
-                "issue_type": str(row.get("issue_type", "") or ""),
-                # Boundary: 'current_value' in the human workbook is intentionally sourced
-                # from 'old_value' \u2014 which holds the Stage-3-hydrated live locale value.
-                # This rename is deliberate: humans see the "current" value, not the internal field name.
-                "current_value": str(row.get("old_value", "") or ""),
-                "candidate_value": str(row.get("suggested_fix", "") or ""),
-                "status": str(row.get("status", "") or ""),
-                "review_note": str(row.get("notes", "") or ""),
-                "source_old_value": str(row.get("source_old_value", "") or ""),
-                "source_hash": str(row.get("source_hash", "") or ""),
-                "suggested_hash": str(row.get("suggested_hash", "") or ""),
-                "plan_id": str(row.get("plan_id", "") or ""),
-                "generated_at": str(row.get("generated_at", "") or ""),
-            }
-        )
+        out: dict[str, str] = {
+            "key": str(row.get("key", "") or ""),
+            "locale": str(row.get("locale", "") or ""),
+            "issue_type": str(row.get("issue_type", "") or ""),
+            # Boundary: 'current_value' in the human workbook is intentionally sourced
+            # from 'old_value' \u2014 which holds the Stage-3-hydrated live locale value.
+            # This rename is deliberate: humans see the "current" value, not the internal field name.
+            "current_value": str(row.get("old_value", "") or ""),
+            "candidate_value": str(row.get("suggested_fix", "") or ""),
+            "status": str(row.get("status", "") or ""),
+            "review_note": str(row.get("notes", "") or ""),
+            "source_old_value": str(row.get("source_old_value", "") or ""),
+            "source_hash": str(row.get("source_hash", "") or ""),
+            "suggested_hash": str(row.get("suggested_hash", "") or ""),
+            "plan_id": str(row.get("plan_id", "") or ""),
+            "generated_at": str(row.get("generated_at", "") or ""),
+        }
+        # Forward CAMeL shadow columns so they appear in review_queue.xlsx.
+        for field in CAMEL_FIELDS:
+            out[field] = str(row.get(field, "") or "")
+        human_rows.append(out)
     return human_rows
 
 
@@ -1277,6 +1300,7 @@ def main() -> None:
     summary = summarize_issues(issues)
     safe_fixes = safe_fix_counts(issues)
     review_rows = build_review_queue(issues, runtime)
+    review_rows = decorate_with_camel(review_rows, runtime)
     source_status = build_source_status(reports, issues)
     markdown = render_markdown(issues, summary, safe_fixes, review_rows, source_status, missing)
 
@@ -1678,6 +1702,7 @@ def run_stage(runtime, options, **kwargs) -> list[ReportArtifact]:
                     )
         except Exception as _reproject_exc:
             logger.warning("Phase 4: Reprojection from workflow_state failed, using unchanged rows: %s", _reproject_exc)
+        review_rows = decorate_with_camel(review_rows, runtime)
         markdown = render_markdown(issues, summary, safe_fixes, review_rows, source_status, missing)
 
         payload = create_analytical_payload(
