@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from l10n_audit.core.arabic_nlp_layer import analyze_arabic_text
+
 CAMEL_FIELDS: list[str] = [
     "camel_available",
     "camel_reason",
@@ -51,26 +53,28 @@ def _camel_enabled(runtime: Any) -> bool:
 def _analyse_row(row: dict[str, Any]) -> dict[str, str]:
     """Run CAMeL analysis on a single review row and return camel_* results.
 
-    This is the integration point for the real CAMeL backend.  The current
-    implementation is a **stub** that returns empty strings for every field;
-    it will be replaced with a live backend call once the CAMeL dependency is
-    available.  The stub guarantees the decorator contract is met from day one:
-    all camel_* keys are present and all existing keys are untouched.
+    The text analysed is the live locale value held in ``old_value`` — the
+    Stage-3-hydrated current translation that the reviewer sees.  Falls back
+    to ``source_old_value`` when ``old_value`` is absent.
+
+    Delegates to :func:`l10n_audit.core.arabic_nlp_layer.analyze_arabic_text`
+    which is always safe: it never raises and returns empty strings when
+    ``camel-tools`` is not installed.
     """
-    # TODO: replace with live CAMeL backend call, e.g.:
-    #   from camel.analyze import analyse_text
-    #   result = analyse_text(row.get("old_value", ""), lang="ar")
-    #   return {
-    #       "camel_available":         "yes",
-    #       "camel_reason":            result.reason,
-    #       "camel_mixed_script":      str(result.mixed_script),
-    #       "camel_unknown_count":     str(result.unknown_count),
-    #       "camel_unknown_tokens":    " ".join(result.unknown_tokens),
-    #       "camel_pos_summary":       result.pos_summary,
-    #       "camel_dialect":           result.dialect,
-    #       "camel_normalized_preview": result.normalized_preview,
-    #   }
-    return dict(_EMPTY_CAMEL)
+    enable_dialect = bool(row.get("_camel_enable_dialect", False))
+    text = str(row.get("old_value", "") or row.get("source_old_value", "") or "")
+    result = analyze_arabic_text(text, enable_dialect=enable_dialect)
+    # Map the result keys to the camel_* column names
+    return {
+        "camel_available": str(result.get("camel_available", "") or ""),
+        "camel_reason": str(result.get("camel_reason", "") or ""),
+        "camel_mixed_script": str(result.get("camel_mixed_script", "") or ""),
+        "camel_unknown_count": str(result.get("camel_unknown_count", "") or ""),
+        "camel_unknown_tokens": str(result.get("camel_unknown_tokens", "") or ""),
+        "camel_pos_summary": str(result.get("camel_pos_summary", "") or ""),
+        "camel_dialect": str(result.get("camel_dialect", "") or ""),
+        "camel_normalized_preview": str(result.get("camel_normalized_preview", "") or ""),
+    }
 
 
 def decorate_with_camel(
