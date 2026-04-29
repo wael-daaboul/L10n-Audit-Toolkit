@@ -229,11 +229,7 @@ def test_camel_fields_in_workbook_column_list():
         )
     # Verify core workbook columns are still in their original relative order
     core_order = [c for c in REVIEW_QUEUE_WORKBOOK_COLUMNS if not c.startswith("camel_")]
-    assert core_order == [
-        "key", "locale", "issue_type", "current_value", "candidate_value",
-        "status", "review_note", "source_old_value", "source_hash",
-        "suggested_hash", "plan_id", "generated_at",
-    ], "Core workbook column order must not change"
+    assert core_order == CORE_WORKBOOK_FIELDS, "Core workbook column order must not change"
 
 
 # ------------------------------------------------------------------
