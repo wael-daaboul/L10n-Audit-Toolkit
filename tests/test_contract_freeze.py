@@ -8,18 +8,21 @@ from zipfile import ZipFile
 import xml.etree.ElementTree as ET
 from l10n_audit.reports.report_aggregator import build_review_queue, REVIEW_QUEUE_COLUMNS, _normalize_review_row
 from l10n_audit.core.audit_runtime import write_simple_xlsx
+from l10n_audit.core.camel_decorator import decorate_with_camel
 from l10n_audit.fixes.fix_merger import REVIEW_FINAL_COLUMNS
 
 def _runtime():
     return type("Runtime", (), {
         "en_file": "en.json", "ar_file": "ar.json", "locale_format": "json",
         "source_locale": "en", "target_locales": ("ar",),
-        "results_dir": "."
+        "results_dir": ".",
+        "camel_enabled": False,
+        "config": {},
     })()
 
 def test_exact_20_column_freeze():
-    # Phase 8: schema now has 22 columns (added ai_outcome_decision, semantic_gate_status)
-    assert len(REVIEW_QUEUE_COLUMNS) == 22
+    # CAMeL shadow layer: schema now has 30 columns (22 core + 8 camel_* columns)
+    assert len(REVIEW_QUEUE_COLUMNS) == 30
     
     # 2. Verify exact ordered parity of a representative materialized row
     issue = {
@@ -31,12 +34,13 @@ def test_exact_20_column_freeze():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr("l10n_audit.reports.report_aggregator.load_locale_mapping", lambda *a, **k: {"k1": "Hello"})
         rows = build_review_queue([issue], _runtime())
+        rows = decorate_with_camel(rows, _runtime())
         assert len(rows) == 1
         row = rows[0]
         
         # EXACT PUBLIC column count and order check (Exclude internal metadata)
         actual_keys = [k for k in row.keys() if not k.startswith("_")]
-        assert len(actual_keys) == 22
+        assert len(actual_keys) == 30
         assert actual_keys == REVIEW_QUEUE_COLUMNS
 
 def test_json_xlsx_parity_readback(tmp_path):
@@ -71,7 +75,7 @@ def test_json_xlsx_parity_readback(tmp_path):
             all_rows = tree.findall('.//{http://schemas.openxmlformats.org/spreadsheetml/2006/main}row')
             xlsx_row_count = len(all_rows) - 1
     
-    assert len(xlsx_headers) == 22
+    assert len(xlsx_headers) == 30
     assert xlsx_headers == REVIEW_QUEUE_COLUMNS
     assert xlsx_row_count == 1
     assert xlsx_headers == list(json_data[0].keys())

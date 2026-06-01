@@ -390,6 +390,15 @@ def test_human_review_queue_is_not_projection_alias() -> None:
             # Phase 8: AI outcome visibility fields (additive)
             "ai_outcome_decision": "",
             "semantic_gate_status": "",
+            # CAMeL shadow review layer (additive)
+            "camel_available": "",
+            "camel_reason": "",
+            "camel_mixed_script": "",
+            "camel_unknown_count": "",
+            "camel_unknown_tokens": "",
+            "camel_pos_summary": "",
+            "camel_dialect": "",
+            "camel_normalized_preview": "",
         }
     ]
 

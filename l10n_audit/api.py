@@ -171,8 +171,6 @@ def run_audit(
     AIConfigError
         If AI is enabled but the API key is missing.
     """
-    check_prerequisites()
-
     from l10n_audit.core.validators import (
         validate_ai_config,
         validate_project_path,
@@ -285,35 +283,47 @@ def run_audit(
         # Step 4: Unified Fix Generation (v1.3.0)
         # This replaces the old glossary-only fix logic with a unified plan
         from l10n_audit.fixes.apply_safe_fixes import build_fix_plan
-        from l10n_audit.fixes.fix_merger import merge_and_export_fixes, export_review_queue
+        from l10n_audit.fixes.fix_merger import merge_and_export_fixes
         
         issue_dicts = [i.to_dict() if hasattr(i, "to_dict") else i for i in issues]
         fix_plan = build_fix_plan(issue_dicts, runtime.project_root)
         
-        # Save the full plan for future reference (internal)
+        # Save the full plan for future reference (internal cache; used by run_apply)
         fixes_dir = results_dir / ".cache" / "apply"
         fixes_dir.mkdir(parents=True, exist_ok=True)
         write_json({"plan": fix_plan}, fixes_dir / "fix_plan.json")
         
-        # 4.1 Export Review Queue if any manual review is needed
+        # NOTE: review_queue.xlsx is written exclusively by run_stage() (report_aggregator)
+        # which runs inside run_engine() above.  Do NOT write it here — doing so would
+        # overwrite the fully-hydrated, multi-locale-correct workbook produced by the
+        # authoritative path with a weaker, fix_plan-only version.
         review_required = [i for i in fix_plan if i["classification"] == "review_required"]
         if review_required:
-            review_xlsx = results_dir / "review" / "review_queue.xlsx"
-            export_review_queue(fix_plan, runtime, review_xlsx)
-            logger.info(f"Review Required: {len(review_required)} items added to {review_xlsx}")
-            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {review_xlsx}")
+            logger.info("Review Required: %d items in fix_plan (review_queue.xlsx already written by report stage).", len(review_required))
+            print(f"📝 [REVIEW QUEUE]: {len(review_required)} items need manual approval in {results_dir / 'review' / 'review_queue.xlsx'}")
             
         # 4.2 Immediate Auto-Fix Generation (.fix files next to originals)
         if effective_apply_safe_fixes:
-            auto_fixes_en = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and i["locale"] == "en"}
-            auto_fixes_ar = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and (i["locale"] == "ar" or i["locale"] == runtime.target_locales[0])}
-            
+            auto_fixes_en = {i["key"]: i["candidate_value"] for i in fix_plan if i["classification"] == "auto_safe" and i["locale"] == runtime.source_locale}
             if auto_fixes_en and runtime.original_en_file:
                 merge_and_export_fixes(runtime.original_en_file, auto_fixes_en, runtime=runtime)
-            if auto_fixes_ar and runtime.original_ar_file:
-                merge_and_export_fixes(runtime.original_ar_file, auto_fixes_ar, runtime=runtime)
-            
-            total_auto = len(auto_fixes_en) + len(auto_fixes_ar)
+
+            # Iterate over every target locale so fixes are not silently dropped for
+            # locale[1..n].  Each locale's fixes are exported to its own file.
+            _locale_paths_map = getattr(runtime, "locale_paths", {})
+            total_auto = len(auto_fixes_en)
+            for _tl in runtime.target_locales:
+                _tl_fixes = {
+                    i["key"]: i["candidate_value"]
+                    for i in fix_plan
+                    if i["classification"] == "auto_safe" and i["locale"] == _tl
+                }
+                if _tl_fixes:
+                    _tl_file = _locale_paths_map.get(_tl, runtime.original_ar_file)
+                    if _tl_file:
+                        merge_and_export_fixes(_tl_file, _tl_fixes, runtime=runtime)
+                    total_auto += len(_tl_fixes)
+
             if total_auto > 0:
                 print(f"✅ [AUTO-FIXED]: {total_auto} safe corrections generated in .fix files.")
 

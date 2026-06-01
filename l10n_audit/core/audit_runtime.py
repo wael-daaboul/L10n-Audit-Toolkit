@@ -67,6 +67,14 @@ class AuditPaths:
     output: dict[str, Any]
     original_en_file: Path | None = None
     original_ar_file: Path | None = None
+    # Full effective configuration dict parsed from config.json (merged with profile).
+    # All feature-gated subsystems must read their settings from this field via
+    # getattr(runtime, "config", {}).  Never hard-code fallback logic in consumers.
+    config: dict[str, Any] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.config is None:
+            self.config = {}
 
 
 def _resolve_config_path(base_dir: Path, raw_value: str | None, fallback: Path) -> Path:
@@ -461,7 +469,8 @@ def load_runtime(script_path: str | Path, validate: bool = True) -> AuditPaths:
             "retention_mode": _get_nested(effective_config, "output.retention_mode", "overwrite"),
             "archive_name_prefix": _get_nested(effective_config, "output.archive_name_prefix", "audit"),
             "apply_safe_fixes": _get_nested(effective_config, "audit_rules.apply_safe_fixes", False),
-        }
+        },
+        config=dict(effective_config),
     )
     if validate:
         validate_runtime(runtime)

@@ -29,6 +29,7 @@ def _make_runtime(tmp_path: Path) -> SimpleNamespace:
         locale_format="json",
         source_locale="en",
         target_locales=("ar",),
+        locale_paths={"en": en_file, "ar": ar_file},
         metadata={},
     )
 
@@ -633,3 +634,101 @@ def test_fix3_1_default_mode_accepts_edited_approved_new(tmp_path: Path, monkeyp
 
     rejected = [e for e in report.get("trace", []) if e.get("reason") == "suggested_hash_mismatch"]
     assert len(rejected) == 0, f"Unexpected strict-mode rejections in default mode: {rejected}"
+
+
+# ---------------------------------------------------------------------------
+# Step 1 regression tests: pre-validation mutation guard
+# ---------------------------------------------------------------------------
+
+def _make_master(path: Path, rows: list[dict]) -> None:
+    """Write a minimal audit_master.json with the given rows list."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import json as _j
+    path.write_text(_j.dumps({"rows": rows, "workflow_state": {}, "apply_history": []}), encoding="utf-8")
+
+
+def test_wrong_artifact_raises_before_master_is_touched(tmp_path: Path) -> None:
+    """Passing a non-frozen workbook (no frozen_artifact_type column) must raise
+    WrongArtifactTypeError and leave audit_master.json completely unchanged."""
+    from l10n_audit.fixes.apply_review_fixes import WrongArtifactTypeError
+    runtime = _make_runtime(tmp_path)
+
+    # Write a master with a known sentinel value
+    master_path = runtime.results_dir / "artifacts" / "audit_master.json"
+    _make_master(master_path, [{"plan_id": "sentinel", "status": "pending"}])
+    original_master_text = master_path.read_text(encoding="utf-8")
+
+    # Build a review_queue.xlsx WITHOUT the frozen_artifact_type column
+    non_frozen = tmp_path / "non_frozen.xlsx"
+    write_simple_xlsx(
+        [{"key": "welcome", "locale": "ar", "status": "approved",
+          "source_old_value": "اهلا", "source_hash": compute_text_hash("اهلا"),
+          "suggested_hash": compute_text_hash("مرحبا"), "plan_id": "plan-1",
+          "generated_at": "2026-03-08T00:00:00+00:00",
+          "issue_type": "test", "approved_new": "مرحبا"}],
+        ["key", "locale", "status", "source_old_value", "source_hash",
+         "suggested_hash", "plan_id", "generated_at", "issue_type", "approved_new"],
+        non_frozen,
+        sheet_name="Review Queue",
+    )
+
+    with pytest.raises(WrongArtifactTypeError):
+        run_apply(runtime, non_frozen)
+
+    # Master must be byte-for-byte unchanged
+    assert master_path.read_text(encoding="utf-8") == original_master_text
+
+
+def test_apply_contract_failure_leaves_master_unchanged(tmp_path: Path) -> None:
+    """A frozen artifact that fails H6 (missing required field) must also leave
+    audit_master.json unchanged."""
+    from l10n_audit.fixes.apply_review_fixes import ApplyContractError
+    runtime = _make_runtime(tmp_path)
+
+    master_path = runtime.results_dir / "artifacts" / "audit_master.json"
+    _make_master(master_path, [{"plan_id": "sentinel", "status": "pending"}])
+    original_master_text = master_path.read_text(encoding="utf-8")
+
+    # Frozen artifact but missing required "locale" field
+    bad_frozen = tmp_path / "bad_frozen.xlsx"
+    write_simple_xlsx(
+        [{"key": "welcome", "locale": "", "issue_type": "test",
+          "approved_new": "مرحبا", "status": "approved",
+          "source_old_value": "اهلا", "source_hash": compute_text_hash("اهلا"),
+          "suggested_hash": compute_text_hash("مرحبا"), "plan_id": "plan-1",
+          "generated_at": "2026-03-08T00:00:00+00:00",
+          "current_value": "اهلا", "candidate_value": "مرحبا",
+          "frozen_artifact_type": FROZEN_ARTIFACT_TYPE_VALUE}],
+        ["key", "locale", "issue_type", "approved_new", "status",
+         "source_old_value", "source_hash", "suggested_hash", "plan_id",
+         "generated_at", "current_value", "candidate_value", "frozen_artifact_type"],
+        bad_frozen,
+        sheet_name="Review Final",
+    )
+
+    with pytest.raises(ApplyContractError):
+        run_apply(runtime, bad_frozen)
+
+    assert master_path.read_text(encoding="utf-8") == original_master_text
+
+
+def test_valid_frozen_artifact_still_reconciles_master(tmp_path: Path) -> None:
+    """A fully valid frozen artifact must still reconcile audit_master.json
+    before writing locale files."""
+    runtime = _make_runtime(tmp_path)
+
+    master_path = runtime.results_dir / "artifacts" / "audit_master.json"
+    _make_master(master_path, [{"plan_id": "plan-1", "status": "pending", "approved_new": ""}])
+
+    review_queue = runtime.results_dir / "review" / "review_queue.xlsx"
+    _write_review_queue(review_queue, [_review_row(plan_id="plan-1", approved_new="مرحبا")])
+
+    report = run_apply(runtime, review_queue, out_final_json=str(runtime.results_dir / "final.json"))
+
+    assert report["summary"]["approved_rows_applied"] == 1
+
+    import json as _j
+    master_after = _j.loads(master_path.read_text(encoding="utf-8"))
+    # reconcile_master_from_xlsx must have updated approved_new for plan-1
+    row_after = next(r for r in master_after["rows"] if r.get("plan_id") == "plan-1")
+    assert row_after["approved_new"] == "مرحبا"
