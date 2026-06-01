@@ -70,6 +70,7 @@ except ImportError:
 
 # Arabic Unicode block: U+0600–U+06FF (including extended variants)
 _RE_ARABIC = re.compile(r"[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]")
+_RE_ARABIC_LETTERS = re.compile(r"[\u0621-\u064A]")
 # Basic Latin letters (A–Z, a–z)
 _RE_LATIN = re.compile(r"[A-Za-z]")
 # Arabic diacritics (harakat) — safe to strip for a normalised preview
@@ -125,8 +126,8 @@ def _normalize_arabic_text(text: str, max_preview: int = 120) -> str:
 
 
 def _is_arabic_text(text: str) -> bool:
-    """Return True when the text contains at least one Arabic character."""
-    return bool(text) and bool(_RE_ARABIC.search(text))
+    """Return True when the text contains at least one Arabic letter."""
+    return bool(text) and bool(_RE_ARABIC_LETTERS.search(text))
 
 
 # ---------------------------------------------------------------------------

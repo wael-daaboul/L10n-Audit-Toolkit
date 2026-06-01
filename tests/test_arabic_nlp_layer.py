@@ -404,7 +404,7 @@ def test_analyse_row_does_not_mutate_input():
     ("",              False),
     ("123",           False),
     ("مرحبا Hello",   True),   # contains Arabic → True
-    ("!؟",            True),   # Arabic question mark is in Arabic Unicode block
+    ("!؟",            False),  # Arabic punctuation alone is not Arabic text
 ])
 def test_is_arabic_text(text, expected):
     assert _is_arabic_text(text) == expected
