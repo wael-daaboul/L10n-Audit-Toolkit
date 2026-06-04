@@ -194,7 +194,10 @@ def _camel_analyze(text: str, enable_dialect: bool) -> dict[str, str]:
     # 5b. Simple word tokenisation (no data needed)
     tokens: list[str] = []
     try:
-        from camel_tools.tokenize.word import simple_word_tokenize
+        try:
+            from camel_tools.tokenizers.word import simple_word_tokenize
+        except ImportError:
+            from camel_tools.tokenize.word import simple_word_tokenize
         tokens = simple_word_tokenize(text)
     except Exception:
         tokens = text.split() if text else []
@@ -207,7 +210,10 @@ def _camel_analyze(text: str, enable_dialect: bool) -> dict[str, str]:
         from camel_tools.morphology.database import MorphologyDB
         from camel_tools.morphology.analyzer import Analyzer
 
-        db = MorphologyDB.builtin_db(flags="+a")
+        try:
+            db = MorphologyDB.builtin_db(flags="a")
+        except Exception:
+            db = MorphologyDB.builtin_db(flags="+a")
         analyzer = Analyzer(db)
 
         for token in tokens:

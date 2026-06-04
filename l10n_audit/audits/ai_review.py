@@ -725,6 +725,7 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
     # run_stage starts with a clean slate.
     reset_metrics()
     batch_items = []
+    all_fixes: list[dict] = []
     for item in flawed_keys.values():
         payload = _build_ai_input_payload(item, locale=target_locale, glossary_map=glossary_translation_map)
         payload["issue_types"] = sorted({str(it) for it in payload.get("issue_types", []) if str(it).strip()})
@@ -748,6 +749,25 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 _item_key,
                 skip_reason,
             )
+            # Short ambiguous strings must not silently pass
+            if skip_reason == SKIP_REASON_SHORT_AMBIGUOUS_NO_CONTEXT:
+                all_fixes.append({
+                    "key": _item_key,
+                    "verified": False,
+                    "needs_review": True,
+                    "issue_type": "ai_suggestion",
+                    "severity": "warning",
+                    "message": "Short ambiguous translation without context requires manual review",
+                    "source": payload.get("source_text", ""),
+                    "original_source": payload.get("original_source", ""),
+                    "target": payload.get("current_text") or payload.get("current_translation") or "",
+                    "suggestion": "",
+                    "extra": {
+                        "ai_outcome_decision": "review",
+                        "semantic_gate_status": "suspicious",
+                        "semantic_reason_codes": ["short_ambiguous_no_context"],
+                    },
+                })
     
     if enforcer.enabled:
         logger.info("Routing Metrics [ai_review run_stage]: %s", enforcer.metrics.to_dict())
@@ -767,6 +787,18 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 }
         except Exception:
             pass
+        if all_fixes:
+            normalised = [{**f, "issue_type": "ai_suggestion", "source": "ai_review"} for f in all_fixes]
+            from l10n_audit.core.audit_output_adapter import normalize_audit_finding
+            normalized = [
+                normalize_audit_finding(
+                    {**r, "old": r.get("target", "")},
+                    audit_source="ai_review",
+                    locale="ar",
+                )
+                for r in normalised
+            ]
+            return [issue_from_dict(r) for r in normalized]
         return []
 
     # --- Phase 10: Conflict Resolution (Governance Layer) ---
@@ -790,7 +822,6 @@ def run_stage(runtime, options, *, ai_provider=None, previous_issues=None, en_da
                 ))
 
     # Process in batches using the injected AI provider
-    all_fixes: list[dict] = []
     batches = list(chunk_issues(batch_items, batch_size=options.ai_review.batch_size))
     max_consecutive_failures = _coerce_int_option(
         getattr(options.ai_review, "max_consecutive_failures", 3),

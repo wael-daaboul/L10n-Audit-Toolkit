@@ -47,10 +47,14 @@ def _camel_enabled(runtime: Any) -> bool:
         return bool(flag)
     # Fall back to the effective config dict that every subsystem uses.
     cfg = getattr(runtime, "config", None) or {}
+    # Support modern nested config: arabic_nlp.enabled
+    arabic_nlp = cfg.get("arabic_nlp")
+    if isinstance(arabic_nlp, dict):
+        return bool(arabic_nlp.get("enabled", False))
     return bool(cfg.get("camel_enabled", False))
 
 
-def _analyse_row(row: dict[str, Any]) -> dict[str, str]:
+def _analyse_row(row: dict[str, Any], runtime: Any = None) -> dict[str, str]:
     """Run CAMeL analysis on a single review row and return camel_* results.
 
     The text analysed is the live locale value held in ``old_value`` — the
@@ -62,6 +66,12 @@ def _analyse_row(row: dict[str, Any]) -> dict[str, str]:
     ``camel-tools`` is not installed.
     """
     enable_dialect = bool(row.get("_camel_enable_dialect", False))
+    if not enable_dialect and runtime is not None:
+        cfg = getattr(runtime, "config", None) or {}
+        arabic_nlp = cfg.get("arabic_nlp")
+        if isinstance(arabic_nlp, dict):
+            enable_dialect = bool(arabic_nlp.get("enable_dialect", False))
+
     text = str(row.get("old_value", "") or row.get("source_old_value", "") or "")
     result = analyze_arabic_text(text, enable_dialect=enable_dialect)
     # Map the result keys to the camel_* column names
@@ -111,7 +121,7 @@ def decorate_with_camel(
     for row in rows:
         out = dict(row)
         try:
-            camel_result = _analyse_row(row)
+            camel_result = _analyse_row(row, runtime)
         except Exception:
             camel_result = dict(_EMPTY_CAMEL)
         out.update(camel_result)

@@ -143,21 +143,21 @@ def validate_review_row(item: Dict[str, Any]) -> tuple[bool, List[str]]:
     issue_type = _normalized_non_empty_string(item.get("issue_type"))
     message = _normalized_non_empty_string(item.get("message"))
     current_value = _normalized_non_empty_string(item.get("current_value"))
-    candidate_value = _normalized_non_empty_string(item.get("candidate_value"))
+    
+    # Allow empty string for candidate_value and approved_new in review rows
+    candidate_raw = item.get("candidate_value")
+    candidate_value = str(candidate_raw).strip() if candidate_raw is not None else None
+    
     generated_at = _normalized_non_empty_string(item.get("generated_at"))
     approved_new = candidate_value
 
     missing_fields: List[str] = []
     if key is None:
         missing_fields.append("key")
-    # Accept any non-empty locale string — not just "ar" and "en".
-    # Hard-coding to {"ar", "en"} rejects valid locales (e.g. "fr", "de").
     if locale is None:
         missing_fields.append("locale")
     if issue_type is None:
         missing_fields.append("issue_type")
-    # message is optional: a row may be actionable without a human-readable message.
-    # Requiring it caused valid rows from sources that omit the field to be silently dropped.
     if current_value is None:
         missing_fields.append("current_value")
     if candidate_value is None:
@@ -180,7 +180,10 @@ def build_validated_row(item: Dict[str, Any], runtime: Any) -> Dict[str, Any] | 
     issue_type = _normalized_non_empty_string(item.get("issue_type"))
     message = _normalized_non_empty_string(item.get("message"))
     current_value = _normalized_non_empty_string(item.get("current_value"))
-    candidate_value = _normalized_non_empty_string(item.get("candidate_value"))
+    
+    candidate_raw = item.get("candidate_value")
+    candidate_value = str(candidate_raw).strip() if candidate_raw is not None else ""
+    
     approved_new = candidate_value
     source_old_value = current_value
     status = str(item.get("status", "")).strip() or "pending"

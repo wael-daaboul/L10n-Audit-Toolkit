@@ -21,6 +21,7 @@ REPORT_FILE_MAP = {
     "placeholders": ".cache/raw_tools/placeholders/placeholder_audit_report.json",
     "icu_message_audit": ".cache/raw_tools/icu_message_audit/icu_message_audit_report.json",
     "ai_review": ".cache/raw_tools/ai_review/ai_review_report.json",
+    "camel_validation": ".cache/raw_tools/camel_validation/camel_validation_report.json",
 }
 
 SOURCE_GROUPS = {
@@ -32,6 +33,7 @@ SOURCE_GROUPS = {
     "ar_locale_qc": "locale_qc_issues",
     "ar_semantic_qc": "locale_qc_issues",
     "icu_message_audit": "icu_message_issues",
+    "camel_validation": "locale_qc_issues",
 }
 
 
@@ -412,6 +414,26 @@ def normalize_ai_review(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return issues
 
 
+def normalize_camel_validation(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for row in payload.get("findings", []):
+        issue_type = str(row.get("issue_type") or "").strip() or "unknown"
+        issues.append(
+            {
+                "source": "camel_validation",
+                "group": SOURCE_GROUPS["camel_validation"],
+                "key": str(row.get("key", "")),
+                "issue_type": issue_type,
+                "severity": normalize_severity(row.get("severity"), "info"),
+                "message": str(row.get("message", "")),
+                "locale": "ar",
+                "details": row,
+                "recommendation": "Review Arabic morphological and linguistic warnings from CAMeL Tools.",
+            }
+        )
+    return issues
+
+
 NORMALIZERS = {
     "localization": normalize_localization,
     "locale_qc": normalize_locale_qc,
@@ -422,6 +444,7 @@ NORMALIZERS = {
     "placeholders": normalize_placeholders,
     "icu_message_audit": normalize_icu_message_audit,
     "ai_review": normalize_ai_review,
+    "camel_validation": normalize_camel_validation,
 }
 
 

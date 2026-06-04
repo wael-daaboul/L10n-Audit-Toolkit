@@ -280,3 +280,47 @@ def test_camel_disabled_passthrough():
         for col in CAMEL_FIELDS:
             assert col in after
             assert after[col] == ""
+
+
+# ------------------------------------------------------------------
+# T-11  Support nested arabic_nlp config block
+# ------------------------------------------------------------------
+
+def test_camel_enabled_by_nested_arabic_nlp_config():
+    issues = [_make_issue("k1")]
+    rows = _build_rows(issues, camel_enabled=False)
+    rt = type("Runtime", (), {
+        "camel_enabled": None,
+        "config": {
+            "arabic_nlp": {
+                "enabled": True,
+                "provider": "camel_tools",
+                "shadow_mode": True,
+                "enable_dialect": False
+            }
+        }
+    })()
+    decorated = decorate_with_camel(rows, rt)
+    assert len(decorated) == len(rows)
+    for row in decorated:
+        assert row["camel_available"] in ("yes", "no")
+        assert row["camel_reason"] != ""
+
+
+def test_camel_enable_dialect_by_nested_config():
+    issues = [_make_issue("k1")]
+    rows = _build_rows(issues, camel_enabled=False)
+    rt = type("Runtime", (), {
+        "camel_enabled": None,
+        "config": {
+            "arabic_nlp": {
+                "enabled": True,
+                "enable_dialect": True
+            }
+        }
+    })()
+    with patch("l10n_audit.core.camel_decorator.analyze_arabic_text") as mock_analyze:
+        mock_analyze.return_value = {}
+        decorate_with_camel(rows, rt)
+        mock_analyze.assert_called_once_with("مرحبا", enable_dialect=True)
+

@@ -1,8 +1,16 @@
+# ============================================================
+# L10n Audit Toolkit Git ignore rules
+# Goal: keep the GitHub repository clean and prevent accidental
+# upload of local secrets, generated artifacts, caches, and
+# machine-specific files.
+# ============================================================
+
 # --- Python bytecode and caches ---
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*$py.class
 
 # --- Virtual environments ---
 .venv/
@@ -10,13 +18,19 @@ __pycache__/
 venv/
 env/
 ENV/
+.virtualenv/
 
 # --- Test and type-check caches ---
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.tox/
+.nox/
+.hypothesis/
+.cache/
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 
 # --- Build and packaging artifacts ---
@@ -25,34 +39,114 @@ dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/
+wheelhouse/
 
 # --- Editor and OS files ---
 .DS_Store
+Thumbs.db
+.Spotlight-V100/
+.Trashes/
 .idea/
 .vscode/
+*.iml
 *.swp
 *.swo
+*.tmp
+*.temp
+*.bak
+*.orig
+~$*
+
+# --- Local environment and secrets ---
+.env
+.env.*
+!.env.example
+!.env.template
+.envrc
+.direnv/
+
+# Local project configuration. Keep examples/templates tracked.
+/config.json
+/config/config.json
+/config/*.local.json
+/config/*.private.json
+/config/*.secret.json
+!/config/config.example.json
+!/config/*.example.json
+
+# Credentials and private keys.
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.kdbx
+secrets/
+.secrets/
+private/
+credentials/
+*secret*.json
+*secret*.txt
+*secret*.env
+*secrets*.json
+*secrets*.txt
+*secrets*.env
+*token*.json
+*token*.txt
+*token*.env
+*.token
+*_key.json
+service-account*.json
 
 # --- Generated reports and audit outputs ---
 Results/
 reports_output/
 logs/
 *.log
+*.trace
+*.trace.json
+ai_trace*.json
+rejection_report.json
+review_queue.xlsx
+review_final.xlsx
+final_audit_report.json
+final_audit_report.md
+audit_master.json
+*.fix.json
+*.fix.php
 
-# --- استبعاد ملفات أدوات التحليل الآلي (Repomix/Context) ---
+# --- Local audit workspace and bundled tools ---
+vendor/
+.l10n-audit/
+
+# --- Automated analysis/context artifacts ---
 repomix*
 project-context.txt
 final-audit-toolkit.txt
 clean_project.txt
-clean_project*
+clean_project*.txt
+graphify-out/
 
-# --- المجلدات والملفات الخاصة بالمطور (Private Dev Tools) ---
+# --- Agent-local and private developer tools ---
+.agents
 مفاتيح/
 internal_notes/
 .dev_scripts/
 RELEASE_NOTE.md
-docs/architecture/
+antigravity plan/
 
-# --- إعدادات الحالة والبيئة المحلية ---
-vendor/
-.l10n-audit/
+# --- Node and frontend caches, if examples add frontend tooling ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Notebook checkpoints ---
+.ipynb_checkpoints/

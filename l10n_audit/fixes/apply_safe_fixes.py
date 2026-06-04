@@ -73,6 +73,10 @@ def is_small_safe_change(old: str, new: str) -> bool:
 
 
 def classify_issue(issue: dict[str, Any]) -> str:
+    candidate_val, _ = resolve_issue_candidate_value(issue)
+    if not candidate_val:
+        return "review_required"
+
     source = str(issue.get("source", ""))
     issue_type = str(issue.get("issue_type", ""))
     details = issue.get("details", {})
@@ -210,12 +214,15 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
             )
             continue
                 
-        # Strict security: AI suggestions MUST be verified to be included in the plan
+        # Strict security: AI suggestions MUST be verified to be included in the plan,
+        # unless they have no candidate (requires manual review)
         if issue.get("source") == "ai_review" or issue.get("code") == "AI_SUGGESTION" or issue.get("issue_type") == "ai_suggestion":
-            is_verified = issue.get("verified") is True or issue.get("extra", {}).get("verified") is True
-            if not is_verified:
-                logger.debug("Skipping unverified AI suggestion for key: %s", issue.get("key"))
-                continue
+            candidate_val, _ = resolve_issue_candidate_value(issue)
+            if candidate_val is not None:
+                is_verified = issue.get("verified") is True or issue.get("extra", {}).get("verified") is True
+                if not is_verified:
+                    logger.debug("Skipping unverified AI suggestion for key: %s", issue.get("key"))
+                    continue
 
         details = issue.get("details", {})
         if not isinstance(details, dict):
@@ -226,6 +233,10 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
         current, _current_source = resolve_issue_current_value(issue)
         candidate, _candidate_source = resolve_issue_candidate_value(issue)
 
+        # Findings without candidate must remain visible
+        if candidate is None:
+            candidate = ""
+
         missing_fields: list[str] = []
         if not key.strip():
             missing_fields.append("key")
@@ -233,8 +244,6 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
             missing_fields.append("locale")
         if current is None:
             missing_fields.append("current_value")
-        if candidate is None:
-            missing_fields.append("candidate_value")
         if missing_fields:
             _record_fix_plan_rejection(runtime, issue, missing_fields)
             continue
@@ -266,6 +275,8 @@ def build_fix_plan(issues: list[dict[str, Any]], project_root: Path | None = Non
             "candidate_value": candidate,
             "provenance": [provenance],
         }
+        if "generated_at" in issue or ("details" in issue and isinstance(issue["details"], dict) and "generated_at" in issue["details"]):
+            item["generated_at"] = str(issue.get("generated_at") or issue.get("details", {}).get("generated_at") or "")
         seen[signature] = item
         plan.append(item)
         

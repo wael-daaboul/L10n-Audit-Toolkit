@@ -704,6 +704,31 @@ def verify_batch_fixes(original_batch, ai_fixes, glossary=None):
         
         # If suggestion is identical, skip
         if suggestion.strip() == target_text.strip():
+            orig_msg = item.get("identified_issue") or item.get("message") or "Translation quality uncertainty"
+            verified_fixes.append({
+                "key": key,
+                "verified": False,
+                "needs_review": True,
+                "issue_type": "ai_suggestion",
+                "severity": "warning",
+                "message": f"AI returned same text (uncertainty): {orig_msg}",
+                "source": source_text,
+                "original_source": original_source,
+                "target": target_text,
+                "suggestion": suggestion,
+                "extra": {
+                    "ai_outcome_decision": "review",
+                    "semantic_gate_status": "suspicious",
+                    "semantic_reason_codes": ["ai_returned_same_text"],
+                },
+            })
+            emit_ai_decision_trace(
+                key=key,
+                invoked=True,
+                semantic_status="suspicious",
+                final_decision="review",
+            )
+            get_metrics().record_suspicious()
             continue
             
         # Basic Verification

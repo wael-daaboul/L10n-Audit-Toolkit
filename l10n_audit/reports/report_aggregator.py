@@ -146,6 +146,9 @@ def build_human_review_queue(review_rows: list[dict[str, Any]]) -> list[dict[str
     """
     human_rows: list[dict[str, str]] = []
     for row in review_rows:
+        # Prevent camel standalone findings from entering the human review queue.
+        if str(row.get("issue_type", "")) in {"camel_unknown_token", "camel_mixed_script"}:
+            continue
         out: dict[str, str] = {
             "key": str(row.get("key", "") or ""),
             "locale": str(row.get("locale", "") or ""),
@@ -797,7 +800,8 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         # their outcome decision (safe/review) remains visible in the review queue.
         # Other info-severity issues continue to be suppressed.
         if not _is_ai_suggestion and str(issue.get("severity", "")).lower() == "info":
-            continue
+            if _issue_source != "camel_validation":
+                continue
 
         locale, _l_source = resolve_issue_locale(issue)
         locale_context = locale
@@ -965,9 +969,10 @@ def build_review_queue(issues: list[dict[str, Any]], runtime) -> list[dict[str, 
         # 2. Meaningful Block/Conflict (needs manual review)
         # Includes IDENTITY_VETO, STRUCTURAL_RISK, SAFETY_VETO, etc.
         is_review_worthy_block = "[CONFLICT:" in notes or "safety_gate" in notes
+        is_camel = "camel_validation" in row.get("provenance", "")
         
         # Suppression: Exclude empty/no-candidate noise and keep-current rows
-        if has_new_suggestion or is_review_worthy_block:
+        if has_new_suggestion or is_review_worthy_block or is_camel:
             meaningful_rows.append(row)
             
     rows = meaningful_rows

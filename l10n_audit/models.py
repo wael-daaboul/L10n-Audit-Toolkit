@@ -52,11 +52,12 @@ VALID_STAGES = frozenset(
         "reports",
         "autofix",
         "ai-review",
+        "camel",
     }
 )
 
 # Producers: Stages that generate new audit data 
-PRODUCER_STAGES = frozenset({"full", "fast", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu"})
+PRODUCER_STAGES = frozenset({"full", "fast", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "camel"})
 
 # Consumers: Stages that process/transform existing results
 CONSUMER_STAGES = frozenset({"ai-review", "reports", "autofix"})
@@ -165,6 +166,8 @@ _ISSUE_TYPE_TO_CODE: dict[str, IssueCode] = {
     "grammar": "GRAMMAR_ERROR",
     "ar_qc": "AR_QC",
     "ar_locale_qc": "AR_QC",
+    "camel_mixed_script": "AR_QC",
+    "camel_unknown_token": "AR_QC",
     "ar_semantic": "AR_SEMANTIC",
     "ar_semantic_qc": "AR_SEMANTIC",
     "ai_suggestion": "AI_SUGGESTION",

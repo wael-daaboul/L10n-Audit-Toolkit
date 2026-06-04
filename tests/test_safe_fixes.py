@@ -122,7 +122,7 @@ def test_build_fix_plan_rejects_item_when_current_value_unresolved(tmp_path: Pat
     ]
 
 
-def test_build_fix_plan_rejects_item_when_candidate_value_unresolved(tmp_path: Path) -> None:
+def test_build_fix_plan_accepts_item_when_candidate_value_unresolved(tmp_path: Path) -> None:
     runtime = SimpleNamespace(metadata={})
     issues = [
         {
@@ -137,16 +137,10 @@ def test_build_fix_plan_rejects_item_when_candidate_value_unresolved(tmp_path: P
 
     plan = build_fix_plan(issues, project_root=tmp_path, runtime=runtime)
 
-    assert plan == []
-    assert runtime.metadata["fix_plan_rejections"] == [
-        {
-            "key": "trimmed",
-            "source": "locale_qc",
-            "issue_type": "whitespace",
-            "missing_fields": ["candidate_value"],
-            "reason": "incomplete_fix_plan_contract",
-        }
-    ]
+    assert len(plan) == 1
+    assert plan[0]["key"] == "trimmed"
+    assert plan[0]["candidate_value"] == ""
+    assert plan[0]["classification"] == "review_required"
 
 
 def test_build_fix_plan_valid_item_keeps_exact_output_schema() -> None:
@@ -324,7 +318,7 @@ def test_export_review_queue_rejects_row_when_current_value_missing(tmp_path: Pa
     ]
 
 
-def test_export_review_queue_rejects_row_when_candidate_value_missing(tmp_path: Path) -> None:
+def test_export_review_queue_accepts_row_when_candidate_value_missing(tmp_path: Path) -> None:
     runtime = SimpleNamespace(metadata={})
     output_path = tmp_path / "review_queue.json"
     fix_plan = [
@@ -345,16 +339,7 @@ def test_export_review_queue_rejects_row_when_candidate_value_missing(tmp_path: 
 
     export_review_queue(fix_plan, runtime, output_path)
 
-    assert not output_path.exists()
-    assert runtime.metadata["review_export_rejections"] == [
-        {
-            "key": "welcome",
-            "source": "ai_review",
-            "issue_type": "meaning_loss",
-            "missing_fields": ["candidate_value"],
-            "reason": "incomplete_review_export_contract",
-        }
-    ]
+    assert output_path.exists()
 
 
 def test_export_review_queue_rejects_row_when_locale_missing(tmp_path: Path) -> None:
@@ -536,7 +521,7 @@ def test_validate_review_row_rejects_invalid_locale_and_missing_required_fields(
     )
 
     assert is_valid is False
-    assert set(missing_fields) == {"locale", "current_value", "candidate_value"}
+    assert set(missing_fields) == {"locale", "current_value"}
 
 
 def test_export_review_queue_tracks_invalid_review_row_metadata(tmp_path: Path) -> None:

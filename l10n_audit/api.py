@@ -74,6 +74,7 @@ def _stage_module_names(stage: str, ai_enabled: bool = False) -> list[str]:
         "reports": ["reports.report_aggregator"],
         "autofix": ["fixes.apply_safe_fixes"],
         "ai-review": ["audits.ai_review"],
+        "camel": ["audits.camel_validation"],
     }
     
     modules = mapping.get(stage, [])

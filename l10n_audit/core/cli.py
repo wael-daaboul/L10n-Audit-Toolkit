@@ -55,6 +55,7 @@ def _stage_modules(stage: str) -> list[tuple[str, list[str]]]:
         "reports": [("reports.report_aggregator", [])],
         "autofix": [("fixes.apply_safe_fixes", [])],
         "ai-review": [("audits.ai_review", [])],
+        "camel": [("audits.camel_validation", [])],
     }
     return mapping[stage]
 
@@ -655,7 +656,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--path", default=".")
     run_parser.add_argument(
         "--stage", default="full",
-        choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix", "ai-review"],
+        choices=["fast", "full", "grammar", "terminology", "placeholders", "ar-qc", "ar-semantic", "icu", "reports", "autofix", "ai-review", "camel"],
         help="تحديد مرحلة الفحص (fast: سريع، full: شامل، ai-review: مراجعة الذكاء الاصطناعي)"
     )
     run_parser.add_argument("--ai-enabled", action="store_true", help="تفعيل مراجعة الذكاء الاصطناعي (اختياري)")

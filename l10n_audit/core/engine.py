@@ -98,6 +98,11 @@ def _run_autofix(runtime, options: AuditOptions) -> list[AuditIssue]:
     return run_stage(runtime, options)
 
 
+def _run_camel_validation(runtime, options: AuditOptions, data_stores: dict) -> list[AuditIssue]:
+    from l10n_audit.audits.camel_validation import run_stage
+    return run_stage(runtime, options, en_data=data_stores.get("en"), ar_data=data_stores.get("ar"))
+
+
 # ---------------------------------------------------------------------------
 # Stage definitions
 # ---------------------------------------------------------------------------
@@ -269,6 +274,13 @@ def _dispatch_stage(
             logger.info("AI Review is disabled. Set ai_review.enabled: true in config.")
         else:
              _collect([("AI Review", lambda: _run_ai_review(runtime, options, data_stores=data_stores, ai_provider=ai_provider))])
+
+    elif stage == "camel":
+        _collect([("CAMeL Validation", lambda: _run_camel_validation(runtime, options, data_stores))])
+        if options.write_reports:
+            print(f"📊 Generating final artifacts and reports...", end="", flush=True)
+            _collect_reports(lambda: _run_report_aggregator(runtime, options, sources="camel_validation"))
+            print(f" Done. 📍 Path: {options.effective_output_dir(runtime.results_dir)}")
 
     else:
         # Fallback for unknown stages or stages handled differently
